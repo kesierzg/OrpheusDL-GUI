@@ -624,7 +624,9 @@ def initialize_orpheus():
         try:
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print(f"Initializing global Orpheus instance (CWD: {os.getcwd()})...")
+            
             orpheus_instance = Orpheus()
+            
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print("Global Orpheus instance initialized successfully.")
             return True
@@ -655,7 +657,7 @@ def save_settings(show_confirmation: bool = True):
     Returns:
         True if save was successful, False otherwise.
     """
-    global settings_vars, current_settings, DEFAULT_SETTINGS, CONFIG_FILE_PATH, orpheus_instance
+    global settings_vars, current_settings, DEFAULT_SETTINGS, CONFIG_FILE_PATH, orpheus_instance, download_process_active
     existing_settings = {}
     try:
         if os.path.exists(CONFIG_FILE_PATH):
@@ -846,9 +848,21 @@ def save_settings(show_confirmation: bool = True):
                 current_settings["globals"]["advanced"]["conversion_flags"]["flac"] = clean_conversion_flags_from_ui["flac"].copy()
             if "mp3" in clean_conversion_flags_from_ui:
                 current_settings["globals"]["advanced"]["conversion_flags"]["mp3"] = clean_conversion_flags_from_ui["mp3"].copy()
-        
-        orpheus_instance = None
-        initialize_orpheus()
+        if orpheus_instance:
+            try:
+                orpheus_instance.settings = json.load(open(CONFIG_FILE_PATH, 'r', encoding='utf-8'))
+                if hasattr(orpheus_instance, 'loaded_modules'):
+                    orpheus_instance.loaded_modules.clear()
+                
+                if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                    print("Settings reloaded in existing Orpheus instance and module cache cleared")
+            except Exception as reload_e:
+                if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                    print(f"Warning: Could not reload settings in existing orpheus instance: {reload_e}")
+                orpheus_instance = None
+                initialize_orpheus()
+        else:
+            initialize_orpheus()
         if show_confirmation:
             show_centered_messagebox("Settings Saved", "Settings have been saved successfully.", dialog_type="info")
 
@@ -998,10 +1012,10 @@ def _update_settings_tab_widgets():
 
 def start_login_thread(platform_name):
     """Starts the login process in a separate thread."""
-    global orpheus_instance, gui_settings, app
+    global orpheus_instance, current_settings, app
     
     if orpheus_instance:
-        login_thread = threading.Thread(target=run_login_in_thread, args=(orpheus_instance, platform_name, gui_settings), daemon=True)
+        login_thread = threading.Thread(target=run_login_in_thread, args=(orpheus_instance, platform_name, current_settings), daemon=True)
         login_thread.start()
     else:
         if not getattr(sys, 'frozen', False):
@@ -1220,14 +1234,19 @@ def _clean_ansi_and_process_markers(text):
     for platform_pattern, platform_name in platform_patterns.items():
         display_name = SERVICE_DISPLAY_NAMES.get(platform_name, platform_name)
         text = re.sub(platform_pattern, rf'Platform: |PLATFORM_{platform_name.upper().replace(" ", "_")}|{display_name}|RESET|', text)
+    
     gray_pattern = r'\033\[90m(.*?)\033\[0m'
     text = re.sub(gray_pattern, r'|GRAY|\1|RESET|', text)
     text = re.sub(r'(\d+/\d+\s+)(?:\033\[[0-9;]*m)?\+(?:\033\[[0-9;]*m)?(\s+)', r'\1✓\2', text)
     text = re.sub(r'(\d+/\d+\s+)(?:\033\[[0-9;]*m)?>(?:\033\[[0-9;]*m)?(\s+)', r'\1▶\2', text)
     text = re.sub(r'(\d+/\d+\s+)(\033\[91m)[xX](\033\[0m)(\s+)', r'\1❌\4', text)
     text = re.sub(r'(\033\[91m)X(\033\[0m)', r'❌', text)
-    text = re.sub(r'(\d+/\d+\s+)(✗)(\s+)', r'\1|ERROR_SYMBOL|\2|RESET|\3', text)
-    text = re.sub(r'(===\s*)(✗)(\s+Track failed\s*===)', r'\1|ERROR_SYMBOL|\2|RESET|\3', text)
+    if '|ERROR_SYMBOL_SINGLE|' not in text:
+        text = text.replace('✗', '|ERROR_SYMBOL_SINGLE|✗|ERROR_SYMBOL_END|')
+    text = re.sub(r'❌([^|]*?)(\|GRAY\|[^|]*?\|RESET\|)', r'|ERROR_SYMBOL_SINGLE|✗|ERROR_SYMBOL_END|\1\2', text)
+    text = text.replace('❌', '|ERROR_SYMBOL_SINGLE|✗|ERROR_SYMBOL_END|')
+
+
     yellow_pattern = r'\033\[33m(.*?)\033\[0m'
     def yellow_replacer(match):
         content = match.group(1)
@@ -1240,7 +1259,6 @@ def _clean_ansi_and_process_markers(text):
     text = re.sub(red_pattern, r'|RED|\1|RESET|', text)
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     text = ansi_escape.sub('', text)
-    text = text.replace('|RESET|', '')
     
     return text
 
@@ -1286,6 +1304,40 @@ def _insert_text_with_links_and_platforms(text_content, error):
     except Exception as e:
         tag = "error" if error else "normal"
         log_textbox.insert("end", text_content, (tag,))
+
+def _process_color_markers(text, error):
+    """Helper function to process color markers in text"""
+    import re
+    try:
+        parts = []
+        current_pos = 0
+        color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|PLATFORM_[A-Z_]+)\|(.*?)(?:\|RESET\||(?=\|[A-Z_]+\|)|$)', text)
+        
+        for marker in color_markers:
+            if marker.start() > current_pos:
+                text_before = text[current_pos:marker.start()]
+                if text_before:
+                    _insert_text_with_links_and_platforms(text_before, error)
+            
+            color = marker.group(1).lower()
+            marker_text = marker.group(2)
+            if color == 'red':
+                log_textbox.insert("end", marker_text, ("color_red",))
+            elif color == 'yellow':
+                log_textbox.insert("end", marker_text, ("color_yellow",))
+            elif color == 'gray':
+                log_textbox.insert("end", marker_text, ("color_gray",))
+            elif color.startswith('platform_'):
+                platform_tag = color
+                log_textbox.insert("end", marker_text, (platform_tag,))
+            current_pos = marker.end()
+        
+        if current_pos < len(text):
+            remaining_text = text[current_pos:]
+            if remaining_text:
+                _insert_text_with_links_and_platforms(remaining_text, error)
+    except:
+        _insert_text_with_links_and_platforms(text, error)
 
 def log_to_textbox(msg, error=False):
     """
@@ -1350,6 +1402,30 @@ def log_to_textbox(msg, error=False):
             log_textbox.tag_bind("hyperlink", "<Button-1>", _on_hyperlink_click)
         except: 
             pass
+        if "|ERROR_SYMBOL_SINGLE|" in content_to_insert:
+            parts = content_to_insert.split("|ERROR_SYMBOL_SINGLE|")
+            for i, part in enumerate(parts):
+                if i == 0:
+                    if part:
+                        if "|RED|" in part or "|YELLOW|" in part or "|GRAY|" in part or "|PLATFORM_" in part:
+                            _process_color_markers(part, error)
+                        else:
+                            _insert_text_with_links_and_platforms(part, error)
+                else:
+                    if "|ERROR_SYMBOL_END|" in part:
+                        symbol_and_rest = part.split("|ERROR_SYMBOL_END|", 1)
+                        symbol_text = symbol_and_rest[0]
+                        rest_text = symbol_and_rest[1] if len(symbol_and_rest) > 1 else ""
+                        log_textbox.insert("end", symbol_text, ("emoji_error",))
+                        if rest_text:
+                            if "|RED|" in rest_text or "|YELLOW|" in rest_text or "|GRAY|" in rest_text or "|PLATFORM_" in rest_text:
+                                _process_color_markers(rest_text, error)
+                            else:
+                                _insert_text_with_links_and_platforms(rest_text, error)
+                    else:
+                        _insert_text_with_links_and_platforms(part, error)
+            return
+        
         emoji_processed = False
         for emoji, tag in [("✅", "emoji_success"), ("❌", "emoji_error"), ("▶", "emoji_warning"), ("✓", "emoji_success")]:
             if emoji in content_to_insert:
@@ -1361,7 +1437,7 @@ def log_to_textbox(msg, error=False):
                             try:
                                 color_parts = []
                                 current_pos = 0
-                                color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|PLATFORM_[A-Z_]+)\|([^|]*?)(?=\||$)', part)
+                                color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|PLATFORM_[A-Z_]+)\|(.*?)(?:\|RESET\||(?=\|[A-Z_]+\|)|$)', part)
                                 
                                 for marker in color_markers:
                                     if marker.start() > current_pos:
@@ -1424,10 +1500,10 @@ def log_to_textbox(msg, error=False):
             else:
                 import re
                 try:
-                    if "|RED|" in content_to_insert or "|YELLOW|" in content_to_insert or "|GRAY|" in content_to_insert or "|ERROR_SYMBOL|" in content_to_insert or "|PLATFORM_" in content_to_insert:
+                    if "|RED|" in content_to_insert or "|YELLOW|" in content_to_insert or "|GRAY|" in content_to_insert or "|PLATFORM_" in content_to_insert:
                         parts = []
                         current_pos = 0
-                        color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|ERROR_SYMBOL|PLATFORM_[A-Z_]+)\|([^|]*?)(?=\||$)', content_to_insert)
+                        color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|PLATFORM_[A-Z_]+)\|(.*?)(?:\|RESET\||(?=\|[A-Z_]+\|)|$)', content_to_insert)
                         
                         for marker in color_markers:
                             if marker.start() > current_pos:
@@ -1451,8 +1527,7 @@ def log_to_textbox(msg, error=False):
                                     log_textbox.insert("end", text, ("color_yellow",))
                                 elif color == 'gray':
                                     log_textbox.insert("end", text, ("color_gray",))
-                                elif color == 'error_symbol':
-                                    log_textbox.insert("end", text, ("emoji_error",))
+
                                 elif color.startswith('platform_'):
                                     platform_tag = color
                                     log_textbox.insert("end", text, (platform_tag,))
@@ -1818,6 +1893,8 @@ class QueueWriter(io.TextIOBase):
         return False
 
     def write(self, msg):
+        global current_settings
+        
         if '\r' in msg:
             parts = msg.split('\r')
             filtered_parts = []
@@ -1836,7 +1913,6 @@ class QueueWriter(io.TextIOBase):
             for line in lines[:-1]:
                 if self._is_progress_bar_line(line):
                     continue
-                global current_settings
                 is_debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False)
                 if not is_debug_mode and "[gamdl AppleMusicApi DEBUG]" in line:
                     continue
@@ -1844,6 +1920,23 @@ class QueueWriter(io.TextIOBase):
                 line = re.sub(r'(\d+/\d+\s+)\+(\s+)', r'\1✓\2', line)
                 line = re.sub(r'(\d+/\d+\s+)>(\s+)', r'\1▶\2', line)
                 line = re.sub(r'(\d+/\d+\s+)x(\s+)', r'\1✗\2', line)
+                if "soundcloud --> HLS_UNEXPECTED_ERROR_IN_TRY_BLOCK" in line:
+                    line = re.sub(r'.*soundcloud --> HLS_UNEXPECTED_ERROR_IN_TRY_BLOCK.*', 
+                                  '       SoundCloud streaming error (FFmpeg required for HLS streams)', line)
+                if "FFmpeg is not installed or working! Using fallback, may have errors" in line:
+                    buffer_context = (self.buffer + msg).lower()
+                    
+                    should_show_warning = False
+                    if 'platform: soundcloud' in buffer_context:
+                        should_show_warning = True
+                    if current_settings and current_settings.get('advanced', {}).get('codec_conversions', {}):
+                        should_show_warning = True
+                    if should_show_warning:
+                        line = re.sub(r'^\s*FFmpeg is not installed or working! Using fallback, may have errors', 
+                                      '       FFmpeg is not installed or working! Using fallback, may have errors', line)
+                    else:
+                        continue
+                
                 stripped_line = line.lstrip()
                 if ("=== ✅" in line or "=== ❌" in line or
                     "Track completed" in line or "Track failed" in line or
@@ -2295,10 +2388,12 @@ def patch_download_file_for_cancellation():
                         result = self.download_track(**args, verbose=False)
                         if _download_cancelled:
                             return (index, None, Exception("Download cancelled"))
-                        if result is None:
+                        if result == "SKIPPED":
                             progress_queue.put((index, track_name, "SKIPPED"))
                         elif result == "RATE_LIMITED":
                             progress_queue.put((index, track_name, "RATE_LIMITED"))
+                        elif result is None:
+                            progress_queue.put((index, track_name, Exception("Download failed")))
                         else:
                             progress_queue.put((index, track_name, None))
 
@@ -2358,7 +2453,7 @@ def patch_download_file_for_cancellation():
                                     indent_prefix = "       " if should_indent_tracks else ""
                                     
                                     if status == "SKIPPED":
-                                        self.print(f'{indent_prefix}{completion_counter:0{total_digits}d}/{total_tasks} ▶ {track_name} |GRAY|(already exists)', drop_level=1)
+                                        self.print(f'{indent_prefix}{completion_counter:0{total_digits}d}/{total_tasks} ▶ {track_name} |GRAY|(already exists)|RESET|', drop_level=1)
                                     elif status == "RATE_LIMITED":
                                         self.print(f'{indent_prefix}{completion_counter:0{total_digits}d}/{total_tasks} ⚠ {track_name} (rate limited)', drop_level=1)
                                     elif status is not None:
@@ -2371,7 +2466,7 @@ def patch_download_file_for_cancellation():
                                         else:
                                             error_reason = error_msg
 
-                                        self.print(f'{indent_prefix}{completion_counter:0{total_digits}d}/{total_tasks} ❌ {track_name}: {error_reason} |GRAY|(failed)', drop_level=1)
+                                        self.print(f'{indent_prefix}{completion_counter:0{total_digits}d}/{total_tasks} ❌ {track_name}: {error_reason} |GRAY|(failed)|RESET|', drop_level=1)
                                     else:
                                         self.print(f'{indent_prefix}{completion_counter:0{total_digits}d}/{total_tasks} ✓ {track_name}', drop_level=1)
                                 except queue.Empty:
@@ -2379,8 +2474,8 @@ def patch_download_file_for_cancellation():
                         except Exception as e:
                             index = future_to_index[future]
                             results.append((index, None, e))
-                actual_downloaded = sum(1 for r in results if r and r[2] is None and r[1] is not None and r[1] != "RATE_LIMITED")
-                actual_already_existed = sum(1 for r in results if r and r[2] is None and r[1] is None)
+                actual_downloaded = sum(1 for r in results if r and r[2] is None and r[1] is not None and r[1] not in ["RATE_LIMITED", "SKIPPED"])
+                actual_already_existed = sum(1 for r in results if r and r[2] is None and r[1] == "SKIPPED")
                 actual_failed = sum(1 for r in results if r and (r[2] is not None or (r[1] == "RATE_LIMITED")))
                 from utils.models import Oprinter
 
@@ -2718,41 +2813,52 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         sys.stdout = queue_writer
         sys.stderr = dummy_stderr
         yield_to_gui()
+        fresh_orpheus_settings = orpheus.settings if hasattr(orpheus, 'settings') else {}
+        fresh_global_settings = fresh_orpheus_settings.get('global', {})
+        ffmpeg_path_setting = fresh_global_settings.get("advanced", {}).get("ffmpeg_path", "ffmpeg")
+        if isinstance(ffmpeg_path_setting, str):
+            ffmpeg_path_setting = ffmpeg_path_setting.strip()
+            if ffmpeg_path_setting and ffmpeg_path_setting.lower() != "ffmpeg":
+                if os.path.isfile(ffmpeg_path_setting):
+                    ffmpeg_dir = os.path.dirname(ffmpeg_path_setting)
+                    current_path = os.environ.get("PATH", "")
+                    if ffmpeg_dir not in current_path.split(os.pathsep):
+                        os.environ["PATH"] = ffmpeg_dir + os.pathsep + current_path
         
         downloader_settings = {
             "general": {
-                "download_path": gui_settings.get("globals", {}).get("general", {}).get("output_path", DEFAULT_SETTINGS["globals"]["general"]["output_path"]),
-                "download_quality": gui_settings.get("globals", {}).get("general", {}).get("quality", DEFAULT_SETTINGS["globals"]["general"]["quality"]),
-                "search_limit": gui_settings.get("globals", {}).get("general", {}).get("search_limit", DEFAULT_SETTINGS["globals"]["general"]["search_limit"]),
-                "concurrent_downloads": gui_settings.get("globals", {}).get("general", {}).get("concurrent_downloads", DEFAULT_SETTINGS["globals"]["general"]["concurrent_downloads"]),
-                "play_sound_on_finish": gui_settings.get("globals", {}).get("general", {}).get("play_sound_on_finish", DEFAULT_SETTINGS["globals"]["general"]["play_sound_on_finish"]),
+                "download_path": fresh_global_settings.get("general", {}).get("download_path", DEFAULT_SETTINGS["globals"]["general"]["output_path"]),
+                "download_quality": fresh_global_settings.get("general", {}).get("download_quality", DEFAULT_SETTINGS["globals"]["general"]["quality"]),
+                "search_limit": fresh_global_settings.get("general", {}).get("search_limit", DEFAULT_SETTINGS["globals"]["general"]["search_limit"]),
+                "concurrent_downloads": fresh_global_settings.get("general", {}).get("concurrent_downloads", DEFAULT_SETTINGS["globals"]["general"]["concurrent_downloads"]),
+                "play_sound_on_finish": fresh_global_settings.get("general", {}).get("play_sound_on_finish", DEFAULT_SETTINGS["globals"]["general"]["play_sound_on_finish"]),
                 "progress_bar": False
             },
-            **{k: v for k, v in gui_settings.get("globals", {}).items() if k != "general"}
+            **{k: v for k, v in fresh_global_settings.items() if k != "general"}
         }
         if "advanced" in downloader_settings and \
            "conversion_flags" in downloader_settings["advanced"] and \
            "mp3" in downloader_settings["advanced"]["conversion_flags"]:
             mp3_flags = downloader_settings["advanced"]["conversion_flags"]["mp3"]
             if "audio_bitrate" in mp3_flags and "qscale:a" in mp3_flags:
-                if gui_settings.get("globals",{}).get("advanced",{}).get("conversion_flags",{}).get("mp3",{}).get("audio_bitrate"):
-                    cleaned_mp3_flags = {"audio_bitrate": gui_settings["globals"]["advanced"]["conversion_flags"]["mp3"]["audio_bitrate"]}
+                if fresh_global_settings.get("advanced",{}).get("conversion_flags",{}).get("mp3",{}).get("audio_bitrate"):
+                    cleaned_mp3_flags = {"audio_bitrate": fresh_global_settings["advanced"]["conversion_flags"]["mp3"]["audio_bitrate"]}
                     downloader_settings["advanced"]["conversion_flags"]["mp3"] = cleaned_mp3_flags
-                elif gui_settings.get("globals",{}).get("advanced",{}).get("conversion_flags",{}).get("mp3",{}).get("qscale:a"):
-                    cleaned_mp3_flags = {"qscale:a": gui_settings["globals"]["advanced"]["conversion_flags"]["mp3"]["qscale:a"]}
+                elif fresh_global_settings.get("advanced",{}).get("conversion_flags",{}).get("mp3",{}).get("qscale:a"):
+                    cleaned_mp3_flags = {"qscale:a": fresh_global_settings["advanced"]["conversion_flags"]["mp3"]["qscale:a"]}
                     downloader_settings["advanced"]["conversion_flags"]["mp3"] = cleaned_mp3_flags
 
         yield_to_gui()
 
         module_controls_dict = orpheus.module_controls
         oprinter = Oprinter()
-        downloader = Downloader(settings=downloader_settings, module_controls=module_controls_dict, oprinter=oprinter, path=output_path)
+        downloader = Downloader(settings=downloader_settings, module_controls=module_controls_dict, oprinter=oprinter, path=output_path, use_ansi_colors=False)
         downloader.full_settings = {
             'global': downloader_settings,
-            'modules': gui_settings.get('modules', {})
+            'modules': fresh_orpheus_settings.get('modules', {})
         }
 
-        settings_global_for_defaults = gui_settings.get("globals", DEFAULT_SETTINGS["globals"])
+        settings_global_for_defaults = fresh_global_settings if fresh_global_settings else DEFAULT_SETTINGS["globals"]
         module_defaults = settings_global_for_defaults.get("module_defaults", {})
         third_party_modules_dict = { ModuleModes.lyrics: module_defaults.get("lyrics") if module_defaults.get("lyrics") != "default" else None, ModuleModes.covers: module_defaults.get("covers") if module_defaults.get("covers") != "default" else None, ModuleModes.credits: module_defaults.get("credits") if module_defaults.get("credits") != "default" else None }
         downloader.third_party_modules = third_party_modules_dict
@@ -2842,7 +2948,6 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                 else:
                     try:
                         yield_to_gui()
-                        oprinter.oprint(f"Fetching data. Please wait...\n")
                         run_interruptible_download(
                             downloader.download_track,
                             stop_event,
@@ -2855,7 +2960,6 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                         print("|GRAY|Stop requested. Cancelling during track download.|RESET|")
             elif media_type == DownloadTypeEnum.playlist:
                 _current_download_context = DownloadTypeEnum.playlist
-                oprinter.oprint(f'Fetching data. Please wait...\n')
                 if stop_event.is_set():
                     is_cancelled = True
                     print("|GRAY|Stop requested. Cancelling before playlist download.|RESET|")
@@ -2888,7 +2992,6 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                         download_exception_occurred = True
             elif media_type == DownloadTypeEnum.album:
                 _current_download_context = DownloadTypeEnum.album
-                oprinter.oprint(f'Fetching data. Please wait...\n')
                 if stop_event.is_set():
                     is_cancelled = True
                     print("|GRAY|Stop requested. Cancelling before album download.|RESET|")
@@ -2925,7 +3028,6 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                         download_exception_occurred = True
             elif media_type == DownloadTypeEnum.artist:
                 _current_download_context = DownloadTypeEnum.artist
-                oprinter.oprint(f'Fetching data. Please wait...\n')
                 if stop_event.is_set():
                     is_cancelled = True
                     print("|GRAY|Stop requested. Cancelling before artist download.|RESET|")
@@ -2960,7 +3062,7 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
 
             if is_cancelled: print("\nDownload Cancelled.")
         except FileNotFoundError as fnf_e:
-            ffmpeg_path_setting = gui_settings.get("globals", {}).get("advanced", {}).get("ffmpeg_path", "ffmpeg").strip()
+            ffmpeg_path_setting = fresh_global_settings.get("advanced", {}).get("ffmpeg_path", "ffmpeg").strip()
             is_ffmpeg_error = False
             tb_str = traceback.format_exc()
             if "ffmpeg" in tb_str.lower():
@@ -3010,7 +3112,7 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
             is_soundcloud_hls_ffmpeg_issue = True
 
         if is_soundcloud_hls_ffmpeg_issue:
-            ffmpeg_path_setting = gui_settings.get("globals", {}).get("advanced", {}).get("ffmpeg_path", "ffmpeg").strip()
+            ffmpeg_path_setting = fresh_global_settings.get("advanced", {}).get("ffmpeg_path", "ffmpeg").strip()
             user_msg = (
                 "\n[FFMPEG ERROR - SoundCloud HLS] FFmpeg was not found or is misconfigured.\nThis is required for processing SoundCloud HLS streams.\n\n"
                 "Possible Solutions:\n"
@@ -3040,7 +3142,7 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         if is_cancelled:            
             pass
         else:
-            final_status_message = "Download Finished." 
+            final_status_message = "Download Finished.\n" 
             print(final_status_message)
         
         print(time_taken_message)
@@ -4382,7 +4484,8 @@ def run_download_in_subprocess(url, output_path, gui_settings, search_result_dat
                 pass
         queue_writer = SubprocessQueueWriter(output_queue_mp)
         sys.stdout = queue_writer
-        run_download_in_thread(orpheus_subprocess, url, output_path, gui_settings, search_result_data)
+        fresh_subprocess_settings = orpheus_subprocess.settings
+        run_download_in_thread(orpheus_subprocess, url, output_path, fresh_subprocess_settings, search_result_data)
         
     except Exception as e:
         try:
@@ -4455,20 +4558,20 @@ def run_download_in_thread_responsive(orpheus, url, output_path, gui_settings, s
         sys.stdout = queue_writer
         sys.stderr = dummy_stderr
         yield_to_gui()
-        
+        fresh_orpheus_settings = orpheus.settings
         downloader_settings = {
             "general": {
-                "download_path": gui_settings.get("globals", {}).get("general", {}).get("output_path", DEFAULT_SETTINGS["globals"]["general"]["output_path"]),
-                "download_quality": gui_settings.get("globals", {}).get("general", {}).get("quality", DEFAULT_SETTINGS["globals"]["general"]["quality"]),
-                "search_limit": gui_settings.get("globals", {}).get("general", {}).get("search_limit", DEFAULT_SETTINGS["globals"]["general"]["search_limit"]),
+                "download_path": fresh_orpheus_settings.get("globals", {}).get("general", {}).get("output_path", DEFAULT_SETTINGS["globals"]["general"]["output_path"]),
+                "download_quality": fresh_orpheus_settings.get("globals", {}).get("general", {}).get("quality", DEFAULT_SETTINGS["globals"]["general"]["quality"]),
+                "search_limit": fresh_orpheus_settings.get("globals", {}).get("general", {}).get("search_limit", DEFAULT_SETTINGS["globals"]["general"]["search_limit"]),
                 "progress_bar": False
             },
-            **{k: v for k, v in gui_settings.get("globals", {}).items() if k != "general"}
+            **{k: v for k, v in fresh_orpheus_settings.get("globals", {}).items() if k != "general"}
         }
         
         yield_to_gui()
         def yielding_download():
-            return run_download_in_thread(orpheus, url, output_path, gui_settings, search_result_data)
+            return run_download_in_thread(orpheus, url, output_path, fresh_orpheus_settings, search_result_data)
         download_result = yielding_download()
         
     except Exception as e:
