@@ -4,7 +4,7 @@ block_cipher = None
 
 a = Analysis(
     ['gui.py'],
-    pathex=[],
+    pathex=['.', 'vendor/librespot'],
     binaries=[],
     datas=[
         ('icon.ico', '.'),

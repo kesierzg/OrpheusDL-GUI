@@ -11,6 +11,9 @@ if getattr(sys, 'frozen', False):
         sys.path.insert(0, gamdl_parent_path)
 os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 
+from utils.vendor_bootstrap import bootstrap_vendor_paths
+bootstrap_vendor_paths()
+
 import copy
 import customtkinter
 import datetime
@@ -218,7 +221,7 @@ def setup_logging(log_queue):
         logging.info("Logging configured to use GUI queue (debug mode enabled).")
     else:
         root_logger.setLevel(logging.CRITICAL)
-__version__ = "1.0.6"
+__version__ = "1.0.7"
 from update_checker import run_check_in_thread
 if platform.system() == "Windows":
     try:
