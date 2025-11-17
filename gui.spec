@@ -51,6 +51,9 @@ a = Analysis(
         'librespot.audio.decoders',
         'librespot.core',
         'librespot.metadata',
+        'websocket_client',  # Dependency for vendored librespot
+        'pyogg',  # Dependency for vendored librespot
+        'zeroconf',  # Dependency for vendored librespot
         'pkce',
         'pywidevine',
         'yt_dlp',
