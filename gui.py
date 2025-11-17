@@ -221,7 +221,7 @@ def setup_logging(log_queue):
         logging.info("Logging configured to use GUI queue (debug mode enabled).")
     else:
         root_logger.setLevel(logging.CRITICAL)
-__version__ = "1.0.7"
+__version__ = "1.0.6"
 from update_checker import run_check_in_thread
 if platform.system() == "Windows":
     try:
@@ -4781,6 +4781,7 @@ if __name__ == "__main__":
              print(f"Unexpected error during initialization: {e}")
         if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
             print(f"[DEBUG] Before GUI setup: output_path = {current_settings.get('globals', {}).get('general', {}).get('output_path')}")
+        customtkinter.set_appearance_mode("dark")
         app = customtkinter.CTk()
         app.title("OrpheusDL GUI")
         app.geometry("940x600")
