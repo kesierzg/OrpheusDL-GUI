@@ -281,6 +281,13 @@ def resource_path(relative_path):
              base_path = get_script_directory()
 
     final_path = os.path.join(base_path, relative_path)
+    
+    # Fallback: if the file doesn't exist at the calculated path, check the current working directory
+    if not os.path.exists(final_path):
+        cwd_path = os.path.join(os.getcwd(), relative_path)
+        if os.path.exists(cwd_path):
+            return cwd_path
+            
     return final_path
 _app_dir = get_script_directory()
 if _app_dir not in sys.path:
@@ -4150,10 +4157,18 @@ def _create_credential_tab_content(platform_name, tab_frame):
             label = customtkinter.CTkLabel(tab_frame, text=f"No configurable credentials for {platform_name}.")
             label.pack(pady=10, padx=10)
             return
-
+        
+        # Better label names for credential fields
+        label_mapping = {
+            'download_pause_seconds': 'Pause Between Downloads (seconds)',
+            'client_id': 'Client ID',
+            'client_secret': 'Client Secret',
+        }
+        
         for i, (key, value) in enumerate(default_platform_fields.items()):
             pady_config = (15, 2) if i == 0 else 2
-            label_text = key.replace('_', ' ').title()
+            # Use custom label if available, otherwise generate from key
+            label_text = label_mapping.get(key, key.replace('_', ' ').title())
             label = customtkinter.CTkLabel(tab_frame, text=f"{label_text}:")
             label.grid(row=i, column=0, sticky="w", padx=10, pady=pady_config)
             
@@ -4167,7 +4182,54 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 var = tkinter.StringVar(value=str(current_value))
                 widget = customtkinter.CTkEntry(tab_frame)
                 widget.configure(textvariable=var)
-                widget.grid(row=i, column=1, sticky="ew", padx=10, pady=pady_config)
+                
+                # For Apple Music cookies_path, add Open button like Browse in Global settings
+                if platform_name == "AppleMusic" and key == "cookies_path":
+                    # Use padx=(10, 5) to align left with other fields (10) and spacing for button
+                    widget.grid(row=i, column=1, sticky="ew", padx=(10, 5), pady=pady_config)
+                    def open_cookies_folder():
+                        """Open the cookies folder in file explorer."""
+                        cookies_path = var.get()
+                        if cookies_path:
+                            # Get the directory from the path
+                            cookies_dir = os.path.dirname(os.path.abspath(cookies_path))
+                            if not os.path.exists(cookies_dir):
+                                # If directory doesn't exist, try to create it
+                                try:
+                                    os.makedirs(cookies_dir, exist_ok=True)
+                                except Exception as e:
+                                    show_centered_messagebox("Error", f"Could not create cookies directory:\n{e}", dialog_type="error")
+                                    return
+                            try:
+                                if platform.system() == "Windows":
+                                    os.startfile(cookies_dir)
+                                elif platform.system() == "Darwin":  # macOS
+                                    subprocess.run(["open", cookies_dir])
+                                else:  # Linux
+                                    subprocess.run(["xdg-open", cookies_dir])
+                            except Exception as e:
+                                show_centered_messagebox("Error", f"Could not open cookies folder:\n{e}", dialog_type="error")
+                    
+                    open_button = customtkinter.CTkButton(
+                        tab_frame,
+                        text="Open",
+                        width=80,
+                        height=widget._current_height,
+                        command=open_cookies_folder,
+                        fg_color=widget._fg_color,
+                        hover_color="#1F6AA5",
+                        border_width=widget._border_width if hasattr(widget, '_border_width') else 0,
+                        border_color=widget._border_color if hasattr(widget, '_border_color') else None
+                    )
+                    # padx=(0, 10) ensures right alignment matches others
+                    open_button.grid(row=i, column=2, sticky="w", padx=(0, 10), pady=pady_config)
+                elif platform_name == "AppleMusic":
+                    # For other Apple Music fields, span across button column to extend width to the end
+                    widget.grid(row=i, column=1, columnspan=2, sticky="ew", padx=10, pady=pady_config)
+                else:
+                    # For all other fields/platforms, use default layout (just under each other)
+                    widget.grid(row=i, column=1, sticky="ew", padx=10, pady=pady_config)
+                
                 tab_frame.grid_columnconfigure(1, weight=1)
                 widget.bind("<Button-3>", show_context_menu)
                 widget.bind("<Button-2>", show_context_menu)
@@ -4178,8 +4240,254 @@ def _create_credential_tab_content(platform_name, tab_frame):
             if platform_name not in settings_vars['credentials']:
                 settings_vars['credentials'][platform_name] = {}
             settings_vars['credentials'][platform_name][key] = var
-            if isinstance(var, (tkinter.StringVar, tkinter.BooleanVar)):
-                var.trace_add('write', _auto_save_credential_change)
+            # Auto-save disabled - settings only save when user clicks "Save" button
+            # if isinstance(var, (tkinter.StringVar, tkinter.BooleanVar)):
+            #     var.trace_add('write', _auto_save_credential_change)
+        
+        # Add help text for Spotify module
+        if platform_name == "Spotify":
+            # Helper function to copy URL to clipboard with feedback
+            def _copy_url_to_clipboard(url, button):
+                try:
+                    app.clipboard_clear()
+                    app.clipboard_append(url)
+                    app.update()
+                    # Show "Copied" feedback
+                    original_text = button.cget("text")
+                    button.configure(text="✓")
+                    button.after(1500, lambda: button.configure(text=original_text))
+                except Exception as e:
+                    print(f"Error copying to clipboard: {e}")
+            
+            help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#242424", corner_radius=5)
+            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
+            help_frame.grid_columnconfigure(0, weight=1)
+            
+            help_title = customtkinter.CTkLabel(
+                help_frame, 
+                text="How to get your Spotify Client ID and Secret:",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            help_title.grid(row=0, column=0, sticky="w", padx=12, pady=(8, 4))
+            
+            # Step 1: Open Spotify Developer Dashboard
+            step1_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            step1_container.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 0))
+            
+            step1_prefix = customtkinter.CTkLabel(
+                step1_container,
+                text="  1.  Open ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step1_prefix.pack(side="left")
+            
+            dashboard_link = customtkinter.CTkLabel(
+                step1_container,
+                text="Spotify Developer Dashboard",
+                font=("Segoe UI", 11, "underline"),
+                text_color="#1F6AA5",
+                cursor="hand2"
+            )
+            dashboard_link.pack(side="left")
+            dashboard_link.bind("<Button-1>", lambda e: webbrowser.open("https://developer.spotify.com/dashboard"))
+            dashboard_link.bind("<Enter>", lambda e: dashboard_link.configure(text_color="#4A9EFF"))
+            dashboard_link.bind("<Leave>", lambda e: dashboard_link.configure(text_color="#1F6AA5"))
+            
+            step2_label = customtkinter.CTkLabel(
+                help_frame,
+                text="  2.  Create an app",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step2_label.grid(row=2, column=0, sticky="w", padx=12, pady=(2, 0))
+            
+            # Step 3: Add Redirect URI with copyable URL on same line
+            step3_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            step3_container.grid(row=3, column=0, sticky="w", padx=12, pady=(2, 0))
+            
+            step3_label = customtkinter.CTkLabel(
+                step3_container,
+                text="  3.  Add Redirect URI ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step3_label.pack(side="left")
+            
+            copy_url = "http://127.0.0.1:4381/login"
+            url_label = customtkinter.CTkLabel(
+                step3_container,
+                text=copy_url,
+                font=("Segoe UI", 11, "underline"),
+                text_color="#1F6AA5",
+                cursor="hand2"
+            )
+            url_label.pack(side="left", padx=(0, 4))
+            url_label.bind("<Enter>", lambda e: url_label.configure(text_color="#4A9EFF"))
+            url_label.bind("<Leave>", lambda e: url_label.configure(text_color="#1F6AA5"))
+            
+            # Copy button with icon
+            copy_button = customtkinter.CTkButton(
+                step3_container,
+                text="⧉",
+                width=24,
+                height=24,
+                font=("Segoe UI", 14),
+                fg_color="transparent",
+                hover_color="#3B3B3B",
+                text_color="#DCE4EE",
+                corner_radius=3,
+                command=lambda: _copy_url_to_clipboard(copy_url, copy_button)
+            )
+            copy_button.pack(side="left")
+            
+            # Hover effect to make icon bigger
+            def on_copy_enter(e):
+                copy_button.configure(font=("Segoe UI", 16))
+            
+            def on_copy_leave(e):
+                copy_button.configure(font=("Segoe UI", 14))
+            
+            copy_button.bind("<Enter>", on_copy_enter)
+            copy_button.bind("<Leave>", on_copy_leave)
+            
+            step4_label = customtkinter.CTkLabel(
+                help_frame,
+                text="  4.  Copy Client ID + Secret",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step4_label.grid(row=4, column=0, sticky="w", padx=12, pady=(2, 0))
+            
+            step5_label = customtkinter.CTkLabel(
+                help_frame,
+                text="  5.  Paste them above",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step5_label.grid(row=5, column=0, sticky="w", padx=12, pady=(2, 8))
+        
+        # Add help text for Apple Music module
+        if platform_name == "AppleMusic":
+            help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#242424", corner_radius=5)
+            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=3, sticky="ew", padx=10, pady=(20, 10))
+            help_frame.grid_columnconfigure(0, weight=1)
+            
+            help_title = customtkinter.CTkLabel(
+                help_frame, 
+                text="How to get your cookies exported:",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            help_title.grid(row=0, column=0, sticky="w", padx=12, pady=(8, 4))
+            
+            # Step 1: Log in to music.apple.com with clickable link
+            step1_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            step1_container.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 0))
+            
+            step1_prefix = customtkinter.CTkLabel(
+                step1_container,
+                text="  1.  Log in to ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step1_prefix.pack(side="left")
+            
+            apple_music_link = customtkinter.CTkLabel(
+                step1_container,
+                text="music.apple.com",
+                font=("Segoe UI", 11, "underline"),
+                text_color="#1F6AA5",
+                cursor="hand2"
+            )
+            apple_music_link.pack(side="left")
+            apple_music_link.bind("<Button-1>", lambda e: webbrowser.open("https://music.apple.com"))
+            apple_music_link.bind("<Enter>", lambda e: apple_music_link.configure(text_color="#4A9EFF"))
+            apple_music_link.bind("<Leave>", lambda e: apple_music_link.configure(text_color="#1F6AA5"))
+            
+            # Active subscription note
+            subscription_note = customtkinter.CTkLabel(
+                help_frame,
+                text="       (active subscription required)",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            subscription_note.grid(row=2, column=0, sticky="w", padx=12, pady=(1, 0))
+            
+            # Step 2: Export cookies
+            step2_label = customtkinter.CTkLabel(
+                help_frame,
+                text="  2.  Export cookies",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step2_label.grid(row=3, column=0, sticky="w", padx=12, pady=(2, 0))
+            
+            # Chrome/Edge link with bullet
+            step2_chrome_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            step2_chrome_container.grid(row=4, column=0, sticky="w", padx=12, pady=(1, 0))
+            
+            chrome_bullet = customtkinter.CTkLabel(
+                step2_chrome_container,
+                text="       • Chrome / Edge → ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            chrome_bullet.pack(side="left")
+            
+            chrome_link = customtkinter.CTkLabel(
+                step2_chrome_container,
+                text="Get cookies.txt",
+                font=("Segoe UI", 11, "underline"),
+                text_color="#1F6AA5",
+                cursor="hand2"
+            )
+            chrome_link.pack(side="left")
+            chrome_link.bind("<Button-1>", lambda e: webbrowser.open("https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?pli=1"))
+            chrome_link.bind("<Enter>", lambda e: chrome_link.configure(text_color="#4A9EFF"))
+            chrome_link.bind("<Leave>", lambda e: chrome_link.configure(text_color="#1F6AA5"))
+            
+            # Firefox link with bullet
+            step2_firefox_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            step2_firefox_container.grid(row=5, column=0, sticky="w", padx=12, pady=(1, 0))
+            
+            firefox_bullet = customtkinter.CTkLabel(
+                step2_firefox_container,
+                text="       • Firefox → ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            firefox_bullet.pack(side="left")
+            
+            firefox_link = customtkinter.CTkLabel(
+                step2_firefox_container,
+                text="cookies.txt",
+                font=("Segoe UI", 11, "underline"),
+                text_color="#1F6AA5",
+                cursor="hand2"
+            )
+            firefox_link.pack(side="left")
+            firefox_link.bind("<Button-1>", lambda e: webbrowser.open("https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/"))
+            firefox_link.bind("<Enter>", lambda e: firefox_link.configure(text_color="#4A9EFF"))
+            firefox_link.bind("<Leave>", lambda e: firefox_link.configure(text_color="#1F6AA5"))
+            
+            # Step 3: Save as cookies.txt
+            step3_label = customtkinter.CTkLabel(
+                help_frame,
+                text="  3.  Save as cookies.txt",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step3_label.grid(row=6, column=0, sticky="w", padx=12, pady=(2, 0))
+            
+            step3_path = customtkinter.CTkLabel(
+                help_frame,
+                text="       Path: /config/cookies.txt",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step3_path.grid(row=7, column=0, sticky="w", padx=12, pady=(1, 8))
     except Exception as e:
         import traceback
         traceback.print_exc(file=sys.__stderr__)
@@ -4724,7 +5032,7 @@ if __name__ == "__main__":
                 "Nugs": { "username": "", "password": "", "client_id": "", "dev_key": "" },
                 "Qobuz": { "app_id": "", "app_secret": "", "quality_format": "{sample_rate}kHz {bit_depth}bit", "username": "", "password": "" },
                 "SoundCloud": { "web_access_token": "" },
-                "Spotify": { "username": "", "download_pause_seconds": 30 },
+                "Spotify": { "username": "", "download_pause_seconds": 30, "client_id": "", "client_secret": "" },
                 "Tidal": { "tv_atmos_token": "", "tv_atmos_secret": "", "mobile_atmos_hires_token": "", "mobile_hires_token": "", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True }
             }
         }
@@ -4785,25 +5093,7 @@ if __name__ == "__main__":
         app = customtkinter.CTk()
         app.title("OrpheusDL GUI")
         app.geometry("940x600")
-        try:
-            icon_filename = "icon.icns" if platform.system() == "Darwin" else "icon.ico"
-            icon_path = resource_path(icon_filename)
-            if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                print(f"Looking for main window icon at: {icon_path}")
-            if os.path.exists(icon_path):
-                if platform.system() != "Darwin":
-                    app.iconbitmap(icon_path)
-                    if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                        print(f"Set window icon from: {icon_path}")
-                else:
-                    if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                        print("Skipping app.iconbitmap on macOS (use .icns for app bundle/dock).")
-            else:
-                if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                    print(f"Window icon file not found: {icon_path}")
-        except Exception as e:
-            if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                print(f"Error setting window icon: {e}")
+        
         screen_width = app.winfo_screenwidth()
         screen_height = app.winfo_screenheight()
         window_width = 940
@@ -4811,6 +5101,39 @@ if __name__ == "__main__":
         x_pos = (screen_width // 2) - (window_width // 2)
         y_pos = (screen_height // 2) - (window_height // 2)
         app.geometry(f"{window_width}x{window_height}+{x_pos}+{y_pos}")
+        
+        # Set icon after window geometry is established
+        try:
+            icon_filename = "icon.icns" if platform.system() == "Darwin" else "icon.ico"
+            icon_path = resource_path(icon_filename)
+            
+            # Always print icon path for debugging this issue
+            print(f"[Icon] Looking for icon at: {icon_path}")
+            print(f"[Icon] File exists: {os.path.exists(icon_path)}")
+            print(f"[Icon] Absolute path: {os.path.abspath(icon_path)}")
+            
+            if os.path.exists(icon_path):
+                if platform.system() != "Darwin":
+                    # Try multiple methods to set the icon
+                    try:
+                        app.iconbitmap(icon_path)
+                        print(f"[Icon] Successfully set icon using app.iconbitmap")
+                    except Exception as e1:
+                        print(f"[Icon] app.iconbitmap failed: {e1}")
+                        try:
+                            # Try accessing the underlying tk window
+                            app.tk.call('wm', 'iconbitmap', app._w, icon_path)
+                            print(f"[Icon] Successfully set icon using tk.call")
+                        except Exception as e2:
+                            print(f"[Icon] tk.call also failed: {e2}")
+                else:
+                    print("[Icon] Skipping iconbitmap on macOS")
+            else:
+                print(f"[Icon] ERROR: Icon file not found at: {icon_path}")
+        except Exception as e:
+            print(f"[Icon] ERROR setting window icon: {e}")
+            import traceback
+            traceback.print_exc()
 
         global loaded_credential_tabs, credential_tabs_config
         loaded_credential_tabs = {"Global"}
@@ -5459,7 +5782,11 @@ Unnecessary Lossless-to-Lossless""",
                 if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                     print(f"[DEBUG AboutIcon] Set macOS display size to {icon_display_size}")
             else:
-                icon_filename = "icon.ico"
+                # Prefer icon.png for the About image on Windows if available, as PIL handles PNG better than some ICOs
+                if os.path.exists(resource_path("icon.png")):
+                    icon_filename = "icon.png"
+                else:
+                    icon_filename = "icon.ico"
                 icon_display_size = (48, 48)
                 if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                     print(f"[DEBUG AboutIcon] Set default display size to {icon_display_size}")
