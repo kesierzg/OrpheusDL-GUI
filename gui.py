@@ -508,9 +508,89 @@ def load_settings():
     }
 
     if not os.path.exists(CONFIG_FILE_PATH):
-        error_message = f"CRITICAL ERROR: Configuration file not found at '{CONFIG_FILE_PATH}'. Cannot start without settings."
-        print(error_message)
-        raise FileNotFoundError(error_message)
+        # Create default settings file on first run
+        print(f"Configuration file not found at '{CONFIG_FILE_PATH}'. Creating default settings...")
+        try:
+            os.makedirs(os.path.dirname(CONFIG_FILE_PATH), exist_ok=True)
+            
+            # Create default settings structure for Orpheus format
+            default_orpheus_settings = {
+                "global": {
+                    "general": {
+                        "download_path": "./downloads",
+                        "download_quality": "hifi",
+                        "disable_subscription_check": False
+                    },
+                    "formatting": {
+                        "album_format": "{album_artist}/{album}/{track_number} - {track_name}",
+                        "playlist_format": "{playlist_name}/{track_number} - {track_artist} - {track_name}",
+                        "track_filename_format": "{track_number} - {track_name}",
+                        "single_full_path_format": "{track_artist} - {track_name}",
+                        "enable_zfill": True,
+                        "force_album_format": False,
+                        "truncate_length": 40
+                    },
+                    "codecs": {
+                        "proprietary_codecs": False,
+                        "spatial_codecs": True
+                    },
+                    "advanced": {
+                        "download_mode": "ytdlp",
+                        "download_youtube_videos": False,
+                        "save_album_info": False,
+                        "save_credits": False,
+                        "embed_branding": False,
+                        "lyrics_embed": False,
+                        "lyrics_file": False,
+                        "covers_embed": True,
+                        "covers_size": 1400,
+                        "covers_format": "jpg",
+                        "template_folder_album": "{album_artist}/{album}",
+                        "template_folder_compilation": "Compilations/{album}",
+                        "template_file_single_disc": "{track_number}. {artist} - {title}",
+                        "template_file_multi_disc": "{disc_number}-{track_number}. {artist} - {title}",
+                        "template_folder_no_album": "{artist}/Unknown Album",
+                        "template_file_no_album": "{artist} - {title}",
+                        "template_date": "%Y-%m-%dT%H:%M:%SZ",
+                        "exclude_tags": "",
+                        "truncate": 40,
+                        "debug_mode": False,
+                        "codec_conversions": {
+                            "alac": "flac",
+                            "wav": "flac",
+                            "vorbis": "vorbis"
+                        },
+                        "conversion_flags": {
+                            "flac": {
+                                "compression_level": 5
+                            },
+                            "mp3": {
+                                "qscale:a": "0"
+                            },
+                            "aac": {
+                                "audio_bitrate": "256k"
+                            }
+                        },
+                        "conversion_keep_original": False,
+                        "ffmpeg_path": "ffmpeg",
+                        "cover_variance_threshold": 8,
+                        "disable_subscription_checks": False,
+                        "enable_undesirable_conversions": False,
+                        "ignore_existing_files": False,
+                        "ignore_different_artists": True
+                    }
+                },
+                "modules": {}
+            }
+            
+            with open(CONFIG_FILE_PATH, 'w', encoding='utf-8') as f:
+                json.dump(default_orpheus_settings, f, indent=4)
+            
+            print(f"Default settings file created at '{CONFIG_FILE_PATH}'")
+        except Exception as e:
+            error_message = f"CRITICAL ERROR: Could not create default configuration file at '{CONFIG_FILE_PATH}': {e}"
+            print(error_message)
+            raise FileNotFoundError(error_message)
 
     try:
         if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
@@ -534,13 +614,36 @@ def load_settings():
                      if isinstance(section_data, dict) and isinstance(settings["globals"].get(section_key), dict):
                          if section_key == "advanced" and "codec_conversions" in section_data:
                              for key, value in section_data.items():
-                                 if key == "codec_conversions":
-                                     settings["globals"][section_key][key] = copy.deepcopy(value)
-                                 else:
-                                     if key in settings["globals"][section_key] and isinstance(settings["globals"][section_key][key], dict) and isinstance(value, dict):
-                                         deep_merge(settings["globals"][section_key][key], value)
-                                     else:
+                                if key == "codec_conversions":
+                                    settings["globals"][section_key][key] = copy.deepcopy(value)
+                                elif key == "conversion_flags":
+                                    # Special handling for conversion_flags: prevent overwriting nested dicts with strings
+                                    default_flags = settings["globals"][section_key].get(key)
+                                    if isinstance(default_flags, dict) and isinstance(value, dict):
+                                        for sub_key, sub_val in value.items():
+                                            if sub_key in default_flags and isinstance(default_flags[sub_key], dict) and not isinstance(sub_val, dict):
+                                                if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                                                    print(f"Warning: Ignoring invalid conversion flag '{sub_key}': expected dict, got {type(sub_val)}")
+                                                continue 
+                                            
+                                            if sub_key in default_flags and isinstance(default_flags[sub_key], dict) and isinstance(sub_val, dict):
+                                                deep_merge(default_flags[sub_key], sub_val)
+                                            else:
+                                                default_flags[sub_key] = sub_val
+                                    elif isinstance(default_flags, dict) and not isinstance(value, dict):
+                                         pass # Ignore if trying to overwrite flags dict with non-dict
+                                    else:
                                          settings["globals"][section_key][key] = copy.deepcopy(value)
+                                else:
+                                    # Generic protection for other keys
+                                    default_val = settings["globals"][section_key].get(key)
+                                    if isinstance(default_val, dict) and not isinstance(value, dict):
+                                        continue
+
+                                    if key in settings["globals"][section_key] and isinstance(settings["globals"][section_key][key], dict) and isinstance(value, dict):
+                                        deep_merge(settings["globals"][section_key][key], value)
+                                    else:
+                                        settings["globals"][section_key][key] = copy.deepcopy(value)
                          else:
                              deep_merge(settings["globals"][section_key], section_data)
         if "modules" in file_settings:
