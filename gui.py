@@ -559,6 +559,18 @@ def load_settings():
         try:
             os.makedirs(os.path.dirname(CONFIG_FILE_PATH), exist_ok=True)
             
+            # Auto-detect bundled FFmpeg for default settings
+            default_ffmpeg_path = "ffmpeg"
+            app_dir = get_script_directory()
+            if app_dir:
+                if platform.system() == "Windows":
+                    bundled_ffmpeg = os.path.join(app_dir, "ffmpeg.exe")
+                else:
+                    bundled_ffmpeg = os.path.join(app_dir, "ffmpeg")
+                if os.path.isfile(bundled_ffmpeg):
+                    default_ffmpeg_path = bundled_ffmpeg
+                    print(f"[FFmpeg] Using bundled FFmpeg for default settings: {bundled_ffmpeg}")
+            
             # Create default settings structure for Orpheus format
             default_orpheus_settings = {
                 "global": {
@@ -618,7 +630,7 @@ def load_settings():
                             }
                         },
                         "conversion_keep_original": False,
-                        "ffmpeg_path": "ffmpeg",
+                        "ffmpeg_path": default_ffmpeg_path,
                         "cover_variance_threshold": 8,
                         "disable_subscription_checks": False,
                         "enable_undesirable_conversions": False,
@@ -728,6 +740,23 @@ def load_settings():
             "credentials": {},
             "modules": {}
         }
+
+    # Auto-detect bundled FFmpeg if ffmpeg_path is default "ffmpeg"
+    ffmpeg_path_setting = settings.get("globals", {}).get("advanced", {}).get("ffmpeg_path", "ffmpeg")
+    if ffmpeg_path_setting and ffmpeg_path_setting.lower() == "ffmpeg":
+        app_dir = get_script_directory()
+        if app_dir:
+            # Check for ffmpeg.exe (Windows) or ffmpeg (Unix) in app directory
+            if platform.system() == "Windows":
+                bundled_ffmpeg = os.path.join(app_dir, "ffmpeg.exe")
+            else:
+                bundled_ffmpeg = os.path.join(app_dir, "ffmpeg")
+            
+            if os.path.isfile(bundled_ffmpeg):
+                print(f"[FFmpeg] Found bundled FFmpeg at: {bundled_ffmpeg}")
+                if "advanced" not in settings["globals"]:
+                    settings["globals"]["advanced"] = {}
+                settings["globals"]["advanced"]["ffmpeg_path"] = bundled_ffmpeg
 
     current_settings = settings
     return settings
@@ -5616,8 +5645,18 @@ def browse_ffmpeg_path(path_variable):
     if platform.system() == "Windows":
         filetypes.insert(0, ("Executable files", "*.exe"))
 
+    # Determine initial directory - use app directory if ffmpeg_path is default "ffmpeg"
+    current_path = path_variable.get() if path_variable.get() else ""
+    if current_path and current_path.lower() != "ffmpeg" and os.path.exists(os.path.dirname(current_path)):
+        initial_dir = os.path.dirname(current_path)
+    else:
+        # Open the app's installation directory where ffmpeg.exe should be
+        initial_dir = get_script_directory()
+        if not initial_dir or not os.path.isdir(initial_dir):
+            initial_dir = os.path.expanduser("~")
+
     filepath = tkinter.filedialog.askopenfilename(
-        initialdir=os.path.dirname(path_variable.get()) if path_variable.get() and path_variable.get() != "ffmpeg" else os.path.expanduser("~"),
+        initialdir=initial_dir,
         filetypes=filetypes,
         title="Select FFmpeg Executable"
     )
