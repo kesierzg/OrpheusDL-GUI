@@ -3845,23 +3845,36 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
     global search_process_active, app, output_queue, DEFAULT_SETTINGS
     local_DownloadTypeEnum = DownloadTypeEnum
 
-    if orpheus is None:
-        if 'output_queue' in globals() and output_queue:
-            output_queue.put("ERROR: Orpheus instance not available. Cannot start search.\n")
-        print("ERROR: run_search_thread_target called with invalid Orpheus instance.")
-        try:
-            if 'app' in globals() and app and app.winfo_exists():
-                app.after(0, lambda: set_ui_state_searching(False))
-        except NameError: pass
-        except Exception as e: print(f"Error scheduling UI reset after Orpheus instance error: {e}")
-        return
+    # Redirect stdout/stderr to prevent 'NoneType' write errors in frozen apps
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    dummy_stderr = DummyStderr()
+    
+    # In frozen apps, stdout/stderr may be None - redirect to dummy
+    if sys.stdout is None:
+        sys.stdout = dummy_stderr
+    if sys.stderr is None:
+        sys.stderr = dummy_stderr
 
+    # Initialize these before try block so finally can access them
     results = []
     error_message = None
+    early_return = False
+
     try:
+        if orpheus is None:
+            if 'output_queue' in globals() and output_queue:
+                output_queue.put("ERROR: Orpheus instance not available. Cannot start search.\n")
+            try:
+                if 'app' in globals() and app and app.winfo_exists():
+                    app.after(0, lambda: set_ui_state_searching(False))
+            except NameError: pass
+            except Exception: pass
+            early_return = True
+            return
         search_limit = gui_settings.get("globals", {}).get("general", {}).get("search_limit", 20)
         try: search_limit = int(search_limit)
-        except (ValueError, TypeError): print(f"Warning: Invalid search_limit '{search_limit}', defaulting to 20.", file=sys.stderr); search_limit = 20
+        except (ValueError, TypeError): search_limit = 20
         search_type_map = { "track": local_DownloadTypeEnum.track, "album": local_DownloadTypeEnum.album, "artist": local_DownloadTypeEnum.artist, "playlist": local_DownloadTypeEnum.playlist }
         query_type = search_type_map.get(search_type_str.lower())
         if not query_type: raise ValueError(f"Invalid search type: {search_type_str}")
@@ -3880,23 +3893,21 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
     except TypeError as e:
         if "'NoneType' object is not iterable" in str(e):
             error_message = f"Search Error ({platform_name}): Module returned no iterable results. This might be an API issue with the service or a module bug."
-            print(f"[Search Thread Error] Caught NoneType iterable error for {platform_name}. Module likely returned None.", file=sys.stderr)            
             results = [] 
         else:
             error_message = f"Type Error during search: {str(e)}"
-            print(f"[Search Thread Error] {error_message}", file=sys.stderr)
-            import traceback
-            tb_str = traceback.format_exc()
-            print(tb_str, file=sys.stderr)
             results = []
     except Exception as e:
          error_message = f"Error during search: {str(e)}"
-         print(f"[Search Thread Error] {error_message}", file=sys.stderr)
-         import traceback
-         tb_str = traceback.format_exc()
-         print(tb_str, file=sys.stderr)
          results = []
     finally:
+        # Restore original stdout/stderr
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+
+        # Skip UI update if we returned early (e.g., orpheus was None)
+        if early_return:
+            return
 
         def _update_ui():
             global search_process_active
@@ -3909,12 +3920,10 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
             if 'app' in globals() and app and app.winfo_exists():
                 app.after(0, _update_ui)
             else:
-                print("[Debug] 'app' not found for search UI update.")
                 search_process_active = False
         except NameError:
             search_process_active = False
-        except Exception as e:
-            print(f"Error scheduling search UI update: {e}")
+        except Exception:
             search_process_active = False
 
 def start_search():
