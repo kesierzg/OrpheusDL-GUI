@@ -3132,10 +3132,17 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         module_defaults = settings_global_for_defaults.get("module_defaults", {})
         third_party_modules_dict = { ModuleModes.lyrics: module_defaults.get("lyrics") if module_defaults.get("lyrics") != "default" else None, ModuleModes.covers: module_defaults.get("covers") if module_defaults.get("covers") != "default" else None, ModuleModes.credits: module_defaults.get("credits") if module_defaults.get("credits") != "default" else None }
         downloader.third_party_modules = third_party_modules_dict
-        parsed_url = urlparse(url); components = parsed_url.path.split('/'); module_name = None
+        
+        # Normalize Tidal URLs: convert listen.tidal.com to tidal.com for consistent processing
+        normalized_url = url
+        if 'listen.tidal.com' in url:
+            normalized_url = url.replace('listen.tidal.com', 'tidal.com')
+            print(f"Normalized Tidal URL: {url} → {normalized_url}")
+        
+        parsed_url = urlparse(normalized_url); components = parsed_url.path.split('/'); module_name = None
         for netloc_pattern, mod_name in orpheus.module_netloc_constants.items():
             if re.findall(netloc_pattern, parsed_url.netloc): module_name = mod_name; break
-        if not module_name: raise ValueError(f"Could not determine module for URL host: {parsed_url.netloc}")
+        if not module_name: raise ValueError(f"Unsupported URL (no matching module for '{parsed_url.netloc}'): {url}")
         
         yield_to_gui()
         
