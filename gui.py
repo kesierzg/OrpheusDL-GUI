@@ -4768,6 +4768,307 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 text_color="#DCE4EE"
             )
             step3_path.grid(row=7, column=0, sticky="w", padx=12, pady=(1, 8))
+        
+        # Add help text for Deezer module
+        if platform_name == "Deezer":
+            # Helper function to copy value to clipboard with feedback (persistent)
+            def _copy_value_to_clipboard(value, button):
+                try:
+                    # Use persistent clipboard so it survives app close
+                    if not _copy_to_system_clipboard(value):
+                        # Fall back to Tkinter clipboard
+                        app.clipboard_clear()
+                        app.clipboard_append(value)
+                        app.update()
+                    # Show "Copied" feedback
+                    original_text = button.cget("text")
+                    button.configure(text="✓")
+                    button.after(1500, lambda: button.configure(text=original_text))
+                except Exception as e:
+                    print(f"Error copying to clipboard: {e}")
+            
+            help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#242424", corner_radius=5)
+            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
+            help_frame.grid_columnconfigure(0, weight=1)
+            
+            help_title = customtkinter.CTkLabel(
+                help_frame, 
+                text="Recommended bf_secret value:",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            help_title.grid(row=0, column=0, sticky="w", padx=12, pady=(8, 4))
+            
+            # bf_secret value with copy button
+            bf_secret_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            bf_secret_container.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 8))
+            
+            bf_secret_value = "g4el58wc0zvf9na1"
+            bf_secret_label = customtkinter.CTkLabel(
+                bf_secret_container,
+                text=f"  bf_secret: ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            bf_secret_label.pack(side="left")
+            
+            bf_secret_code = customtkinter.CTkLabel(
+                bf_secret_container,
+                text=bf_secret_value,
+                font=("Consolas", 11),
+                text_color="#1F6AA5"
+            )
+            bf_secret_code.pack(side="left", padx=(0, 4))
+            
+            # Copy button with icon
+            deezer_copy_button = customtkinter.CTkButton(
+                bf_secret_container,
+                text="⧉",
+                width=24,
+                height=24,
+                font=("Segoe UI", 14),
+                fg_color="transparent",
+                hover_color="#3B3B3B",
+                text_color="#DCE4EE",
+                corner_radius=3,
+                command=lambda: _copy_value_to_clipboard(bf_secret_value, deezer_copy_button)
+            )
+            deezer_copy_button.pack(side="left")
+            
+            # Hover effect to make icon bigger
+            def on_deezer_copy_enter(e):
+                deezer_copy_button.configure(font=("Segoe UI", 16))
+            
+            def on_deezer_copy_leave(e):
+                deezer_copy_button.configure(font=("Segoe UI", 14))
+            
+            deezer_copy_button.bind("<Enter>", on_deezer_copy_enter)
+            deezer_copy_button.bind("<Leave>", on_deezer_copy_leave)
+        
+        # Add help text for Qobuz module
+        if platform_name == "Qobuz":
+            # Helper function to copy value to clipboard with feedback (persistent)
+            def _copy_qobuz_value(value, button):
+                try:
+                    # Use persistent clipboard so it survives app close
+                    if not _copy_to_system_clipboard(value):
+                        # Fall back to Tkinter clipboard
+                        app.clipboard_clear()
+                        app.clipboard_append(value)
+                        app.update()
+                    # Show "Copied" feedback
+                    original_text = button.cget("text")
+                    button.configure(text="✓")
+                    button.after(1500, lambda: button.configure(text=original_text))
+                except Exception as e:
+                    print(f"Error copying to clipboard: {e}")
+            
+            help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#242424", corner_radius=5)
+            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
+            help_frame.grid_columnconfigure(0, weight=1)
+            
+            help_title = customtkinter.CTkLabel(
+                help_frame, 
+                text="Recommended values:",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            help_title.grid(row=0, column=0, sticky="w", padx=12, pady=(8, 4))
+            
+            # app_id value with copy button
+            app_id_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            app_id_container.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 2))
+            
+            app_id_value = "798273057"
+            app_id_label = customtkinter.CTkLabel(
+                app_id_container,
+                text="  app_id: ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            app_id_label.pack(side="left")
+            
+            app_id_code = customtkinter.CTkLabel(
+                app_id_container,
+                text=app_id_value,
+                font=("Consolas", 11),
+                text_color="#1F6AA5"
+            )
+            app_id_code.pack(side="left", padx=(0, 4))
+            
+            # Copy button for app_id
+            app_id_copy_button = customtkinter.CTkButton(
+                app_id_container,
+                text="⧉",
+                width=24,
+                height=24,
+                font=("Segoe UI", 14),
+                fg_color="transparent",
+                hover_color="#3B3B3B",
+                text_color="#DCE4EE",
+                corner_radius=3,
+                command=lambda: _copy_qobuz_value(app_id_value, app_id_copy_button)
+            )
+            app_id_copy_button.pack(side="left")
+            
+            def on_app_id_copy_enter(e):
+                app_id_copy_button.configure(font=("Segoe UI", 16))
+            def on_app_id_copy_leave(e):
+                app_id_copy_button.configure(font=("Segoe UI", 14))
+            app_id_copy_button.bind("<Enter>", on_app_id_copy_enter)
+            app_id_copy_button.bind("<Leave>", on_app_id_copy_leave)
+            
+            # app_secret value with copy button
+            app_secret_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            app_secret_container.grid(row=2, column=0, sticky="w", padx=12, pady=(0, 8))
+            
+            app_secret_value = "abb21364945c0583309667d13ca3d93a"
+            app_secret_label = customtkinter.CTkLabel(
+                app_secret_container,
+                text="  app_secret: ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            app_secret_label.pack(side="left")
+            
+            app_secret_code = customtkinter.CTkLabel(
+                app_secret_container,
+                text=app_secret_value,
+                font=("Consolas", 11),
+                text_color="#1F6AA5"
+            )
+            app_secret_code.pack(side="left", padx=(0, 4))
+            
+            # Copy button for app_secret
+            app_secret_copy_button = customtkinter.CTkButton(
+                app_secret_container,
+                text="⧉",
+                width=24,
+                height=24,
+                font=("Segoe UI", 14),
+                fg_color="transparent",
+                hover_color="#3B3B3B",
+                text_color="#DCE4EE",
+                corner_radius=3,
+                command=lambda: _copy_qobuz_value(app_secret_value, app_secret_copy_button)
+            )
+            app_secret_copy_button.pack(side="left")
+            
+            def on_app_secret_copy_enter(e):
+                app_secret_copy_button.configure(font=("Segoe UI", 16))
+            def on_app_secret_copy_leave(e):
+                app_secret_copy_button.configure(font=("Segoe UI", 14))
+            app_secret_copy_button.bind("<Enter>", on_app_secret_copy_enter)
+            app_secret_copy_button.bind("<Leave>", on_app_secret_copy_leave)
+        
+        # Add help text for SoundCloud module
+        if platform_name == "SoundCloud":
+            help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#242424", corner_radius=5)
+            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
+            help_frame.grid_columnconfigure(0, weight=1)
+            
+            help_title = customtkinter.CTkLabel(
+                help_frame, 
+                text="How to get your SoundCloud oauth_token:",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            help_title.grid(row=0, column=0, sticky="w", padx=12, pady=(8, 4))
+            
+            # Step 1: Log in with email/password in browser
+            step1_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            step1_container.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 0))
+            
+            step1_prefix = customtkinter.CTkLabel(
+                step1_container,
+                text="  1.  Log in to ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step1_prefix.pack(side="left")
+            
+            soundcloud_link = customtkinter.CTkLabel(
+                step1_container,
+                text="soundcloud.com",
+                font=("Segoe UI", 11, "underline"),
+                text_color="#1F6AA5",
+                cursor="hand2"
+            )
+            soundcloud_link.pack(side="left")
+            soundcloud_link.bind("<Button-1>", lambda e: webbrowser.open("https://soundcloud.com"))
+            soundcloud_link.bind("<Enter>", lambda e: soundcloud_link.configure(text_color="#4A9EFF"))
+            soundcloud_link.bind("<Leave>", lambda e: soundcloud_link.configure(text_color="#1F6AA5"))
+            
+            step1_suffix = customtkinter.CTkLabel(
+                step1_container,
+                text=" with email/password",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step1_suffix.pack(side="left")
+            
+            # Step 2: Hit F12 to open DevTools
+            step2_label = customtkinter.CTkLabel(
+                help_frame,
+                text="  2.  Hit F12 to open DevTools in your browser",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step2_label.grid(row=2, column=0, sticky="w", padx=12, pady=(2, 0))
+            
+            # Step 3: Storage/Application > Cookies
+            step3_label = customtkinter.CTkLabel(
+                help_frame,
+                text="  3.  Storage/Application → Cookies → https://soundcloud.com",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step3_label.grid(row=3, column=0, sticky="w", padx=12, pady=(2, 0))
+            
+            # Step 4: Seek for oauth_token
+            step4_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            step4_container.grid(row=4, column=0, sticky="w", padx=12, pady=(2, 0))
+            
+            step4_prefix = customtkinter.CTkLabel(
+                step4_container,
+                text="  4.  Seek for ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step4_prefix.pack(side="left")
+            
+            step4_token = customtkinter.CTkLabel(
+                step4_container,
+                text="oauth_token",
+                font=("Consolas", 11),
+                text_color="#1F6AA5"
+            )
+            step4_token.pack(side="left")
+            
+            step4_suffix = customtkinter.CTkLabel(
+                step4_container,
+                text=" which looks like: ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step4_suffix.pack(side="left")
+            
+            step4_example = customtkinter.CTkLabel(
+                step4_container,
+                text="2-000000-0000000000-xxxxxxxxxxxxx",
+                font=("Consolas", 10),
+                text_color="#888888"
+            )
+            step4_example.pack(side="left")
+            
+            # Step 5: Copy and paste above
+            step5_label = customtkinter.CTkLabel(
+                help_frame,
+                text="  5.  Copy and paste above",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            step5_label.grid(row=5, column=0, sticky="w", padx=12, pady=(2, 8))
     except Exception as e:
         import traceback
         traceback.print_exc(file=sys.__stderr__)
