@@ -101,6 +101,52 @@ class DummyStderr:
     def write(self, msg): pass
     def flush(self): pass
     def isatty(self): return False
+
+class TidalAutoAuthPatcher:
+    """
+    Context manager that patches input() to automatically handle Tidal TV authentication.
+    When Tidal prompts for login method, this auto-selects TV (option 1).
+    The browser will open automatically via webbrowser.open() in the Tidal module.
+    """
+    def __init__(self, output_queue_ref=None):
+        self.output_queue = output_queue_ref
+        self._original_input = None
+    
+    def __enter__(self):
+        import builtins
+        self._original_input = builtins.input
+        builtins.input = self._tidal_auto_input
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        import builtins
+        builtins.input = self._original_input
+        return False
+    
+    def _tidal_auto_input(self, prompt=''):
+        """
+        Patched input function for Tidal authentication.
+        Automatically responds to known prompts.
+        """
+        prompt_lower = prompt.lower().strip()
+        
+        # Tidal login method selection - auto-select TV (option 1)
+        if 'login method' in prompt_lower:
+            if self.output_queue:
+                self.output_queue.put("TIDAL: Auto-selecting TV login method...\n")
+            return '1'
+        
+        # Tidal relogin prompt - auto-accept
+        if 'relogin' in prompt_lower or ('y/n' in prompt_lower and 'relogin' in prompt_lower):
+            if self.output_queue:
+                self.output_queue.put("TIDAL: Auto-accepting relogin...\n")
+            return 'Y'
+        
+        # For any other prompts, return empty string (shouldn't happen in TV flow)
+        if self.output_queue:
+            self.output_queue.put(f"TIDAL Auth: Unexpected prompt '{prompt}' - returning empty\n")
+        return ''
+
 file_download_queue = []
 output_queue = queue.Queue()
 current_batch_output_path = None
@@ -1062,7 +1108,12 @@ def run_login_in_thread(orpheus, platform_name, gui_settings):
     sys.stderr = dummy_stderr
     
     try:
-        module_instance = orpheus.load_module(platform_name)
+        # Use auto-auth patcher for Tidal to handle TV login automatically
+        if platform_name.lower() == 'tidal':
+            with TidalAutoAuthPatcher(output_queue):
+                module_instance = orpheus.load_module(platform_name)
+        else:
+            module_instance = orpheus.load_module(platform_name)
         if hasattr(module_instance, 'login'):
             if platform_name.lower() == 'beatport':
                 string_io = io.StringIO()
@@ -1215,7 +1266,42 @@ def show_centered_messagebox(title, message, dialog_type="info", parent=None):
              return
 
     dialog = customtkinter.CTkToplevel(parent); dialog.title(title); dialog.geometry("450x150"); dialog.resizable(False, False); dialog.attributes("-topmost", True); dialog.transient(parent)
-    dialog.update_idletasks(); parent_width = parent.winfo_width(); parent_height = parent.winfo_height(); parent_x = parent.winfo_x(); parent_y = parent.winfo_y(); dialog_width = dialog.winfo_width(); dialog_height = dialog.winfo_height()
+    dialog.update_idletasks()
+    
+    # NOTE: CTkToplevel does not support icon setting - this is a known CustomTkinter limitation.
+    # The icon setting code below is kept for potential future CustomTkinter updates, but currently
+    # dialogs will show the default icon. The main window icon works correctly.
+    # 
+    # If icon support is critical, consider using regular tkinter.Toplevel with CustomTkinter styling,
+    # or wait for CustomTkinter to add icon support for CTkToplevel.
+    #
+    # Attempt to set icon (may not work due to CTkToplevel limitations):
+    try:
+        if platform.system() != "Darwin":
+            # Try ICO first on Windows
+            ico_path = resource_path("icon.ico")
+            if ico_path and os.path.exists(ico_path):
+                icon_path_str = str(os.path.abspath(ico_path))
+                try:
+                    # Method 1: Direct tk.call (most likely to work if any method does)
+                    dialog.tk.call('wm', 'iconbitmap', dialog._w, icon_path_str)
+                except Exception:
+                    try:
+                        # Method 2: iconbitmap method
+                        dialog.iconbitmap(icon_path_str)
+                    except Exception:
+                        # Method 3: Try PNG with PhotoImage
+                        png_path = resource_path("icon.png")
+                        if png_path and os.path.exists(png_path):
+                            from tkinter import PhotoImage
+                            icon_image = PhotoImage(file=str(os.path.abspath(png_path)))
+                            dialog.iconphoto(True, icon_image)
+                            if not hasattr(dialog, '_icon_ref'):
+                                dialog._icon_ref = icon_image
+    except Exception:
+        pass
+    
+    parent_width = parent.winfo_width(); parent_height = parent.winfo_height(); parent_x = parent.winfo_x(); parent_y = parent.winfo_y(); dialog_width = dialog.winfo_width(); dialog_height = dialog.winfo_height()
     center_x = parent_x + (parent_width // 2) - (dialog_width // 2); center_y = parent_y + (parent_height // 2) - (dialog_height // 2); dialog.geometry(f"+{center_x}+{center_y}")
     message_label = customtkinter.CTkLabel(dialog, text=message, wraplength=400, justify="left"); message_label.pack(pady=(20, 10), padx=20, expand=True, fill="both")
     ok_button = customtkinter.CTkButton(dialog, text="OK", command=dialog.destroy, width=100); ok_button.pack(pady=(0, 20)); ok_button.focus_set(); dialog.bind("<Return>", lambda event: ok_button.invoke())
@@ -1289,6 +1375,73 @@ def hide_context_menu(event=None):
          finally: _hide_menu_binding_id = None
     _target_widget = None
 
+def _copy_to_system_clipboard(text):
+    """
+    Copy text to system clipboard in a persistent way.
+    Unlike Tkinter's clipboard, this persists after the app closes.
+    """
+    if not text:
+        return False
+    
+    try:
+        if platform.system() == "Windows":
+            # Use PowerShell's Set-Clipboard for persistent copy
+            # This survives after the application closes
+            process = subprocess.Popen(
+                ['powershell', '-command', 'Set-Clipboard', '-Value', text],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            )
+            process.communicate(timeout=2)
+            return process.returncode == 0
+        elif platform.system() == "Darwin":  # macOS
+            process = subprocess.Popen(['pbcopy'], stdin=subprocess.PIPE)
+            process.communicate(text.encode('utf-8'), timeout=2)
+            return process.returncode == 0
+        else:  # Linux
+            # Try xclip first, then xsel
+            for cmd in [['xclip', '-selection', 'clipboard'], ['xsel', '--clipboard', '--input']]:
+                try:
+                    process = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+                    process.communicate(text.encode('utf-8'), timeout=2)
+                    if process.returncode == 0:
+                        return True
+                except FileNotFoundError:
+                    continue
+            return False
+    except Exception as e:
+        print(f"System clipboard copy failed: {e}")
+        return False
+
+def _handle_ctrl_c_copy(event):
+    """
+    Handler for Ctrl+C that uses persistent system clipboard.
+    Bound to entry widgets to ensure clipboard survives app close.
+    """
+    try:
+        widget = event.widget
+        # Get the underlying Tk entry widget if it's a CTkEntry
+        tk_widget = widget._entry if hasattr(widget, '_entry') else widget
+        
+        # Get selected text
+        text_to_copy = ""
+        try:
+            if tk_widget.selection_present():
+                text_to_copy = tk_widget.selection_get()
+        except tkinter.TclError:
+            pass
+        
+        if text_to_copy:
+            _copy_to_system_clipboard(text_to_copy)
+            # Don't prevent default - let Tkinter also handle it for immediate use
+    except Exception as e:
+        pass  # Silently fail, let default Ctrl+C behavior continue
+    
+    # Return None to allow default binding to also execute
+    return None
+
 def copy_text():
     global _target_widget, app
     if not isinstance(_target_widget, customtkinter.CTkEntry): hide_context_menu(); return
@@ -1297,7 +1450,11 @@ def copy_text():
     try:
         try: text_to_copy = _target_widget._entry.selection_get()
         except tkinter.TclError: text_to_copy = _target_widget.get()
-        if text_to_copy: app.clipboard_clear(); app.clipboard_append(text_to_copy); app.update()
+        if text_to_copy:
+            # Try persistent system clipboard first
+            if not _copy_to_system_clipboard(text_to_copy):
+                # Fall back to Tkinter clipboard if system clipboard fails
+                app.clipboard_clear(); app.clipboard_append(text_to_copy); app.update()
     except tkinter.TclError as e: print(f"TclError during copy: {e}")
     except Exception as e: print(f"Error copying text: {e}")
     finally: hide_context_menu()
@@ -2984,7 +3141,12 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         
         try:
             if orpheus.module_settings[module_name].url_decoding is ManualEnum.manual:
-                module_instance = orpheus.load_module(module_name)
+                # Use auto-auth patcher for Tidal to handle TV login automatically
+                if module_name == 'tidal':
+                    with TidalAutoAuthPatcher(output_queue):
+                        module_instance = orpheus.load_module(module_name)
+                else:
+                    module_instance = orpheus.load_module(module_name)
                 media_ident: MediaIdentification = module_instance.custom_url_parse(url)
                 if not media_ident: raise ValueError(f"Module '{module_name}' custom_url_parse failed for URL: {url}")
                 media_type = media_ident.media_type; media_id = media_ident.media_id
@@ -3044,7 +3206,12 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                         else:
                             raise ValueError(f"Could not determine media ID from URL path: {parsed_url.path}")
 
-            downloader.service = orpheus.load_module(module_name)
+            # Use auto-auth patcher for Tidal to handle TV login automatically
+            if module_name == 'tidal':
+                with TidalAutoAuthPatcher(output_queue):
+                    downloader.service = orpheus.load_module(module_name)
+            else:
+                downloader.service = orpheus.load_module(module_name)
             downloader.service_name = module_name
             downloader.download_mode = media_type
             queue_writer.media_type = media_type
@@ -3653,7 +3820,12 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
         search_type_map = { "track": local_DownloadTypeEnum.track, "album": local_DownloadTypeEnum.album, "artist": local_DownloadTypeEnum.artist, "playlist": local_DownloadTypeEnum.playlist }
         query_type = search_type_map.get(search_type_str.lower())
         if not query_type: raise ValueError(f"Invalid search type: {search_type_str}")
-        module_instance = orpheus.load_module(platform_name.lower())
+        # Use auto-auth patcher for Tidal to handle TV login automatically
+        if platform_name.lower() == 'tidal':
+            with TidalAutoAuthPatcher(output_queue):
+                module_instance = orpheus.load_module(platform_name.lower())
+        else:
+            module_instance = orpheus.load_module(platform_name.lower())
         search_results = module_instance.search(query_type, query, limit=search_limit)
         formatted_results = []
         for result in search_results:
@@ -4337,6 +4509,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 widget.bind("<Button-3>", show_context_menu)
                 widget.bind("<Button-2>", show_context_menu)
                 widget.bind("<Control-Button-1>", show_context_menu)
+                widget.bind("<Control-c>", _handle_ctrl_c_copy)
+                widget.bind("<Control-C>", _handle_ctrl_c_copy)
                 widget.bind("<FocusIn>", lambda e, w=widget: handle_focus_in(w))
                 widget.bind("<FocusOut>", lambda e, w=widget: handle_focus_out(w))
             
@@ -4349,12 +4523,15 @@ def _create_credential_tab_content(platform_name, tab_frame):
         
         # Add help text for Spotify module
         if platform_name == "Spotify":
-            # Helper function to copy URL to clipboard with feedback
+            # Helper function to copy URL to clipboard with feedback (persistent)
             def _copy_url_to_clipboard(url, button):
                 try:
-                    app.clipboard_clear()
-                    app.clipboard_append(url)
-                    app.update()
+                    # Use persistent clipboard so it survives app close
+                    if not _copy_to_system_clipboard(url):
+                        # Fall back to Tkinter clipboard
+                        app.clipboard_clear()
+                        app.clipboard_append(url)
+                        app.update()
                     # Show "Copied" feedback
                     original_text = button.cget("text")
                     button.configure(text="✓")
@@ -5221,12 +5398,22 @@ if __name__ == "__main__":
                     try:
                         app.iconbitmap(icon_path)
                         print(f"[Icon] Successfully set icon using app.iconbitmap")
+                        # Also set as default for child windows (Toplevel inheritance)
+                        try:
+                            app.iconbitmap(default=icon_path)
+                        except Exception:
+                            pass
                     except Exception as e1:
                         print(f"[Icon] app.iconbitmap failed: {e1}")
                         try:
                             # Try accessing the underlying tk window
                             app.tk.call('wm', 'iconbitmap', app._w, icon_path)
                             print(f"[Icon] Successfully set icon using tk.call")
+                            # Also set as default for child windows
+                            try:
+                                app.tk.call('wm', 'iconbitmap', app._w, '-default', icon_path)
+                            except Exception:
+                                pass
                         except Exception as e2:
                             print(f"[Icon] tk.call also failed: {e2}")
                 else:
@@ -5259,6 +5446,7 @@ if __name__ == "__main__":
         url_label = customtkinter.CTkLabel(url_frame, text="Input"); url_label.grid(row=0, column=0, sticky="w", padx=5)
         url_entry = customtkinter.CTkEntry(url_frame, placeholder_text="Enter URL or text-file (e.g. urls.txt)...", height=30, placeholder_text_color="#7F7F7F"); url_entry.grid(row=0, column=1, sticky="ew", padx=5)
         url_entry.bind("<Return>", lambda event: start_download_thread()); url_entry.bind("<Button-3>", show_context_menu); url_entry.bind("<Button-2>", show_context_menu); url_entry.bind("<Control-Button-1>", show_context_menu)
+        url_entry.bind("<Control-c>", _handle_ctrl_c_copy); url_entry.bind("<Control-C>", _handle_ctrl_c_copy)
         url_entry.bind("<FocusIn>", lambda e, w=url_entry: handle_focus_in(w))
         url_entry.bind("<FocusOut>", lambda e, w=url_entry: handle_focus_out(w))
         clear_url_button = customtkinter.CTkButton(url_frame, text="Clear", width=100, height=30, command=clear_url_entry, fg_color="#343638", hover_color="#1F6AA5"); clear_url_button.grid(row=0, column=2, sticky="e", padx=5)
@@ -5269,6 +5457,7 @@ if __name__ == "__main__":
         path_var_main.trace_add("write", _auto_save_path_change)
         path_entry = customtkinter.CTkEntry(path_frame, textvariable=path_var_main, height=30); path_entry.grid(row=0, column=1, sticky="ew", padx=5)
         path_entry.bind("<Button-3>", show_context_menu); path_entry.bind("<Button-2>", show_context_menu); path_entry.bind("<Control-Button-1>", show_context_menu)
+        path_entry.bind("<Control-c>", _handle_ctrl_c_copy); path_entry.bind("<Control-C>", _handle_ctrl_c_copy)
         path_entry.bind("<FocusIn>", lambda e, w=path_entry: handle_focus_in(w))
         path_entry.bind("<FocusOut>", lambda e, w=path_entry: handle_focus_out(w))
         path_button = customtkinter.CTkButton(path_frame, text="Browse", width=100, height=30, command=lambda: browse_output_path(path_var_main), fg_color="#343638", hover_color="#1F6AA5"); path_button.grid(row=0, column=2, sticky="e", padx=5)
@@ -5311,6 +5500,7 @@ if __name__ == "__main__":
         search_input_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent"); search_input_frame.grid(row=0, column=4, sticky="ew", padx=(10, 5))
         search_entry = customtkinter.CTkEntry(search_input_frame, placeholder_text="Enter search query...", height=30, placeholder_text_color="#7F7F7F"); search_entry.pack(side="left", fill="x", expand=True, padx=(0, 0))
         search_entry.bind("<Return>", lambda e: start_search()); search_entry.bind("<Button-3>", show_context_menu); search_entry.bind("<Button-2>", show_context_menu); search_entry.bind("<Control-Button-1>", show_context_menu)
+        search_entry.bind("<Control-c>", _handle_ctrl_c_copy); search_entry.bind("<Control-C>", _handle_ctrl_c_copy)
         search_entry.bind("<FocusIn>", lambda e, w=search_entry: handle_focus_in(w))
         search_entry.bind("<FocusOut>", lambda e, w=search_entry: handle_focus_out(w))
         clear_search_button = customtkinter.CTkButton(search_input_frame, text="Clear", command=clear_search_entry, width=100, height=30, fg_color="#343638", hover_color="#1F6AA5"); clear_search_button.pack(side="left", padx=(10, 0))
