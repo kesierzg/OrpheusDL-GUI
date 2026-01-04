@@ -626,7 +626,23 @@ def load_settings():
                         "ignore_different_artists": True
                     }
                 },
-                "modules": {}
+                "modules": {
+                    "deezer": {
+                        "client_id": "447462",
+                        "client_secret": "a83bf7f38ad2f137e444727cfc3775cf",
+                        "bf_secret": "g4el58wc0zvf9na1"
+                    },
+                    "qobuz": {
+                        "app_id": "798273057",
+                        "app_secret": "abb21364945c0583309667d13ca3d93a"
+                    },
+                    "tidal": {
+                        "tv_atmos_token": "4N3n6Q1x95LL5K7p",
+                        "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=",
+                        "mobile_atmos_hires_token": "km8T1xS355y7dd3H",
+                        "mobile_hires_token": "6BDSRdpK9hqEBTgU"
+                    }
+                }
             }
             
             with open(CONFIG_FILE_PATH, 'w', encoding='utf-8') as f:
@@ -4772,7 +4788,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Add help text for Deezer module
         if platform_name == "Deezer":
             # Helper function to copy value to clipboard with feedback (persistent)
-            def _copy_value_to_clipboard(value, button):
+            def _copy_deezer_value(value, button):
                 try:
                     # Use persistent clipboard so it survives app close
                     if not _copy_to_system_clipboard(value):
@@ -4793,20 +4809,106 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             help_title = customtkinter.CTkLabel(
                 help_frame, 
-                text="Recommended bf_secret value:",
+                text="Recommended values:",
                 font=("Segoe UI", 11),
                 text_color="#DCE4EE"
             )
             help_title.grid(row=0, column=0, sticky="w", padx=12, pady=(8, 4))
             
+            # client_id value with copy button
+            client_id_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            client_id_container.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 2))
+            
+            client_id_value = "447462"
+            client_id_label = customtkinter.CTkLabel(
+                client_id_container,
+                text="  client_id: ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            client_id_label.pack(side="left")
+            
+            client_id_code = customtkinter.CTkLabel(
+                client_id_container,
+                text=client_id_value,
+                font=("Consolas", 11),
+                text_color="#1F6AA5"
+            )
+            client_id_code.pack(side="left", padx=(0, 4))
+            
+            # Copy button for client_id
+            client_id_copy_button = customtkinter.CTkButton(
+                client_id_container,
+                text="⧉",
+                width=24,
+                height=24,
+                font=("Segoe UI", 14),
+                fg_color="transparent",
+                hover_color="#3B3B3B",
+                text_color="#DCE4EE",
+                corner_radius=3,
+                command=lambda: _copy_deezer_value(client_id_value, client_id_copy_button)
+            )
+            client_id_copy_button.pack(side="left")
+            
+            def on_client_id_copy_enter(e):
+                client_id_copy_button.configure(font=("Segoe UI", 16))
+            def on_client_id_copy_leave(e):
+                client_id_copy_button.configure(font=("Segoe UI", 14))
+            client_id_copy_button.bind("<Enter>", on_client_id_copy_enter)
+            client_id_copy_button.bind("<Leave>", on_client_id_copy_leave)
+            
+            # client_secret value with copy button
+            client_secret_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            client_secret_container.grid(row=2, column=0, sticky="w", padx=12, pady=(0, 2))
+            
+            client_secret_value = "a83bf7f38ad2f137e444727cfc3775cf"
+            client_secret_label = customtkinter.CTkLabel(
+                client_secret_container,
+                text="  client_secret: ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            client_secret_label.pack(side="left")
+            
+            client_secret_code = customtkinter.CTkLabel(
+                client_secret_container,
+                text=client_secret_value,
+                font=("Consolas", 11),
+                text_color="#1F6AA5"
+            )
+            client_secret_code.pack(side="left", padx=(0, 4))
+            
+            # Copy button for client_secret
+            client_secret_copy_button = customtkinter.CTkButton(
+                client_secret_container,
+                text="⧉",
+                width=24,
+                height=24,
+                font=("Segoe UI", 14),
+                fg_color="transparent",
+                hover_color="#3B3B3B",
+                text_color="#DCE4EE",
+                corner_radius=3,
+                command=lambda: _copy_deezer_value(client_secret_value, client_secret_copy_button)
+            )
+            client_secret_copy_button.pack(side="left")
+            
+            def on_client_secret_copy_enter(e):
+                client_secret_copy_button.configure(font=("Segoe UI", 16))
+            def on_client_secret_copy_leave(e):
+                client_secret_copy_button.configure(font=("Segoe UI", 14))
+            client_secret_copy_button.bind("<Enter>", on_client_secret_copy_enter)
+            client_secret_copy_button.bind("<Leave>", on_client_secret_copy_leave)
+            
             # bf_secret value with copy button
             bf_secret_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            bf_secret_container.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 8))
+            bf_secret_container.grid(row=3, column=0, sticky="w", padx=12, pady=(0, 8))
             
             bf_secret_value = "g4el58wc0zvf9na1"
             bf_secret_label = customtkinter.CTkLabel(
                 bf_secret_container,
-                text=f"  bf_secret: ",
+                text="  bf_secret: ",
                 font=("Segoe UI", 11),
                 text_color="#DCE4EE"
             )
@@ -4820,8 +4922,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
             )
             bf_secret_code.pack(side="left", padx=(0, 4))
             
-            # Copy button with icon
-            deezer_copy_button = customtkinter.CTkButton(
+            # Copy button for bf_secret
+            bf_secret_copy_button = customtkinter.CTkButton(
                 bf_secret_container,
                 text="⧉",
                 width=24,
@@ -4831,19 +4933,16 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 hover_color="#3B3B3B",
                 text_color="#DCE4EE",
                 corner_radius=3,
-                command=lambda: _copy_value_to_clipboard(bf_secret_value, deezer_copy_button)
+                command=lambda: _copy_deezer_value(bf_secret_value, bf_secret_copy_button)
             )
-            deezer_copy_button.pack(side="left")
+            bf_secret_copy_button.pack(side="left")
             
-            # Hover effect to make icon bigger
-            def on_deezer_copy_enter(e):
-                deezer_copy_button.configure(font=("Segoe UI", 16))
-            
-            def on_deezer_copy_leave(e):
-                deezer_copy_button.configure(font=("Segoe UI", 14))
-            
-            deezer_copy_button.bind("<Enter>", on_deezer_copy_enter)
-            deezer_copy_button.bind("<Leave>", on_deezer_copy_leave)
+            def on_bf_secret_copy_enter(e):
+                bf_secret_copy_button.configure(font=("Segoe UI", 16))
+            def on_bf_secret_copy_leave(e):
+                bf_secret_copy_button.configure(font=("Segoe UI", 14))
+            bf_secret_copy_button.bind("<Enter>", on_bf_secret_copy_enter)
+            bf_secret_copy_button.bind("<Leave>", on_bf_secret_copy_leave)
         
         # Add help text for Qobuz module
         if platform_name == "Qobuz":
@@ -5069,6 +5168,184 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 text_color="#DCE4EE"
             )
             step5_label.grid(row=5, column=0, sticky="w", padx=12, pady=(2, 8))
+        
+        # Add help text for Tidal module
+        if platform_name == "Tidal":
+            # Helper function to copy value to clipboard with feedback (persistent)
+            def _copy_tidal_value(value, button):
+                try:
+                    # Use persistent clipboard so it survives app close
+                    if not _copy_to_system_clipboard(value):
+                        # Fall back to Tkinter clipboard
+                        app.clipboard_clear()
+                        app.clipboard_append(value)
+                        app.update()
+                    # Show "Copied" feedback
+                    original_text = button.cget("text")
+                    button.configure(text="✓")
+                    button.after(1500, lambda: button.configure(text=original_text))
+                except Exception as e:
+                    print(f"Error copying to clipboard: {e}")
+            
+            help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#242424", corner_radius=5)
+            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
+            help_frame.grid_columnconfigure(0, weight=1)
+            
+            help_title = customtkinter.CTkLabel(
+                help_frame, 
+                text="Recommended values:",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            help_title.grid(row=0, column=0, sticky="w", padx=12, pady=(8, 4))
+            
+            # tv_atmos_token
+            tv_atmos_token_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            tv_atmos_token_container.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 2))
+            
+            tv_atmos_token_value = "4N3n6Q1x95LL5K7p"
+            tv_atmos_token_label = customtkinter.CTkLabel(
+                tv_atmos_token_container,
+                text="  tv_atmos_token: ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            tv_atmos_token_label.pack(side="left")
+            
+            tv_atmos_token_code = customtkinter.CTkLabel(
+                tv_atmos_token_container,
+                text=tv_atmos_token_value,
+                font=("Consolas", 11),
+                text_color="#1F6AA5"
+            )
+            tv_atmos_token_code.pack(side="left", padx=(0, 4))
+            
+            tv_atmos_token_copy_btn = customtkinter.CTkButton(
+                tv_atmos_token_container,
+                text="⧉",
+                width=24,
+                height=24,
+                font=("Segoe UI", 14),
+                fg_color="transparent",
+                hover_color="#3B3B3B",
+                text_color="#DCE4EE",
+                corner_radius=3,
+                command=lambda: _copy_tidal_value(tv_atmos_token_value, tv_atmos_token_copy_btn)
+            )
+            tv_atmos_token_copy_btn.pack(side="left")
+            tv_atmos_token_copy_btn.bind("<Enter>", lambda e: tv_atmos_token_copy_btn.configure(font=("Segoe UI", 16)))
+            tv_atmos_token_copy_btn.bind("<Leave>", lambda e: tv_atmos_token_copy_btn.configure(font=("Segoe UI", 14)))
+            
+            # tv_atmos_secret
+            tv_atmos_secret_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            tv_atmos_secret_container.grid(row=2, column=0, sticky="w", padx=12, pady=(0, 2))
+            
+            tv_atmos_secret_value = "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik="
+            tv_atmos_secret_label = customtkinter.CTkLabel(
+                tv_atmos_secret_container,
+                text="  tv_atmos_secret: ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            tv_atmos_secret_label.pack(side="left")
+            
+            tv_atmos_secret_code = customtkinter.CTkLabel(
+                tv_atmos_secret_container,
+                text=tv_atmos_secret_value,
+                font=("Consolas", 11),
+                text_color="#1F6AA5"
+            )
+            tv_atmos_secret_code.pack(side="left", padx=(0, 4))
+            
+            tv_atmos_secret_copy_btn = customtkinter.CTkButton(
+                tv_atmos_secret_container,
+                text="⧉",
+                width=24,
+                height=24,
+                font=("Segoe UI", 14),
+                fg_color="transparent",
+                hover_color="#3B3B3B",
+                text_color="#DCE4EE",
+                corner_radius=3,
+                command=lambda: _copy_tidal_value(tv_atmos_secret_value, tv_atmos_secret_copy_btn)
+            )
+            tv_atmos_secret_copy_btn.pack(side="left")
+            tv_atmos_secret_copy_btn.bind("<Enter>", lambda e: tv_atmos_secret_copy_btn.configure(font=("Segoe UI", 16)))
+            tv_atmos_secret_copy_btn.bind("<Leave>", lambda e: tv_atmos_secret_copy_btn.configure(font=("Segoe UI", 14)))
+            
+            # mobile_atmos_hires_token
+            mobile_atmos_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            mobile_atmos_container.grid(row=3, column=0, sticky="w", padx=12, pady=(0, 2))
+            
+            mobile_atmos_value = "km8T1xS355y7dd3H"
+            mobile_atmos_label = customtkinter.CTkLabel(
+                mobile_atmos_container,
+                text="  mobile_atmos_hires_token: ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            mobile_atmos_label.pack(side="left")
+            
+            mobile_atmos_code = customtkinter.CTkLabel(
+                mobile_atmos_container,
+                text=mobile_atmos_value,
+                font=("Consolas", 11),
+                text_color="#1F6AA5"
+            )
+            mobile_atmos_code.pack(side="left", padx=(0, 4))
+            
+            mobile_atmos_copy_btn = customtkinter.CTkButton(
+                mobile_atmos_container,
+                text="⧉",
+                width=24,
+                height=24,
+                font=("Segoe UI", 14),
+                fg_color="transparent",
+                hover_color="#3B3B3B",
+                text_color="#DCE4EE",
+                corner_radius=3,
+                command=lambda: _copy_tidal_value(mobile_atmos_value, mobile_atmos_copy_btn)
+            )
+            mobile_atmos_copy_btn.pack(side="left")
+            mobile_atmos_copy_btn.bind("<Enter>", lambda e: mobile_atmos_copy_btn.configure(font=("Segoe UI", 16)))
+            mobile_atmos_copy_btn.bind("<Leave>", lambda e: mobile_atmos_copy_btn.configure(font=("Segoe UI", 14)))
+            
+            # mobile_hires_token
+            mobile_hires_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            mobile_hires_container.grid(row=4, column=0, sticky="w", padx=12, pady=(0, 8))
+            
+            mobile_hires_value = "6BDSRdpK9hqEBTgU"
+            mobile_hires_label = customtkinter.CTkLabel(
+                mobile_hires_container,
+                text="  mobile_hires_token: ",
+                font=("Segoe UI", 11),
+                text_color="#DCE4EE"
+            )
+            mobile_hires_label.pack(side="left")
+            
+            mobile_hires_code = customtkinter.CTkLabel(
+                mobile_hires_container,
+                text=mobile_hires_value,
+                font=("Consolas", 11),
+                text_color="#1F6AA5"
+            )
+            mobile_hires_code.pack(side="left", padx=(0, 4))
+            
+            mobile_hires_copy_btn = customtkinter.CTkButton(
+                mobile_hires_container,
+                text="⧉",
+                width=24,
+                height=24,
+                font=("Segoe UI", 14),
+                fg_color="transparent",
+                hover_color="#3B3B3B",
+                text_color="#DCE4EE",
+                corner_radius=3,
+                command=lambda: _copy_tidal_value(mobile_hires_value, mobile_hires_copy_btn)
+            )
+            mobile_hires_copy_btn.pack(side="left")
+            mobile_hires_copy_btn.bind("<Enter>", lambda e: mobile_hires_copy_btn.configure(font=("Segoe UI", 16)))
+            mobile_hires_copy_btn.bind("<Leave>", lambda e: mobile_hires_copy_btn.configure(font=("Segoe UI", 14)))
     except Exception as e:
         import traceback
         traceback.print_exc(file=sys.__stderr__)
@@ -5605,16 +5882,16 @@ if __name__ == "__main__":
                 "Beatport": { "username": "", "password": "" },
                 "Beatsource": { "username": "", "password": "" },
                 "Bugs": { "username": "", "password": "" },
-                "Deezer": { "client_id": "", "client_secret": "", "bf_secret": "", "email": "", "password": "" },
+                "Deezer": { "client_id": "447462", "client_secret": "a83bf7f38ad2f137e444727cfc3775cf", "bf_secret": "g4el58wc0zvf9na1", "email": "", "password": "" },
                 "Idagio": { "username": "", "password": "" }, 
                 "KKBOX": { "kc1_key": "", "secret_key": "", "email": "", "password": "" },
                 "Musixmatch": { "token_limit": 10, "lyrics_format": "standard", "custom_time_decimals": False },
                 "Napster": { "api_key": "", "customer_secret": "", "requested_netloc": "", "username": "", "password": "" },
                 "Nugs": { "username": "", "password": "", "client_id": "", "dev_key": "" },
-                "Qobuz": { "app_id": "", "app_secret": "", "quality_format": "{sample_rate}kHz {bit_depth}bit", "username": "", "password": "" },
+                "Qobuz": { "app_id": "798273057", "app_secret": "abb21364945c0583309667d13ca3d93a", "quality_format": "{sample_rate}kHz {bit_depth}bit", "username": "", "password": "" },
                 "SoundCloud": { "web_access_token": "" },
                 "Spotify": { "username": "", "download_pause_seconds": 30, "client_id": "", "client_secret": "" },
-                "Tidal": { "tv_atmos_token": "", "tv_atmos_secret": "", "mobile_atmos_hires_token": "", "mobile_hires_token": "", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True }
+                "Tidal": { "tv_atmos_token": "4N3n6Q1x95LL5K7p", "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=", "mobile_atmos_hires_token": "km8T1xS355y7dd3H", "mobile_hires_token": "6BDSRdpK9hqEBTgU", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True }
             }
         }
         installed_platform_keys = []
@@ -6128,7 +6405,7 @@ Unnecessary Lossless-to-Lossless""",
                          var = tkinter.StringVar(value=str(current_value)); settings_vars["globals"][full_key] = var
                          if section_key == "general" and field == "output_path":
                             widget = customtkinter.CTkEntry(global_settings_frame, textvariable=var)
-                            widget.grid(row=row, column=1, sticky="ew", padx=(5,1))
+                            widget.grid(row=row, column=1, sticky="ew", padx=(5, 5))
                             widget.bind("<Button-3>", show_context_menu)
                             widget.bind("<FocusIn>", lambda e, w=widget: handle_focus_in(w))
                             widget.bind("<FocusOut>", lambda e, w=widget: handle_focus_out(w))
@@ -6137,7 +6414,7 @@ Unnecessary Lossless-to-Lossless""",
                                                                fg_color=widget._fg_color, hover_color="#1F6AA5",
                                                                border_width=widget._border_width if hasattr(widget, '_border_width') else 0, 
                                                                border_color=widget._border_color if hasattr(widget, '_border_color') else None)
-                            browse_btn.grid(row=row, column=2, sticky="w", padx=(1,5))
+                            browse_btn.grid(row=row, column=2, sticky="w", padx=(0, 5))
                          elif section_key == "general" and field == "quality":
                             quality_options = ["hifi", "lossless", "high", "low"]
                             current_val_str = var.get().lower()
@@ -6323,7 +6600,7 @@ Unnecessary Lossless-to-Lossless""",
                             ffmpeg_path_frame.grid_columnconfigure(0, weight=1)
 
                             widget = customtkinter.CTkEntry(ffmpeg_path_frame, textvariable=var)
-                            widget.grid(row=0, column=0, sticky="ew", padx=(0,1))
+                            widget.grid(row=0, column=0, sticky="ew", padx=(0, 5))
                             widget.bind("<Button-3>", show_context_menu)
                             widget.bind("<FocusIn>", lambda e, w=widget: handle_focus_in(w))
                             widget.bind("<FocusOut>", lambda e, w=widget: handle_focus_out(w))
@@ -6333,7 +6610,7 @@ Unnecessary Lossless-to-Lossless""",
                                                                fg_color=widget._fg_color, hover_color="#1F6AA5",
                                                                border_width=widget._border_width if hasattr(widget, '_border_width') else 0, 
                                                                border_color=widget._border_color if hasattr(widget, '_border_color') else None)
-                            browse_btn.grid(row=0, column=1, sticky="w", padx=(1,0))
+                            browse_btn.grid(row=0, column=1, sticky="w", padx=(0, 0))
                          else:
                             widget = customtkinter.CTkEntry(global_settings_frame, textvariable=var)
                             widget.grid(row=row, column=1, sticky="ew", padx=5, pady=2, columnspan=2)
