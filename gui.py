@@ -3845,16 +3845,15 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
     global search_process_active, app, output_queue, DEFAULT_SETTINGS
     local_DownloadTypeEnum = DownloadTypeEnum
 
-    # Redirect stdout/stderr to prevent 'NoneType' write errors in frozen apps
+    # Redirect stdout/stderr to QueueWriter to handle frozen apps and capture auth output
     original_stdout = sys.stdout
     original_stderr = sys.stderr
     dummy_stderr = DummyStderr()
+    queue_writer = QueueWriter(output_queue)
     
-    # In frozen apps, stdout/stderr may be None - redirect to dummy
-    if sys.stdout is None:
-        sys.stdout = dummy_stderr
-    if sys.stderr is None:
-        sys.stderr = dummy_stderr
+    # Always redirect stdout to QueueWriter for proper Tidal TV auth handling
+    sys.stdout = queue_writer
+    sys.stderr = dummy_stderr
 
     # Initialize these before try block so finally can access them
     results = []
