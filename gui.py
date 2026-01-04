@@ -826,19 +826,50 @@ def initialize_orpheus():
 
     if orpheus_instance is None:
         try:
-            if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                print(f"Initializing global Orpheus instance (CWD: {os.getcwd()})...")
+            print(f"[Orpheus Init] Initializing Orpheus engine (CWD: {os.getcwd()})...")
             
             orpheus_instance = Orpheus()
             
-            if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                print("Global Orpheus instance initialized successfully.")
+            print("[Orpheus Init] Orpheus engine initialized successfully.")
             return True
+        except SystemExit as e:
+            # Orpheus calls exit() when no modules are installed
+            print("\n" + "="*60)
+            print("ORPHEUS INITIALIZATION FAILED")
+            print("="*60)
+            print("The Orpheus engine could not start. Common causes:")
+            print("  1. No download modules installed in 'modules' folder")
+            print("  2. The 'modules' folder only contains 'example'")
+            print("  3. Module files are missing or corrupted")
+            print("")
+            print("Solution: Install at least one download module")
+            print("  (e.g., tidal, qobuz, deezer, spotify, etc.)")
+            print("="*60 + "\n")
+            try:
+                if 'app' in globals() and app and app.winfo_exists():
+                    app.after(100, lambda: show_centered_messagebox("Initialization Error", 
+                        "No download modules are installed.\n\nPlease install at least one module in the 'modules' folder.", 
+                        dialog_type="error"))
+                if 'download_button' in globals() and download_button and download_button.winfo_exists():
+                    download_button.configure(state="disabled")
+                if 'search_button' in globals() and search_button and search_button.winfo_exists():
+                    search_button.configure(state="disabled")
+            except NameError: pass
+            except Exception as gui_e: print(f"Error showing Orpheus init error in GUI: {gui_e}")
+            return False
         except Exception as e:
             import traceback
             tb_str = traceback.format_exc()
-            error_message_init = f"FATAL: Failed to initialize Orpheus library (CWD: {os.getcwd()}).\nError Type: {type(e).__name__}\nError: {e}\nTraceback:\n{tb_str}"
-            print(error_message_init)
+            print("\n" + "="*60)
+            print("ORPHEUS INITIALIZATION FAILED")
+            print("="*60)
+            print(f"Error Type: {type(e).__name__}")
+            print(f"Error: {e}")
+            print(f"CWD: {os.getcwd()}")
+            print("-"*60)
+            print("Traceback:")
+            print(tb_str)
+            print("="*60 + "\n")
             try:
                 if 'app' in globals() and app and app.winfo_exists():
                     user_error_msg_init = f"Failed to start the Orpheus download engine: {e}. Please check your settings and ensure all components are correctly placed. If the problem persists, check the console output for more details."
@@ -6805,6 +6836,20 @@ Unnecessary Lossless-to-Lossless""",
             if 'download_button' in globals() and download_button and download_button.winfo_exists(): download_button.configure(state="disabled")
             if 'search_button' in globals() and search_button and search_button.winfo_exists(): search_button.configure(state="disabled")
             if 'search_download_button' in globals() and search_download_button and search_download_button.winfo_exists(): search_download_button.configure(state="disabled")
+            # Show delayed error message after GUI is fully loaded
+            def _show_init_error():
+                show_centered_messagebox(
+                    "Initialization Error",
+                    "The Orpheus download engine failed to initialize.\n\n"
+                    "This usually happens when:\n"
+                    "• No download modules are installed in the 'modules' folder\n"
+                    "• The settings.json file is corrupted\n"
+                    "• Required dependencies are missing\n\n"
+                    "Please check the console output for more details.\n"
+                    "Download and Search features are disabled.",
+                    dialog_type="error"
+                )
+            app.after(500, _show_init_error)
         setup_logging(output_queue)
         update_log_area()
         try:
