@@ -6013,11 +6013,23 @@ if __name__ == "__main__":
         current_settings = {}
         settings_vars = {"globals": {}, "credentials": {}}
         orpheus_instance = None
+        _settings_just_created = False
         try:
+            # Check if this is first run (settings file doesn't exist yet)
+            _settings_just_created = not os.path.exists(CONFIG_FILE_PATH)
             load_settings()
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print(f"[DEBUG] After load_settings: output_path = {current_settings.get('globals', {}).get('general', {}).get('output_path')}")
-            initialize_orpheus()
+            
+            init_success = initialize_orpheus()
+            
+            # If initialization failed on first run, Orpheus may have written necessary config
+            # Try once more after reloading settings
+            if not init_success and _settings_just_created:
+                print("[First Run] Initial Orpheus setup may have updated settings. Retrying initialization...")
+                time.sleep(0.5)  # Brief pause to ensure file writes complete
+                load_settings()  # Reload potentially updated settings
+                initialize_orpheus()  # Retry
         except FileNotFoundError as e:
              print(f"Initialization failed: {e}")
              sys.exit(1)
