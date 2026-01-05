@@ -104,10 +104,12 @@ if platform.system() == 'Darwin':
 
     app = BUNDLE(
         exe,
-        name='OrpheusDL_GUI.app',
+        name='OrpheusDL GUI.app',
         icon='icon.icns',
-        bundle_identifier=None,
+        bundle_identifier='com.orpheusdl.gui',
         info_plist={
+            'CFBundleName': 'OrpheusDL GUI',
+            'CFBundleDisplayName': 'OrpheusDL GUI',
             'NSHighResolutionCapable': 'True',
             'NSRequiresAquaSystemAppearance': 'False'
         }

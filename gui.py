@@ -53,6 +53,7 @@ if sys.platform == "win32":
         print(f"[Patch] WARNING: Failed to set asyncio.WindowsSelectorEventLoopPolicy(): {e}")
 
 _SCRIPT_DIR = None
+_DATA_DIR = None
 
 SERVICE_COLORS = {
     "tidal": "#33ffe7",
@@ -313,6 +314,35 @@ def get_script_directory():
             except AttributeError:
                 script_path = os.path.abspath(os.path.dirname(sys.argv[0]))
         return script_path
+
+def get_data_directory():
+    """Gets the directory for user data (config, modules, extensions).
+    
+    On macOS bundled apps, uses ~/Library/Application Support/OrpheusDL GUI/
+    since apps in /Applications cannot write to their own directory.
+    Otherwise, uses the script directory.
+    """
+    if getattr(sys, 'frozen', False) and platform.system() == "Darwin":
+        abs_executable_path = os.path.abspath(sys.executable)
+        # Check if this is a bundled .app
+        if ".app/Contents/MacOS" in abs_executable_path:
+            script_dir = get_script_directory()
+            # Test if we can write to the script directory
+            test_path = os.path.join(script_dir, ".write_test")
+            try:
+                with open(test_path, 'w') as f:
+                    f.write("test")
+                os.remove(test_path)
+                print(f"[macOS] Script directory is writable: {script_dir}")
+                return script_dir
+            except (IOError, OSError, PermissionError):
+                # Cannot write to script directory, use Application Support
+                app_support = os.path.expanduser("~/Library/Application Support/OrpheusDL GUI")
+                os.makedirs(app_support, exist_ok=True)
+                print(f"[macOS] Script directory not writable, using Application Support: {app_support}")
+                return app_support
+    # Default: use the script directory
+    return get_script_directory()
     
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -763,7 +793,7 @@ def load_settings():
 
 def initialize_orpheus():
     """Attempts to initialize the global Orpheus instance."""
-    global orpheus_instance, app, download_button, search_button, DATA_DIR, _SCRIPT_DIR
+    global orpheus_instance, app, download_button, search_button, DATA_DIR, _SCRIPT_DIR, _DATA_DIR
 
     if not ORPHEUS_AVAILABLE:
         print("Orpheus library not available. Skipping initialization.")
@@ -775,38 +805,41 @@ def initialize_orpheus():
         except Exception as gui_e: print(f"Error showing Orpheus unavailable message in GUI: {gui_e}")
         return False
 
-    if _SCRIPT_DIR is None:
-        error_message = "FATAL ERROR: _SCRIPT_DIR (application base path) is not set. Cannot reliably initialize Orpheus. The application may be in an inconsistent state or not launched correctly."
+    # Use _DATA_DIR for working directory (writable location)
+    target_dir = _DATA_DIR if _DATA_DIR else _SCRIPT_DIR
+    
+    if target_dir is None:
+        error_message = "FATAL ERROR: Application data path is not set. Cannot reliably initialize Orpheus. The application may be in an inconsistent state or not launched correctly."
         print(error_message)
         try:
             if 'app' in globals() and app and app.winfo_exists():
                 app.after(100, lambda: show_centered_messagebox("Critical Application Error", error_message, dialog_type="error"))
-        except Exception as gui_e: print(f"Error showing critical _SCRIPT_DIR error in GUI: {gui_e}")
+        except Exception as gui_e: print(f"Error showing critical path error in GUI: {gui_e}")
         return False
-    elif not os.path.isdir(_SCRIPT_DIR):
-        error_message = f"FATAL ERROR: _SCRIPT_DIR '{_SCRIPT_DIR}' is not a valid directory. Cannot initialize Orpheus."
+    elif not os.path.isdir(target_dir):
+        error_message = f"FATAL ERROR: Application data path '{target_dir}' is not a valid directory. Cannot initialize Orpheus."
         print(error_message)
         try:
             if 'app' in globals() and app and app.winfo_exists():
                 app.after(100, lambda: show_centered_messagebox("Critical Application Error", error_message, dialog_type="error"))
-        except Exception as gui_e: print(f"Error showing critical _SCRIPT_DIR directory error in GUI: {gui_e}")
+        except Exception as gui_e: print(f"Error showing critical directory error in GUI: {gui_e}")
         return False
     original_cwd = os.getcwd()
     normalized_original_cwd = os.path.normpath(original_cwd)
-    normalized_script_dir = os.path.normpath(_SCRIPT_DIR)
+    normalized_target_dir = os.path.normpath(target_dir)
 
-    if normalized_original_cwd != normalized_script_dir:
-        print(f"[Initialize Orpheus] Current CWD is '{original_cwd}'. Target application directory (_SCRIPT_DIR) is '{_SCRIPT_DIR}'. Attempting to change CWD.")
+    if normalized_original_cwd != normalized_target_dir:
+        print(f"[Initialize Orpheus] Current CWD is '{original_cwd}'. Target data directory is '{target_dir}'. Attempting to change CWD.")
         try:
-            os.chdir(_SCRIPT_DIR)
+            os.chdir(target_dir)
             new_cwd = os.getcwd()
             print(f"[Initialize Orpheus] CWD successfully changed to '{new_cwd}'.")
-            if os.path.normpath(new_cwd) != normalized_script_dir:
-                print(f"[Initialize Orpheus] WARNING: CWD changed to '{new_cwd}', but it does not match the normalized _SCRIPT_DIR '{normalized_script_dir}'. This might indicate issues.")
+            if os.path.normpath(new_cwd) != normalized_target_dir:
+                print(f"[Initialize Orpheus] WARNING: CWD changed to '{new_cwd}', but it does not match the normalized target '{normalized_target_dir}'. This might indicate issues.")
         except Exception as e_chdir:
             error_detail = f"Type: {type(e_chdir).__name__}, Message: {e_chdir}"
             tb_str_chdir = traceback.format_exc()
-            error_message_chdir = f"CRITICAL ERROR: Failed to change CWD to application directory '{_SCRIPT_DIR}' needed for Orpheus initialization.\nError: {error_detail}\nFull Traceback:\n{tb_str_chdir}\nOrpheus will likely fail to initialize or function correctly."
+            error_message_chdir = f"CRITICAL ERROR: Failed to change CWD to data directory '{target_dir}' needed for Orpheus initialization.\nError: {error_detail}\nFull Traceback:\n{tb_str_chdir}\nOrpheus will likely fail to initialize or function correctly."
             print(error_message_chdir)
             try:
                 if 'app' in globals() and app and app.winfo_exists():
@@ -5929,32 +5962,38 @@ if __name__ == "__main__":
             sys.exit("Failed single instance check.")
     if multiprocessing.parent_process() is None:
         print(f"[Main Process {os.getpid()}] Starting application...")
+        global _SCRIPT_DIR, _DATA_DIR
         _SCRIPT_DIR = get_script_directory()
+        _DATA_DIR = get_data_directory()
+        print(f"[Init] Script directory: {_SCRIPT_DIR}")
+        print(f"[Init] Data directory: {_DATA_DIR}")
         try:
-            os.makedirs(os.path.join(_SCRIPT_DIR if _SCRIPT_DIR and os.path.isdir(_SCRIPT_DIR) else os.getcwd(), 'temp'), exist_ok=True)
+            os.makedirs(os.path.join(_DATA_DIR if _DATA_DIR and os.path.isdir(_DATA_DIR) else os.getcwd(), 'temp'), exist_ok=True)
             print("[Init] Ensured temp directory exists.")
-            if _SCRIPT_DIR and os.path.isdir(_SCRIPT_DIR):
-                os.chdir(_SCRIPT_DIR)
-                print(f"[CWD] Changed working directory to: {_SCRIPT_DIR}")
-            elif _SCRIPT_DIR:
-                print(f"[CWD] FATAL: _SCRIPT_DIR \'{_SCRIPT_DIR}\' is not a valid directory. Application might fail.")
+            # Change to data directory for writable operations
+            if _DATA_DIR and os.path.isdir(_DATA_DIR):
+                os.chdir(_DATA_DIR)
+                print(f"[CWD] Changed working directory to: {_DATA_DIR}")
+            elif _DATA_DIR:
+                print(f"[CWD] FATAL: _DATA_DIR \'{_DATA_DIR}\' is not a valid directory. Application might fail.")
                 if 'show_centered_messagebox' in globals() and callable(show_centered_messagebox):
-                    show_centered_messagebox("Critical Path Error", f"Application base directory \'{_SCRIPT_DIR}\' is invalid. Cannot continue.", dialog_type="error")
+                    show_centered_messagebox("Critical Path Error", f"Application data directory \'{_DATA_DIR}\' is invalid. Cannot continue.", dialog_type="error")
                 else:
-                    tkinter.messagebox.showerror("Critical Path Error", f"Application base directory \'{_SCRIPT_DIR}\' is invalid. Cannot continue.")
+                    tkinter.messagebox.showerror("Critical Path Error", f"Application data directory \'{_DATA_DIR}\' is invalid. Cannot continue.")
                 sys.exit(1)
             else:
-                print(f"[CWD] FATAL: _SCRIPT_DIR could not be determined. Application will likely fail.")
+                print(f"[CWD] FATAL: _DATA_DIR could not be determined. Application will likely fail.")
                 if 'show_centered_messagebox' in globals() and callable(show_centered_messagebox):
-                    show_centered_messagebox("Critical Path Error", "Could not determine application base directory. Cannot continue.", dialog_type="error")
+                    show_centered_messagebox("Critical Path Error", "Could not determine application data directory. Cannot continue.", dialog_type="error")
                 else:
-                    tkinter.messagebox.showerror("Critical Path Error", "Could not determine application base directory. Cannot continue.")
+                    tkinter.messagebox.showerror("Critical Path Error", "Could not determine application data directory. Cannot continue.")
                 sys.exit(1)
         except Exception as e_chdir:
             print(f"[CWD] Warning: Failed to change working directory or create temp: {e_chdir}")
 
-        CONFIG_DIR = os.path.join(_SCRIPT_DIR, 'config')
-        MODULES_DIR = os.path.join(_SCRIPT_DIR, 'modules')
+        # Use _DATA_DIR for writable directories (config, modules)
+        CONFIG_DIR = os.path.join(_DATA_DIR, 'config')
+        MODULES_DIR = os.path.join(_DATA_DIR, 'modules')
         CONFIG_FILE_NAME = 'settings.json'
         CONFIG_FILE_PATH = os.path.join(CONFIG_DIR, CONFIG_FILE_NAME)
         if os.path.isdir(MODULES_DIR):
@@ -5975,7 +6014,7 @@ if __name__ == "__main__":
         DEFAULT_SETTINGS = {
             "globals": {
                 "general": {
-                    "output_path": os.path.join(_SCRIPT_DIR, "Downloads"),
+                    "output_path": os.path.join(_DATA_DIR if _DATA_DIR else _SCRIPT_DIR, "Downloads"),
                     "quality": "hifi",
                     "search_limit": 20,
                     "concurrent_downloads": 5,
