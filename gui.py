@@ -1,14 +1,25 @@
 import os
 import sys
+
+# Add script/application directory to sys.path for imports
 if getattr(sys, 'frozen', False):
+    # Frozen (compiled) app
     application_path = os.path.dirname(sys.executable)
+else:
+    # Development mode - use script directory
+    application_path = os.path.dirname(os.path.abspath(__file__))
+
+if application_path not in sys.path:
     sys.path.insert(0, application_path)
-    modules_path = os.path.join(application_path, 'modules')
-    if os.path.isdir(modules_path):
-        sys.path.insert(0, modules_path)
-    gamdl_parent_path = os.path.join(application_path, 'modules', 'applemusic', 'gamdl')
-    if os.path.isdir(gamdl_parent_path):
-        sys.path.insert(0, gamdl_parent_path)
+
+modules_path = os.path.join(application_path, 'modules')
+if os.path.isdir(modules_path) and modules_path not in sys.path:
+    sys.path.insert(0, modules_path)
+
+gamdl_parent_path = os.path.join(application_path, 'modules', 'applemusic', 'gamdl')
+if os.path.isdir(gamdl_parent_path) and gamdl_parent_path not in sys.path:
+    sys.path.insert(0, gamdl_parent_path)
+
 os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 
 from utils.vendor_bootstrap import bootstrap_vendor_paths
@@ -51,6 +62,67 @@ if sys.platform == "win32":
         print("[Patch] Applied asyncio.WindowsSelectorEventLoopPolicy() for Windows.")
     except Exception as e:
         print(f"[Patch] WARNING: Failed to set asyncio.WindowsSelectorEventLoopPolicy(): {e}")
+
+# Log capture system for debugging initialization errors
+class LogCapture:
+    """Captures stdout/stderr for later display in GUI."""
+    def __init__(self, max_lines=500):
+        self.log_lines = []
+        self.max_lines = max_lines
+        self._original_stdout = sys.stdout
+        self._original_stderr = sys.stderr
+        self._capturing = False
+    
+    def start_capture(self):
+        """Start capturing stdout and stderr."""
+        if self._capturing:
+            return
+        self._capturing = True
+        self._original_stdout = sys.stdout
+        self._original_stderr = sys.stderr
+        sys.stdout = self
+        sys.stderr = self
+    
+    def stop_capture(self):
+        """Stop capturing and restore original streams."""
+        if not self._capturing:
+            return
+        self._capturing = False
+        sys.stdout = self._original_stdout
+        sys.stderr = self._original_stderr
+    
+    def write(self, text):
+        """Write to both capture buffer and original stream."""
+        if text.strip():  # Don't capture empty lines
+            self.log_lines.append(text.rstrip())
+            if len(self.log_lines) > self.max_lines:
+                self.log_lines.pop(0)
+        # Also write to original stdout so terminal still shows output
+        if self._original_stdout:
+            try:
+                self._original_stdout.write(text)
+                self._original_stdout.flush()
+            except:
+                pass
+    
+    def flush(self):
+        if self._original_stdout:
+            try:
+                self._original_stdout.flush()
+            except:
+                pass
+    
+    def get_logs(self):
+        """Get all captured log lines as a string."""
+        return "\n".join(self.log_lines)
+    
+    def clear(self):
+        """Clear the log buffer."""
+        self.log_lines.clear()
+
+# Global log capture instance
+_log_capture = LogCapture()
+_log_capture.start_capture()
 
 _SCRIPT_DIR = None
 _DATA_DIR = None
@@ -1581,6 +1653,100 @@ def show_centered_messagebox(title, message, dialog_type="info", parent=None):
     message_label = customtkinter.CTkLabel(dialog, text=message, wraplength=400, justify="left"); message_label.pack(pady=(20, 10), padx=20, expand=True, fill="both")
     ok_button = customtkinter.CTkButton(dialog, text="OK", command=dialog.destroy, width=100); ok_button.pack(pady=(0, 20)); ok_button.focus_set(); dialog.bind("<Return>", lambda event: ok_button.invoke())
     dialog.grab_set(); dialog.wait_window()
+
+def show_log_viewer(title="Application Logs", parent=None):
+    """Display captured logs in a scrollable dialog for debugging."""
+    global app, _log_capture
+    if parent is None:
+        parent = app if 'app' in globals() and app else None
+        if parent is None:
+            print("ERROR: Cannot show log viewer, main app window not available.")
+            return
+    
+    dialog = customtkinter.CTkToplevel(parent)
+    dialog.title(title)
+    dialog.geometry("800x500")
+    dialog.resizable(True, True)
+    dialog.attributes("-topmost", True)
+    dialog.transient(parent)
+    dialog.update_idletasks()
+    
+    # Center on parent
+    parent_width = parent.winfo_width()
+    parent_height = parent.winfo_height()
+    parent_x = parent.winfo_x()
+    parent_y = parent.winfo_y()
+    dialog_width = 800
+    dialog_height = 500
+    center_x = parent_x + (parent_width // 2) - (dialog_width // 2)
+    center_y = parent_y + (parent_height // 2) - (dialog_height // 2)
+    dialog.geometry(f"{dialog_width}x{dialog_height}+{center_x}+{center_y}")
+    
+    # Header
+    header_label = customtkinter.CTkLabel(
+        dialog, 
+        text="Console output captured during startup.\nThis can help diagnose initialization errors.",
+        justify="left"
+    )
+    header_label.pack(pady=(10, 5), padx=10, anchor="w")
+    
+    # Log text area with scrollbar
+    text_frame = customtkinter.CTkFrame(dialog)
+    text_frame.pack(fill="both", expand=True, padx=10, pady=5)
+    
+    log_text = customtkinter.CTkTextbox(
+        text_frame, 
+        width=760, 
+        height=380,
+        font=("Consolas" if platform.system() == "Windows" else "Monaco", 11),
+        wrap="word"
+    )
+    log_text.pack(fill="both", expand=True, padx=5, pady=5)
+    
+    # Get logs
+    logs = _log_capture.get_logs() if _log_capture else "No logs captured."
+    if not logs.strip():
+        logs = "No logs were captured during startup."
+    
+    log_text.insert("1.0", logs)
+    log_text.configure(state="disabled")  # Make read-only
+    
+    # Button frame
+    button_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
+    button_frame.pack(fill="x", padx=10, pady=10)
+    
+    def copy_logs():
+        dialog.clipboard_clear()
+        dialog.clipboard_append(logs)
+        copy_btn.configure(text="Copied!")
+        dialog.after(1500, lambda: copy_btn.configure(text="Copy to Clipboard"))
+    
+    def save_logs():
+        filepath = tkinter.filedialog.asksaveasfilename(
+            parent=dialog,
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            initialfile="orpheusdl_gui_logs.txt"
+        )
+        if filepath:
+            try:
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(logs)
+                show_centered_messagebox("Saved", f"Logs saved to:\n{filepath}", dialog_type="info", parent=dialog)
+            except Exception as e:
+                show_centered_messagebox("Error", f"Failed to save logs:\n{e}", dialog_type="error", parent=dialog)
+    
+    copy_btn = customtkinter.CTkButton(button_frame, text="Copy to Clipboard", command=copy_logs, width=140)
+    copy_btn.pack(side="left", padx=5)
+    
+    save_btn = customtkinter.CTkButton(button_frame, text="Save to File", command=save_logs, width=120)
+    save_btn.pack(side="left", padx=5)
+    
+    close_btn = customtkinter.CTkButton(button_frame, text="Close", command=dialog.destroy, width=100)
+    close_btn.pack(side="right", padx=5)
+    
+    dialog.grab_set()
+
 def _create_menu():
     global _context_menu, app, BUTTON_COLOR
     if _context_menu and _context_menu.winfo_exists(): return
@@ -7124,20 +7290,56 @@ Unnecessary Lossless-to-Lossless""",
             if 'download_button' in globals() and download_button and download_button.winfo_exists(): download_button.configure(state="disabled")
             if 'search_button' in globals() and search_button and search_button.winfo_exists(): search_button.configure(state="disabled")
             if 'search_download_button' in globals() and search_download_button and search_download_button.winfo_exists(): search_download_button.configure(state="disabled")
-            # Show delayed error message after GUI is fully loaded
-            def _show_init_error():
-                show_centered_messagebox(
-                    "Initialization Error",
+            # Show delayed error message after GUI is fully loaded with View Logs option
+            def _show_init_error_with_logs():
+                global app
+                dialog = customtkinter.CTkToplevel(app)
+                dialog.title("Initialization Error")
+                dialog.geometry("500x220")
+                dialog.resizable(False, False)
+                dialog.attributes("-topmost", True)
+                dialog.transient(app)
+                dialog.update_idletasks()
+                
+                # Center on parent
+                parent_width = app.winfo_width()
+                parent_height = app.winfo_height()
+                parent_x = app.winfo_x()
+                parent_y = app.winfo_y()
+                dialog_width = 500
+                dialog_height = 220
+                center_x = parent_x + (parent_width // 2) - (dialog_width // 2)
+                center_y = parent_y + (parent_height // 2) - (dialog_height // 2)
+                dialog.geometry(f"{dialog_width}x{dialog_height}+{center_x}+{center_y}")
+                
+                message = (
                     "The Orpheus download engine failed to initialize.\n\n"
                     "This usually happens when:\n"
                     "• No download modules are installed in the 'modules' folder\n"
                     "• The settings.json file is corrupted\n"
                     "• Required dependencies are missing\n\n"
-                    "Please check the console output for more details.\n"
-                    "Download and Search features are disabled.",
-                    dialog_type="error"
+                    "Download and Search features are disabled."
                 )
-            app.after(500, _show_init_error)
+                
+                message_label = customtkinter.CTkLabel(dialog, text=message, wraplength=460, justify="left")
+                message_label.pack(pady=(20, 15), padx=20)
+                
+                button_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
+                button_frame.pack(fill="x", padx=20, pady=(0, 20))
+                
+                def view_logs():
+                    dialog.destroy()
+                    show_log_viewer("Initialization Logs", parent=app)
+                
+                view_logs_btn = customtkinter.CTkButton(button_frame, text="View Logs", command=view_logs, width=120, fg_color="#2D5A88", hover_color="#1F6AA5")
+                view_logs_btn.pack(side="left", padx=5)
+                
+                ok_btn = customtkinter.CTkButton(button_frame, text="OK", command=dialog.destroy, width=100)
+                ok_btn.pack(side="right", padx=5)
+                
+                dialog.grab_set()
+            
+            app.after(500, _show_init_error_with_logs)
         setup_logging(output_queue)
         update_log_area()
         try:
