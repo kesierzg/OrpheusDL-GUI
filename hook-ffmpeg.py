@@ -1,23 +1,17 @@
 # PyInstaller runtime hook for ffmpeg-python
 # This pre-imports ffmpeg submodules in the correct order to avoid circular imports
+print("[Runtime Hook] ffmpeg hook starting...")
 
 import sys
 
-def _preimport_ffmpeg():
-    """Pre-import ffmpeg submodules to avoid circular import issues."""
-    try:
-        # Import submodules in dependency order
-        import ffmpeg.nodes
-        import ffmpeg._ffmpeg
-        import ffmpeg._filters  
-        import ffmpeg._probe
-        import ffmpeg._run
-        import ffmpeg._view
-        import ffmpeg
-        print("[Runtime Hook] Successfully pre-imported ffmpeg-python package")
-    except ImportError as e:
-        print(f"[Runtime Hook] Warning: Could not pre-import ffmpeg: {e}")
-    except Exception as e:
-        print(f"[Runtime Hook] Warning: Unexpected error pre-importing ffmpeg: {e}")
-
-_preimport_ffmpeg()
+try:
+    # Force import of nodes first - this is the key module causing circular import
+    import ffmpeg.nodes as _nodes
+    sys.modules['ffmpeg.nodes'] = _nodes
+    print("[Runtime Hook] Pre-imported ffmpeg.nodes")
+    
+    # Now import the rest
+    import ffmpeg
+    print("[Runtime Hook] Successfully pre-imported ffmpeg-python package")
+except Exception as e:
+    print(f"[Runtime Hook] Warning: Could not pre-import ffmpeg: {type(e).__name__}: {e}")

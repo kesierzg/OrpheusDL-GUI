@@ -1,7 +1,12 @@
 import platform
 import os
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 block_cipher = None
+
+# Collect ffmpeg-python package properly to avoid circular import issues
+ffmpeg_datas, ffmpeg_binaries, ffmpeg_hiddenimports = collect_all('ffmpeg')
+print(f"[PyInstaller] Collected ffmpeg submodules: {ffmpeg_hiddenimports}")
 
 # Collect additional data files based on what exists in the source directory
 additional_datas = [
@@ -34,8 +39,8 @@ elif platform.system() == 'Windows':
 a = Analysis(
     ['gui.py'],
     pathex=['.', 'vendor/librespot'],
-    binaries=additional_binaries,
-    datas=additional_datas,
+    binaries=additional_binaries + ffmpeg_binaries,
+    datas=additional_datas + ffmpeg_datas,
     hiddenimports=[
         'certifi',
         'colorama',
@@ -49,14 +54,6 @@ a = Analysis(
         'CTkToolTip',
         'customtkinter',
         'defusedxml',
-        # ffmpeg-python package - all submodules to avoid circular import
-        'ffmpeg',
-        'ffmpeg._ffmpeg',
-        'ffmpeg._filters',
-        'ffmpeg._probe',
-        'ffmpeg._run',
-        'ffmpeg._view',
-        'ffmpeg.nodes',
         'future',
         'idna',
         'json',
@@ -90,7 +87,7 @@ a = Analysis(
         'yt_dlp',
         'aiohttp',
         'aiofiles'
-    ],
+    ] + ffmpeg_hiddenimports,
     excludes=['torch', 'cuda', 'pytorch', 'matplotlib', 'pandas', 'numpy'],
     hookspath=['.'],
     hooksconfig={},
