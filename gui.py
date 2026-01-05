@@ -5962,7 +5962,6 @@ if __name__ == "__main__":
             sys.exit("Failed single instance check.")
     if multiprocessing.parent_process() is None:
         print(f"[Main Process {os.getpid()}] Starting application...")
-        global _SCRIPT_DIR, _DATA_DIR
         _SCRIPT_DIR = get_script_directory()
         _DATA_DIR = get_data_directory()
         print(f"[Init] Script directory: {_SCRIPT_DIR}")
