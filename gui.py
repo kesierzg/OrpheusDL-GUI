@@ -323,14 +323,62 @@ def get_data_directory():
     Otherwise, uses the script directory.
     """
     is_frozen = getattr(sys, 'frozen', False)
+    has_meipass = hasattr(sys, '_MEIPASS')
     is_macos = platform.system() == "Darwin"
     abs_executable_path = os.path.abspath(sys.executable)
+    initial_cwd = os.getcwd()
     
-    # Also detect .app bundle even if frozen flag isn't set properly
-    is_macos_app_bundle = is_macos and ".app/Contents/MacOS" in abs_executable_path
+    # Write debug info to a file in home directory for debugging compiled apps
+    debug_log_path = os.path.expanduser("~/orpheusdl_gui_debug.log")
+    try:
+        with open(debug_log_path, 'a') as f:
+            f.write(f"\n=== get_data_directory() called at {__import__('datetime').datetime.now()} ===\n")
+            f.write(f"sys.frozen: {is_frozen}\n")
+            f.write(f"sys._MEIPASS exists: {has_meipass}\n")
+            f.write(f"sys._MEIPASS value: {getattr(sys, '_MEIPASS', 'N/A')}\n")
+            f.write(f"platform.system(): {platform.system()}\n")
+            f.write(f"sys.executable: {sys.executable}\n")
+            f.write(f"abs_executable_path: {abs_executable_path}\n")
+            f.write(f"initial CWD: {initial_cwd}\n")
+            f.write(f"__file__ (if exists): {globals().get('__file__', 'N/A')}\n")
+    except Exception as e:
+        print(f"[DEBUG] Could not write debug log: {e}")
     
-    print(f"[get_data_directory] frozen={is_frozen}, platform={platform.system()}, is_app_bundle={is_macos_app_bundle}")
+    # Multiple detection methods for macOS .app bundles
+    is_macos_app_bundle = False
+    detection_reason = ""
+    
+    if is_macos:
+        # Method 1: Check if executable path contains .app/Contents/MacOS
+        if ".app/Contents/MacOS" in abs_executable_path:
+            is_macos_app_bundle = True
+            detection_reason = "found .app/Contents/MacOS in executable path"
+        # Method 2: Check if _MEIPASS contains .app
+        elif has_meipass and ".app" in getattr(sys, '_MEIPASS', ''):
+            is_macos_app_bundle = True
+            detection_reason = "found .app in _MEIPASS"
+        # Method 3: Check if CWD is in /Applications or contains .app
+        elif "/Applications" in initial_cwd or ".app" in initial_cwd:
+            is_macos_app_bundle = True
+            detection_reason = "CWD suggests app bundle (/Applications or .app in path)"
+        # Method 4: Check if frozen and running on macOS (conservative fallback)
+        elif is_frozen and has_meipass:
+            is_macos_app_bundle = True
+            detection_reason = "frozen PyInstaller app on macOS"
+    
+    print(f"[get_data_directory] frozen={is_frozen}, has_meipass={has_meipass}, platform={platform.system()}, is_app_bundle={is_macos_app_bundle}")
     print(f"[get_data_directory] Executable path: {abs_executable_path}")
+    print(f"[get_data_directory] Initial CWD: {initial_cwd}")
+    if is_macos_app_bundle:
+        print(f"[get_data_directory] Detection reason: {detection_reason}")
+    
+    # Write detection result to debug log
+    try:
+        with open(debug_log_path, 'a') as f:
+            f.write(f"is_macos_app_bundle: {is_macos_app_bundle}\n")
+            f.write(f"detection_reason: {detection_reason}\n")
+    except:
+        pass
     
     if is_macos_app_bundle:
         script_dir = get_script_directory()
@@ -342,16 +390,34 @@ def get_data_directory():
         try:
             os.makedirs(app_support, exist_ok=True)
             print(f"[macOS] Using Application Support directory: {app_support}")
+            # Write final result to debug log
+            try:
+                with open(debug_log_path, 'a') as f:
+                    f.write(f"RESULT: Using Application Support: {app_support}\n")
+            except:
+                pass
             return app_support
         except Exception as e:
             print(f"[macOS] ERROR: Could not create Application Support directory: {e}")
             import traceback
             traceback.print_exc()
             # Last resort fallback
+            try:
+                with open(debug_log_path, 'a') as f:
+                    f.write(f"ERROR: Could not create Application Support: {e}\n")
+                    f.write(f"FALLBACK: Using script_dir: {script_dir}\n")
+            except:
+                pass
             return script_dir
     
     # Default: use the script directory (development mode or non-macOS)
-    return get_script_directory()
+    result = get_script_directory()
+    try:
+        with open(debug_log_path, 'a') as f:
+            f.write(f"RESULT: Using script directory: {result}\n")
+    except:
+        pass
+    return result
     
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -5803,11 +5869,18 @@ def run_download_in_subprocess(url, output_path, gui_settings, search_result_dat
     import sys
     import os
     try:
+        # Use data directory for CWD (handles macOS Application Support)
+        data_dir = get_data_directory()
         script_dir = get_script_directory()
-        if script_dir and os.path.isdir(script_dir):
+        
+        if data_dir and os.path.isdir(data_dir):
+            os.chdir(data_dir)
+        elif script_dir and os.path.isdir(script_dir):
             os.chdir(script_dir)
-            if script_dir not in sys.path:
-                sys.path.insert(0, script_dir)
+            
+        # Add script_dir to sys.path for imports
+        if script_dir and script_dir not in sys.path:
+            sys.path.insert(0, script_dir)
         import orpheus.core
         from orpheus.core import Orpheus
         from orpheus.music_downloader import Downloader
