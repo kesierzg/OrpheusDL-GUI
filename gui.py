@@ -440,6 +440,65 @@ def resource_path(relative_path):
             return cwd_path
             
     return final_path
+
+def copy_bundled_resources_to_data_dir(data_dir):
+    """
+    Copy bundled resources (modules, ffmpeg) from the PyInstaller bundle to the data directory.
+    This is needed on macOS where the app bundle is read-only but we need writable data locations.
+    """
+    import shutil
+    
+    if not getattr(sys, 'frozen', False) or not hasattr(sys, '_MEIPASS'):
+        return  # Only run for frozen PyInstaller apps
+    
+    bundle_path = sys._MEIPASS
+    print(f"[Resource Copy] Checking bundled resources in: {bundle_path}")
+    
+    # Copy modules if bundled and destination is empty
+    bundled_modules = os.path.join(bundle_path, 'modules')
+    dest_modules = os.path.join(data_dir, 'modules')
+    
+    if os.path.isdir(bundled_modules):
+        bundled_module_list = [d for d in os.listdir(bundled_modules) if os.path.isdir(os.path.join(bundled_modules, d))]
+        if bundled_module_list:
+            os.makedirs(dest_modules, exist_ok=True)
+            dest_module_list = [d for d in os.listdir(dest_modules) if os.path.isdir(os.path.join(dest_modules, d))] if os.path.isdir(dest_modules) else []
+            
+            # Only copy if destination modules folder is empty or has fewer modules
+            if not dest_module_list:
+                print(f"[Resource Copy] Copying bundled modules to {dest_modules}: {bundled_module_list}")
+                for module_name in bundled_module_list:
+                    src = os.path.join(bundled_modules, module_name)
+                    dst = os.path.join(dest_modules, module_name)
+                    if not os.path.exists(dst):
+                        try:
+                            shutil.copytree(src, dst)
+                            print(f"[Resource Copy] Copied module: {module_name}")
+                        except Exception as e:
+                            print(f"[Resource Copy] Failed to copy module {module_name}: {e}")
+            else:
+                print(f"[Resource Copy] Destination modules folder already has content: {dest_module_list}")
+    else:
+        print(f"[Resource Copy] No bundled modules found at {bundled_modules}")
+    
+    # Copy ffmpeg if bundled
+    ffmpeg_name = 'ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg'
+    bundled_ffmpeg = os.path.join(bundle_path, ffmpeg_name)
+    dest_ffmpeg = os.path.join(data_dir, ffmpeg_name)
+    
+    if os.path.isfile(bundled_ffmpeg) and not os.path.isfile(dest_ffmpeg):
+        try:
+            shutil.copy2(bundled_ffmpeg, dest_ffmpeg)
+            # Make executable on Unix-like systems
+            if platform.system() != 'Windows':
+                os.chmod(dest_ffmpeg, 0o755)
+            print(f"[Resource Copy] Copied ffmpeg to {dest_ffmpeg}")
+        except Exception as e:
+            print(f"[Resource Copy] Failed to copy ffmpeg: {e}")
+    elif os.path.isfile(dest_ffmpeg):
+        print(f"[Resource Copy] ffmpeg already exists at {dest_ffmpeg}")
+    else:
+        print(f"[Resource Copy] No bundled ffmpeg found at {bundled_ffmpeg}")
 _app_dir = get_script_directory()
 if _app_dir not in sys.path:
     sys.path.insert(0, _app_dir)
@@ -666,15 +725,25 @@ def load_settings():
             
             # Auto-detect bundled FFmpeg for default settings
             default_ffmpeg_path = "ffmpeg"
+            ffmpeg_name = "ffmpeg.exe" if platform.system() == "Windows" else "ffmpeg"
+            
+            # Check multiple locations for ffmpeg
+            search_paths = []
+            data_dir = get_data_directory()
+            if data_dir:
+                search_paths.append(os.path.join(data_dir, ffmpeg_name))
             app_dir = get_script_directory()
             if app_dir:
-                if platform.system() == "Windows":
-                    bundled_ffmpeg = os.path.join(app_dir, "ffmpeg.exe")
-                else:
-                    bundled_ffmpeg = os.path.join(app_dir, "ffmpeg")
-                if os.path.isfile(bundled_ffmpeg):
-                    default_ffmpeg_path = bundled_ffmpeg
-                    print(f"[FFmpeg] Using bundled FFmpeg for default settings: {bundled_ffmpeg}")
+                search_paths.append(os.path.join(app_dir, ffmpeg_name))
+            if hasattr(sys, '_MEIPASS'):
+                search_paths.append(os.path.join(sys._MEIPASS, ffmpeg_name))
+            search_paths.append(os.path.join(os.getcwd(), ffmpeg_name))
+            
+            for ffmpeg_path in search_paths:
+                if os.path.isfile(ffmpeg_path):
+                    default_ffmpeg_path = ffmpeg_path
+                    print(f"[FFmpeg] Using bundled FFmpeg for default settings: {ffmpeg_path}")
+                    break
             
             # Create default settings structure for Orpheus format
             default_orpheus_settings = {
@@ -849,19 +918,41 @@ def load_settings():
     # Auto-detect bundled FFmpeg if ffmpeg_path is default "ffmpeg"
     ffmpeg_path_setting = settings.get("globals", {}).get("advanced", {}).get("ffmpeg_path", "ffmpeg")
     if ffmpeg_path_setting and ffmpeg_path_setting.lower() == "ffmpeg":
+        ffmpeg_name = "ffmpeg.exe" if platform.system() == "Windows" else "ffmpeg"
+        found_ffmpeg = None
+        
+        # Check multiple locations for ffmpeg
+        search_paths = []
+        
+        # 1. Data directory (where we copy ffmpeg on macOS)
+        data_dir = get_data_directory()
+        if data_dir:
+            search_paths.append(os.path.join(data_dir, ffmpeg_name))
+        
+        # 2. Script/app directory
         app_dir = get_script_directory()
         if app_dir:
-            # Check for ffmpeg.exe (Windows) or ffmpeg (Unix) in app directory
-            if platform.system() == "Windows":
-                bundled_ffmpeg = os.path.join(app_dir, "ffmpeg.exe")
-            else:
-                bundled_ffmpeg = os.path.join(app_dir, "ffmpeg")
-            
-            if os.path.isfile(bundled_ffmpeg):
-                print(f"[FFmpeg] Found bundled FFmpeg at: {bundled_ffmpeg}")
-                if "advanced" not in settings["globals"]:
-                    settings["globals"]["advanced"] = {}
-                settings["globals"]["advanced"]["ffmpeg_path"] = bundled_ffmpeg
+            search_paths.append(os.path.join(app_dir, ffmpeg_name))
+        
+        # 3. PyInstaller bundle directory
+        if hasattr(sys, '_MEIPASS'):
+            search_paths.append(os.path.join(sys._MEIPASS, ffmpeg_name))
+        
+        # 4. Current working directory
+        search_paths.append(os.path.join(os.getcwd(), ffmpeg_name))
+        
+        for ffmpeg_path in search_paths:
+            if os.path.isfile(ffmpeg_path):
+                found_ffmpeg = ffmpeg_path
+                break
+        
+        if found_ffmpeg:
+            print(f"[FFmpeg] Found bundled FFmpeg at: {found_ffmpeg}")
+            if "advanced" not in settings["globals"]:
+                settings["globals"]["advanced"] = {}
+            settings["globals"]["advanced"]["ffmpeg_path"] = found_ffmpeg
+        else:
+            print(f"[FFmpeg] No bundled FFmpeg found. Searched: {search_paths}")
 
     current_settings = settings
     return settings
@@ -5875,6 +5966,10 @@ def run_download_in_subprocess(url, output_path, gui_settings, search_result_dat
         
         if data_dir and os.path.isdir(data_dir):
             os.chdir(data_dir)
+            # Add modules from data directory to sys.path
+            modules_dir = os.path.join(data_dir, 'modules')
+            if os.path.isdir(modules_dir) and modules_dir not in sys.path:
+                sys.path.insert(0, modules_dir)
         elif script_dir and os.path.isdir(script_dir):
             os.chdir(script_dir)
             
@@ -6064,6 +6159,9 @@ if __name__ == "__main__":
                 os.chdir(_DATA_DIR)
                 print(f"[CWD] Changed working directory to: {_DATA_DIR}")
                 print(f"[CWD] Verified CWD is now: {os.getcwd()}")
+                
+                # Copy bundled resources (modules, ffmpeg) to data directory
+                copy_bundled_resources_to_data_dir(_DATA_DIR)
             else:
                 print(f"[CWD] FATAL: _DATA_DIR could not be determined. Application will likely fail.")
                 if 'show_centered_messagebox' in globals() and callable(show_centered_messagebox):

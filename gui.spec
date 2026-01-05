@@ -1,17 +1,41 @@
 import platform
+import os
 
 block_cipher = None
+
+# Collect additional data files based on what exists in the source directory
+additional_datas = [
+    ('icon.ico', '.'),
+    ('icon.icns', '.'),
+    ('icon.png', '.'),
+    ('update_checker.py', '.'),
+]
+
+# Include modules folder if it exists and has content
+if os.path.isdir('modules'):
+    module_contents = [d for d in os.listdir('modules') if os.path.isdir(os.path.join('modules', d))]
+    if module_contents:
+        additional_datas.append(('modules', 'modules'))
+        print(f"[PyInstaller] Including modules folder with: {module_contents}")
+
+# Collect binaries (ffmpeg)
+additional_binaries = []
+
+# Include ffmpeg binary if it exists
+if platform.system() == 'Darwin':
+    if os.path.isfile('ffmpeg'):
+        additional_binaries.append(('ffmpeg', '.'))
+        print("[PyInstaller] Including macOS ffmpeg binary")
+elif platform.system() == 'Windows':
+    if os.path.isfile('ffmpeg.exe'):
+        additional_binaries.append(('ffmpeg.exe', '.'))
+        print("[PyInstaller] Including Windows ffmpeg.exe binary")
 
 a = Analysis(
     ['gui.py'],
     pathex=['.', 'vendor/librespot'],
-    binaries=[],
-    datas=[
-        ('icon.ico', '.'),
-        ('icon.icns', '.'),
-        ('icon.png', '.'),
-        ('update_checker.py', '.'),
-    ],
+    binaries=additional_binaries,
+    datas=additional_datas,
     hiddenimports=[
         'certifi',
         'colorama',
