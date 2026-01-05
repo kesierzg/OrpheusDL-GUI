@@ -4754,7 +4754,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             # Left column - title (vertically centered)
             help_title = customtkinter.CTkLabel(
                 help_container, 
-                text="How to get Cookies exported:",
+                text="How to export cookies:",
                 font=("Segoe UI", 11),
                 text_color="#DCE4EE"
             )
