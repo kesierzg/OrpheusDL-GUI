@@ -322,26 +322,35 @@ def get_data_directory():
     since apps in /Applications cannot write to their own directory.
     Otherwise, uses the script directory.
     """
-    if getattr(sys, 'frozen', False) and platform.system() == "Darwin":
-        abs_executable_path = os.path.abspath(sys.executable)
-        # Check if this is a bundled .app
-        if ".app/Contents/MacOS" in abs_executable_path:
-            script_dir = get_script_directory()
-            # Test if we can write to the script directory
-            test_path = os.path.join(script_dir, ".write_test")
-            try:
-                with open(test_path, 'w') as f:
-                    f.write("test")
-                os.remove(test_path)
-                print(f"[macOS] Script directory is writable: {script_dir}")
-                return script_dir
-            except (IOError, OSError, PermissionError):
-                # Cannot write to script directory, use Application Support
-                app_support = os.path.expanduser("~/Library/Application Support/OrpheusDL GUI")
-                os.makedirs(app_support, exist_ok=True)
-                print(f"[macOS] Script directory not writable, using Application Support: {app_support}")
-                return app_support
-    # Default: use the script directory
+    is_frozen = getattr(sys, 'frozen', False)
+    is_macos = platform.system() == "Darwin"
+    abs_executable_path = os.path.abspath(sys.executable)
+    
+    # Also detect .app bundle even if frozen flag isn't set properly
+    is_macos_app_bundle = is_macos and ".app/Contents/MacOS" in abs_executable_path
+    
+    print(f"[get_data_directory] frozen={is_frozen}, platform={platform.system()}, is_app_bundle={is_macos_app_bundle}")
+    print(f"[get_data_directory] Executable path: {abs_executable_path}")
+    
+    if is_macos_app_bundle:
+        script_dir = get_script_directory()
+        print(f"[get_data_directory] Script dir for bundled app: {script_dir}")
+        
+        # For bundled macOS apps, always use Application Support
+        # This is the correct macOS convention and avoids permission issues
+        app_support = os.path.expanduser("~/Library/Application Support/OrpheusDL GUI")
+        try:
+            os.makedirs(app_support, exist_ok=True)
+            print(f"[macOS] Using Application Support directory: {app_support}")
+            return app_support
+        except Exception as e:
+            print(f"[macOS] ERROR: Could not create Application Support directory: {e}")
+            import traceback
+            traceback.print_exc()
+            # Last resort fallback
+            return script_dir
+    
+    # Default: use the script directory (development mode or non-macOS)
     return get_script_directory()
     
 def resource_path(relative_path):
@@ -5967,19 +5976,21 @@ if __name__ == "__main__":
         print(f"[Init] Script directory: {_SCRIPT_DIR}")
         print(f"[Init] Data directory: {_DATA_DIR}")
         try:
-            os.makedirs(os.path.join(_DATA_DIR if _DATA_DIR and os.path.isdir(_DATA_DIR) else os.getcwd(), 'temp'), exist_ok=True)
-            print("[Init] Ensured temp directory exists.")
+            # Ensure data directory exists
+            if _DATA_DIR:
+                os.makedirs(_DATA_DIR, exist_ok=True)
+                print(f"[Init] Ensured data directory exists: {_DATA_DIR}")
+            
+            # Create temp directory
+            temp_dir = os.path.join(_DATA_DIR if _DATA_DIR else os.getcwd(), 'temp')
+            os.makedirs(temp_dir, exist_ok=True)
+            print(f"[Init] Ensured temp directory exists: {temp_dir}")
+            
             # Change to data directory for writable operations
-            if _DATA_DIR and os.path.isdir(_DATA_DIR):
+            if _DATA_DIR:
                 os.chdir(_DATA_DIR)
                 print(f"[CWD] Changed working directory to: {_DATA_DIR}")
-            elif _DATA_DIR:
-                print(f"[CWD] FATAL: _DATA_DIR \'{_DATA_DIR}\' is not a valid directory. Application might fail.")
-                if 'show_centered_messagebox' in globals() and callable(show_centered_messagebox):
-                    show_centered_messagebox("Critical Path Error", f"Application data directory \'{_DATA_DIR}\' is invalid. Cannot continue.", dialog_type="error")
-                else:
-                    tkinter.messagebox.showerror("Critical Path Error", f"Application data directory \'{_DATA_DIR}\' is invalid. Cannot continue.")
-                sys.exit(1)
+                print(f"[CWD] Verified CWD is now: {os.getcwd()}")
             else:
                 print(f"[CWD] FATAL: _DATA_DIR could not be determined. Application will likely fail.")
                 if 'show_centered_messagebox' in globals() and callable(show_centered_messagebox):
@@ -5988,7 +5999,9 @@ if __name__ == "__main__":
                     tkinter.messagebox.showerror("Critical Path Error", "Could not determine application data directory. Cannot continue.")
                 sys.exit(1)
         except Exception as e_chdir:
-            print(f"[CWD] Warning: Failed to change working directory or create temp: {e_chdir}")
+            print(f"[CWD] Error during directory setup: {e_chdir}")
+            import traceback
+            traceback.print_exc()
 
         # Use _DATA_DIR for writable directories (config, modules)
         CONFIG_DIR = os.path.join(_DATA_DIR, 'config')
