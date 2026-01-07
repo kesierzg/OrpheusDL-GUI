@@ -23,18 +23,21 @@ if os.path.isdir('modules'):
         additional_datas.append(('modules', 'modules'))
         print(f"[PyInstaller] Including modules folder with: {module_contents}")
 
-# Collect binaries (ffmpeg)
+# Collect binaries (ffmpeg - Windows only)
+# On macOS/Linux, we don't bundle ffmpeg - users should install via package manager
+# macOS: brew install ffmpeg
+# Linux: sudo apt install ffmpeg (or equivalent for your distro)
 additional_binaries = []
 
-# Include ffmpeg binary if it exists
-if platform.system() == 'Darwin':
-    if os.path.isfile('ffmpeg'):
-        additional_binaries.append(('ffmpeg', '.'))
-        print("[PyInstaller] Including macOS ffmpeg binary")
-elif platform.system() == 'Windows':
+# Include ffmpeg binary only on Windows
+if platform.system() == 'Windows':
     if os.path.isfile('ffmpeg.exe'):
         additional_binaries.append(('ffmpeg.exe', '.'))
         print("[PyInstaller] Including Windows ffmpeg.exe binary")
+elif platform.system() == 'Darwin':
+    print("[PyInstaller] macOS: NOT bundling ffmpeg (use Homebrew: brew install ffmpeg)")
+elif platform.system() == 'Linux':
+    print("[PyInstaller] Linux: NOT bundling ffmpeg (use: sudo apt install ffmpeg)")
 
 a = Analysis(
     ['gui.py'],

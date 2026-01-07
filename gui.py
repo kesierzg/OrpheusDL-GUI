@@ -513,10 +513,63 @@ def resource_path(relative_path):
             
     return final_path
 
+def find_system_ffmpeg():
+    """
+    Find FFmpeg on macOS or Linux. Returns (found: bool, path: str).
+    Checks common locations first, then system PATH.
+    """
+    import subprocess
+    
+    # Common FFmpeg locations by platform
+    if platform.system() == 'Darwin':
+        # macOS - Homebrew locations
+        common_paths = [
+            '/opt/homebrew/bin/ffmpeg',   # Apple Silicon
+            '/usr/local/bin/ffmpeg',      # Intel
+        ]
+    elif platform.system() == 'Linux':
+        # Linux - common package manager locations
+        common_paths = [
+            '/usr/bin/ffmpeg',            # apt, dnf, pacman
+            '/usr/local/bin/ffmpeg',      # manual install
+            '/snap/bin/ffmpeg',           # snap
+        ]
+    else:
+        common_paths = []
+    
+    for path in common_paths:
+        if os.path.isfile(path):
+            try:
+                result = subprocess.run([path, '-version'], capture_output=True, timeout=3)
+                if result.returncode == 0:
+                    return True, path
+            except:
+                pass
+    
+    # Try system PATH using 'which' (works on both macOS and Linux)
+    try:
+        result = subprocess.run(['which', 'ffmpeg'], capture_output=True, timeout=3)
+        if result.returncode == 0:
+            ffmpeg_path = result.stdout.decode().strip()
+            if ffmpeg_path:
+                return True, ffmpeg_path
+    except:
+        pass
+    
+    return False, None
+
+
+# Keep old function name for backward compatibility
+def find_macos_ffmpeg():
+    """Alias for find_system_ffmpeg for backward compatibility."""
+    return find_system_ffmpeg()
+
+
 def copy_bundled_resources_to_data_dir(data_dir):
     """
     Copy bundled resources (modules, ffmpeg) from the PyInstaller bundle to the data directory.
     This is needed on macOS where the app bundle is read-only but we need writable data locations.
+    On macOS, FFmpeg is NOT bundled - users should install via Homebrew to avoid Gatekeeper issues.
     """
     import shutil
     
@@ -553,43 +606,41 @@ def copy_bundled_resources_to_data_dir(data_dir):
     else:
         print(f"[Resource Copy] No bundled modules found at {bundled_modules}")
     
-    # Copy ffmpeg if bundled
-    ffmpeg_name = 'ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg'
-    bundled_ffmpeg = os.path.join(bundle_path, ffmpeg_name)
-    dest_ffmpeg = os.path.join(data_dir, ffmpeg_name)
-    
-    if os.path.isfile(bundled_ffmpeg) and not os.path.isfile(dest_ffmpeg):
-        try:
-            shutil.copy2(bundled_ffmpeg, dest_ffmpeg)
-            # Make executable on Unix-like systems
-            if platform.system() != 'Windows':
-                os.chmod(dest_ffmpeg, 0o755)
-                # Remove quarantine attribute on macOS
-                if platform.system() == 'Darwin':
-                    try:
-                        import subprocess
-                        subprocess.run(['xattr', '-d', 'com.apple.quarantine', dest_ffmpeg], 
-                                       capture_output=True, check=False)
-                    except Exception:
-                        pass  # Ignore if xattr command fails
-            print(f"[Resource Copy] Copied ffmpeg to {dest_ffmpeg}")
-        except Exception as e:
-            print(f"[Resource Copy] Failed to copy ffmpeg: {e}")
-    elif os.path.isfile(dest_ffmpeg):
-        # Ensure existing ffmpeg is executable and not quarantined
-        if platform.system() != 'Windows':
+    # Handle FFmpeg based on platform
+    if platform.system() == 'Windows':
+        # On Windows, copy bundled ffmpeg
+        ffmpeg_name = 'ffmpeg.exe'
+        bundled_ffmpeg = os.path.join(bundle_path, ffmpeg_name)
+        dest_ffmpeg = os.path.join(data_dir, ffmpeg_name)
+        
+        if os.path.isfile(bundled_ffmpeg) and not os.path.isfile(dest_ffmpeg):
             try:
-                if not os.access(dest_ffmpeg, os.X_OK):
-                    os.chmod(dest_ffmpeg, 0o755)
-                if platform.system() == 'Darwin':
-                    import subprocess
-                    subprocess.run(['xattr', '-d', 'com.apple.quarantine', dest_ffmpeg], 
-                                   capture_output=True, check=False)
-            except Exception:
-                pass
-        print(f"[Resource Copy] ffmpeg already exists at {dest_ffmpeg}")
-    else:
-        print(f"[Resource Copy] No bundled ffmpeg found at {bundled_ffmpeg}")
+                shutil.copy2(bundled_ffmpeg, dest_ffmpeg)
+                print(f"[Resource Copy] Copied ffmpeg to {dest_ffmpeg}")
+            except Exception as e:
+                print(f"[Resource Copy] Failed to copy ffmpeg: {e}")
+        elif os.path.isfile(dest_ffmpeg):
+            print(f"[Resource Copy] ffmpeg already exists at {dest_ffmpeg}")
+        else:
+            print(f"[Resource Copy] No bundled ffmpeg found at {bundled_ffmpeg}")
+    elif platform.system() == 'Darwin':
+        # On macOS, don't bundle FFmpeg - check for Homebrew installation instead
+        print(f"[FFmpeg] macOS detected - using system FFmpeg (Homebrew recommended)")
+        ffmpeg_found, ffmpeg_path = find_system_ffmpeg()
+        if ffmpeg_found:
+            print(f"[FFmpeg] Found FFmpeg at: {ffmpeg_path}")
+        else:
+            print(f"[FFmpeg] FFmpeg not found. Audio conversion will not work.")
+            print(f"[FFmpeg] Install via Homebrew: brew install ffmpeg")
+    elif platform.system() == 'Linux':
+        # On Linux, don't bundle FFmpeg - use system package manager
+        print(f"[FFmpeg] Linux detected - using system FFmpeg")
+        ffmpeg_found, ffmpeg_path = find_system_ffmpeg()
+        if ffmpeg_found:
+            print(f"[FFmpeg] Found FFmpeg at: {ffmpeg_path}")
+        else:
+            print(f"[FFmpeg] FFmpeg not found. Audio conversion will not work.")
+            print(f"[FFmpeg] Install via package manager: sudo apt install ffmpeg")
 _app_dir = get_script_directory()
 if _app_dir not in sys.path:
     sys.path.insert(0, _app_dir)
@@ -814,27 +865,46 @@ def load_settings():
         try:
             os.makedirs(os.path.dirname(CONFIG_FILE_PATH), exist_ok=True)
             
-            # Auto-detect bundled FFmpeg for default settings
+            # Auto-detect FFmpeg for default settings
             default_ffmpeg_path = "ffmpeg"
-            ffmpeg_name = "ffmpeg.exe" if platform.system() == "Windows" else "ffmpeg"
             
-            # Check multiple locations for ffmpeg
-            search_paths = []
-            data_dir = get_data_directory()
-            if data_dir:
-                search_paths.append(os.path.join(data_dir, ffmpeg_name))
-            app_dir = get_script_directory()
-            if app_dir:
-                search_paths.append(os.path.join(app_dir, ffmpeg_name))
-            if hasattr(sys, '_MEIPASS'):
-                search_paths.append(os.path.join(sys._MEIPASS, ffmpeg_name))
-            search_paths.append(os.path.join(os.getcwd(), ffmpeg_name))
-            
-            for ffmpeg_path in search_paths:
-                if os.path.isfile(ffmpeg_path):
+            if platform.system() == "Darwin":
+                # On macOS, use Homebrew FFmpeg (avoids Gatekeeper issues)
+                ffmpeg_found, ffmpeg_path = find_system_ffmpeg()
+                if ffmpeg_found:
                     default_ffmpeg_path = ffmpeg_path
-                    print(f"[FFmpeg] Using bundled FFmpeg for default settings: {ffmpeg_path}")
-                    break
+                    print(f"[FFmpeg] Using Homebrew FFmpeg: {ffmpeg_path}")
+                else:
+                    default_ffmpeg_path = "ffmpeg"  # Will use PATH, show error if not found
+                    print(f"[FFmpeg] Homebrew FFmpeg not found - install with: brew install ffmpeg")
+            elif platform.system() == "Linux":
+                # On Linux, use system FFmpeg
+                ffmpeg_found, ffmpeg_path = find_system_ffmpeg()
+                if ffmpeg_found:
+                    default_ffmpeg_path = ffmpeg_path
+                    print(f"[FFmpeg] Using system FFmpeg: {ffmpeg_path}")
+                else:
+                    default_ffmpeg_path = "ffmpeg"  # Will use PATH, show error if not found
+                    print(f"[FFmpeg] FFmpeg not found - install with: sudo apt install ffmpeg")
+            else:
+                # On Windows, check for bundled ffmpeg
+                ffmpeg_name = "ffmpeg.exe"
+                search_paths = []
+                data_dir = get_data_directory()
+                if data_dir:
+                    search_paths.append(os.path.join(data_dir, ffmpeg_name))
+                app_dir = get_script_directory()
+                if app_dir:
+                    search_paths.append(os.path.join(app_dir, ffmpeg_name))
+                if hasattr(sys, '_MEIPASS'):
+                    search_paths.append(os.path.join(sys._MEIPASS, ffmpeg_name))
+                search_paths.append(os.path.join(os.getcwd(), ffmpeg_name))
+                
+                for ffmpeg_path in search_paths:
+                    if os.path.isfile(ffmpeg_path):
+                        default_ffmpeg_path = ffmpeg_path
+                        print(f"[FFmpeg] Using bundled FFmpeg for default settings: {ffmpeg_path}")
+                        break
             
             # Create default settings structure for Orpheus format
             default_orpheus_settings = {
@@ -7369,6 +7439,43 @@ Unnecessary Lossless-to-Lossless""",
                 dialog.grab_set()
             
             app.after(500, _show_init_error_with_logs)
+        
+        # Check for FFmpeg on macOS/Linux and show helpful message if missing
+        if platform.system() in ('Darwin', 'Linux'):
+            ffmpeg_found, ffmpeg_path = find_system_ffmpeg()
+            if not ffmpeg_found:
+                def _show_ffmpeg_install_message():
+                    if platform.system() == 'Darwin':
+                        install_instructions = (
+                            "To install FFmpeg on macOS:\n\n"
+                            "1. Install Homebrew (if not installed):\n"
+                            "   Open Terminal and run:\n"
+                            "   /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n\n"
+                            "2. Install FFmpeg:\n"
+                            "   brew install ffmpeg\n\n"
+                            "3. Restart OrpheusDL GUI"
+                        )
+                    else:  # Linux
+                        install_instructions = (
+                            "To install FFmpeg on Linux:\n\n"
+                            "Ubuntu/Debian:\n"
+                            "   sudo apt install ffmpeg\n\n"
+                            "Fedora:\n"
+                            "   sudo dnf install ffmpeg\n\n"
+                            "Arch Linux:\n"
+                            "   sudo pacman -S ffmpeg\n\n"
+                            "Then restart OrpheusDL GUI"
+                        )
+                    
+                    show_centered_messagebox(
+                        "FFmpeg Not Found",
+                        "FFmpeg is required for audio conversion (e.g., FLAC to MP3/ALAC).\n\n"
+                        f"{install_instructions}\n\n"
+                        "Downloads will work, but audio conversion will be skipped until FFmpeg is installed.",
+                        dialog_type="warning"
+                    )
+                app.after(1000, _show_ffmpeg_install_message)
+        
         setup_logging(output_queue)
         update_log_area()
         try:
