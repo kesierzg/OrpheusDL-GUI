@@ -3536,17 +3536,33 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                     if ffmpeg_dir not in current_path.split(os.pathsep):
                         os.environ["PATH"] = ffmpeg_dir + os.pathsep + current_path
         
-        downloader_settings = {
-            "general": {
-                "download_path": fresh_global_settings.get("general", {}).get("download_path", DEFAULT_SETTINGS["globals"]["general"]["output_path"]),
-                "download_quality": fresh_global_settings.get("general", {}).get("download_quality", DEFAULT_SETTINGS["globals"]["general"]["quality"]),
-                "search_limit": fresh_global_settings.get("general", {}).get("search_limit", DEFAULT_SETTINGS["globals"]["general"]["search_limit"]),
-                "concurrent_downloads": fresh_global_settings.get("general", {}).get("concurrent_downloads", DEFAULT_SETTINGS["globals"]["general"]["concurrent_downloads"]),
-                "play_sound_on_finish": fresh_global_settings.get("general", {}).get("play_sound_on_finish", DEFAULT_SETTINGS["globals"]["general"]["play_sound_on_finish"]),
-                "progress_bar": False
-            },
-            **{k: v for k, v in fresh_global_settings.items() if k != "general"}
-        }
+        # Build downloader_settings by merging fresh settings with defaults for all sections
+        # This ensures all required keys exist even on first run
+        downloader_settings = {}
+        
+        # Get all section keys from both fresh settings and defaults
+        all_section_keys = set(fresh_global_settings.keys()) | set(DEFAULT_SETTINGS["globals"].keys())
+        
+        for section_key in all_section_keys:
+            fresh_section = fresh_global_settings.get(section_key, {})
+            default_section = DEFAULT_SETTINGS["globals"].get(section_key, {})
+            
+            if section_key == "general":
+                # Special handling for general section with key mapping
+                downloader_settings["general"] = {
+                    "download_path": fresh_section.get("download_path", default_section.get("output_path", "./downloads/")),
+                    "download_quality": fresh_section.get("download_quality", default_section.get("quality", "hifi")),
+                    "search_limit": fresh_section.get("search_limit", default_section.get("search_limit", 10)),
+                    "concurrent_downloads": fresh_section.get("concurrent_downloads", default_section.get("concurrent_downloads", 5)),
+                    "play_sound_on_finish": fresh_section.get("play_sound_on_finish", default_section.get("play_sound_on_finish", False)),
+                    "progress_bar": False
+                }
+            elif isinstance(default_section, dict):
+                # Merge section with defaults
+                downloader_settings[section_key] = {**default_section, **fresh_section}
+            else:
+                # Non-dict section, use fresh value or default
+                downloader_settings[section_key] = fresh_section if fresh_section else default_section
         if "advanced" in downloader_settings and \
            "conversion_flags" in downloader_settings["advanced"] and \
            "mp3" in downloader_settings["advanced"]["conversion_flags"]:
