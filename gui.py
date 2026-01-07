@@ -5008,11 +5008,11 @@ def _create_credential_tab_content(platform_name, tab_frame):
             help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
             help_frame.grid_columnconfigure(0, weight=1)
             
-            # Centered container for two-column layout
+            # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(expand=True, pady=12)
+            help_container.pack(anchor="w", padx=15, pady=12)
             
-            # Left column - title (vertically centered)
+            # Left column - title
             help_title = customtkinter.CTkLabel(
                 help_container, 
                 text="How to get Client ID & Secret:",
@@ -5128,11 +5128,11 @@ def _create_credential_tab_content(platform_name, tab_frame):
             help_frame.grid(row=len(default_platform_fields), column=0, columnspan=3, sticky="ew", padx=10, pady=(20, 10))
             help_frame.grid_columnconfigure(0, weight=1)
             
-            # Centered container for two-column layout
+            # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(expand=True, pady=12)
+            help_container.pack(anchor="w", padx=15, pady=12)
             
-            # Left column - title (vertically centered)
+            # Left column - title
             help_title = customtkinter.CTkLabel(
                 help_container, 
                 text="How to export cookies:",
@@ -5274,11 +5274,11 @@ def _create_credential_tab_content(platform_name, tab_frame):
             help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
             help_frame.grid_columnconfigure(0, weight=1)
             
-            # Centered container for two-column layout
+            # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(expand=True, pady=12)
+            help_container.pack(anchor="w", padx=15, pady=12)
             
-            # Left column - title (vertically centered)
+            # Left column - title
             help_title = customtkinter.CTkLabel(
                 help_container, 
                 text="Recommended values:",
@@ -5442,11 +5442,11 @@ def _create_credential_tab_content(platform_name, tab_frame):
             help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
             help_frame.grid_columnconfigure(0, weight=1)
             
-            # Centered container for two-column layout
+            # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(expand=True, pady=12)
+            help_container.pack(anchor="w", padx=15, pady=12)
             
-            # Left column - title (vertically centered)
+            # Left column - title
             help_title = customtkinter.CTkLabel(
                 help_container, 
                 text="Recommended values:",
@@ -5551,11 +5551,11 @@ def _create_credential_tab_content(platform_name, tab_frame):
             help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
             help_frame.grid_columnconfigure(0, weight=1)
             
-            # Centered container for two-column layout
+            # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(expand=True, pady=12)
+            help_container.pack(anchor="w", padx=15, pady=12)
             
-            # Left column - title (vertically centered)
+            # Left column - title
             help_title = customtkinter.CTkLabel(
                 help_container, 
                 text="How to get Web Access Token:",
@@ -5685,11 +5685,11 @@ def _create_credential_tab_content(platform_name, tab_frame):
             help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
             help_frame.grid_columnconfigure(0, weight=1)
             
-            # Centered container for two-column layout
+            # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(expand=True, pady=12)
+            help_container.pack(anchor="w", padx=15, pady=12)
             
-            # Left column - title (vertically centered)
+            # Left column - title
             help_title = customtkinter.CTkLabel(
                 help_container, 
                 text="Recommended values:",
