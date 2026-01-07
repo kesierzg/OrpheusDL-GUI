@@ -7594,7 +7594,16 @@ Unnecessary Lossless-to-Lossless""",
                             if "advanced" not in current_settings["globals"]:
                                 current_settings["globals"]["advanced"] = {}
                             current_settings["globals"]["advanced"]["hide_ffmpeg_warning"] = True
-                            save_settings()
+                            
+                            # Also update settings_vars so save_settings() picks it up
+                            if "globals" not in settings_vars:
+                                settings_vars["globals"] = {}
+                            
+                            # Create a BooleanVar for the setting if it doesn't exist
+                            # This ensures save_settings() sees the change
+                            settings_vars["globals"]["advanced.hide_ffmpeg_warning"] = tkinter.BooleanVar(value=True)
+                            
+                            save_settings(show_confirmation=False)
                         dialog.destroy()
                     
                     checkbox_frame = customtkinter.CTkFrame(main_frame, fg_color="transparent")
