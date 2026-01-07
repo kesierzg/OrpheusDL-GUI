@@ -7445,35 +7445,150 @@ Unnecessary Lossless-to-Lossless""",
             ffmpeg_found, ffmpeg_path = find_system_ffmpeg()
             if not ffmpeg_found:
                 def _show_ffmpeg_install_message():
-                    if platform.system() == 'Darwin':
-                        install_instructions = (
-                            "To install FFmpeg on macOS:\n\n"
-                            "1. Install Homebrew (if not installed):\n"
-                            "   Open Terminal and run:\n"
-                            "   /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n\n"
-                            "2. Install FFmpeg:\n"
-                            "   brew install ffmpeg\n\n"
-                            "3. Restart OrpheusDL GUI"
-                        )
-                    else:  # Linux
-                        install_instructions = (
-                            "To install FFmpeg on Linux:\n\n"
-                            "Ubuntu/Debian:\n"
-                            "   sudo apt install ffmpeg\n\n"
-                            "Fedora:\n"
-                            "   sudo dnf install ffmpeg\n\n"
-                            "Arch Linux:\n"
-                            "   sudo pacman -S ffmpeg\n\n"
-                            "Then restart OrpheusDL GUI"
-                        )
+                    dialog = customtkinter.CTkToplevel(app)
+                    dialog.title("FFmpeg Not Found")
+                    dialog.resizable(False, False)
+                    dialog.attributes("-topmost", True)
+                    dialog.transient(app)
                     
-                    show_centered_messagebox(
-                        "FFmpeg Not Found",
-                        "FFmpeg is required for audio conversion (e.g., FLAC to MP3/ALAC).\n\n"
-                        f"{install_instructions}\n\n"
-                        "Downloads will work, but audio conversion will be skipped until FFmpeg is installed.",
-                        dialog_type="warning"
+                    # Helper to copy command with feedback
+                    def copy_command(cmd, button):
+                        try:
+                            if not _copy_to_system_clipboard(cmd):
+                                app.clipboard_clear()
+                                app.clipboard_append(cmd)
+                                app.update()
+                            original_text = button.cget("text")
+                            button.configure(text="✓")
+                            button.after(1500, lambda: button.configure(text=original_text))
+                        except Exception as e:
+                            print(f"Error copying to clipboard: {e}")
+                    
+                    # Main frame
+                    main_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
+                    main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+                    
+                    # Warning icon and title
+                    title_label = customtkinter.CTkLabel(
+                        main_frame, 
+                        text="⚠️  FFmpeg Not Found",
+                        font=("", 18, "bold")
                     )
+                    title_label.pack(pady=(0, 10))
+                    
+                    # Description
+                    desc_label = customtkinter.CTkLabel(
+                        main_frame,
+                        text="FFmpeg is required for audio conversion (e.g., FLAC to MP3/ALAC).\nDownloads will work, but conversion will be skipped.",
+                        justify="center"
+                    )
+                    desc_label.pack(pady=(0, 15))
+                    
+                    if platform.system() == 'Darwin':
+                        # macOS instructions
+                        dialog.geometry("580x340")
+                        
+                        # Step 1: Homebrew
+                        step1_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
+                        step1_frame.pack(fill="x", pady=5)
+                        
+                        step1_label = customtkinter.CTkLabel(step1_frame, text="1. Install Homebrew (if not installed):", anchor="w")
+                        step1_label.pack(fill="x", padx=10, pady=(8, 2))
+                        
+                        homebrew_cmd = '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+                        cmd1_frame = customtkinter.CTkFrame(step1_frame, fg_color="#1E1E1E", corner_radius=5)
+                        cmd1_frame.pack(fill="x", padx=10, pady=(2, 8))
+                        
+                        cmd1_label = customtkinter.CTkLabel(cmd1_frame, text=homebrew_cmd, font=("Consolas", 11), anchor="w", text_color="#98C379")
+                        cmd1_label.pack(side="left", fill="x", expand=True, padx=10, pady=8)
+                        
+                        copy1_btn = customtkinter.CTkButton(
+                            cmd1_frame, text="📋", width=32, height=28, 
+                            fg_color="#3B3B3B", hover_color="#4B4B4B", corner_radius=3,
+                            command=lambda: copy_command(homebrew_cmd, copy1_btn)
+                        )
+                        copy1_btn.pack(side="right", padx=5, pady=5)
+                        
+                        # Step 2: FFmpeg
+                        step2_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
+                        step2_frame.pack(fill="x", pady=5)
+                        
+                        step2_label = customtkinter.CTkLabel(step2_frame, text="2. Install FFmpeg:", anchor="w")
+                        step2_label.pack(fill="x", padx=10, pady=(8, 2))
+                        
+                        ffmpeg_cmd = 'brew install ffmpeg'
+                        cmd2_frame = customtkinter.CTkFrame(step2_frame, fg_color="#1E1E1E", corner_radius=5)
+                        cmd2_frame.pack(fill="x", padx=10, pady=(2, 8))
+                        
+                        cmd2_label = customtkinter.CTkLabel(cmd2_frame, text=ffmpeg_cmd, font=("Consolas", 11), anchor="w", text_color="#98C379")
+                        cmd2_label.pack(side="left", fill="x", expand=True, padx=10, pady=8)
+                        
+                        copy2_btn = customtkinter.CTkButton(
+                            cmd2_frame, text="📋", width=32, height=28,
+                            fg_color="#3B3B3B", hover_color="#4B4B4B", corner_radius=3,
+                            command=lambda: copy_command(ffmpeg_cmd, copy2_btn)
+                        )
+                        copy2_btn.pack(side="right", padx=5, pady=5)
+                        
+                        # Step 3
+                        step3_label = customtkinter.CTkLabel(main_frame, text="3. Restart OrpheusDL GUI", anchor="w")
+                        step3_label.pack(fill="x", pady=(10, 5))
+                        
+                    else:  # Linux
+                        dialog.geometry("480x380")
+                        
+                        # Linux instructions with multiple options
+                        info_label = customtkinter.CTkLabel(main_frame, text="Install FFmpeg using your package manager:", anchor="w")
+                        info_label.pack(fill="x", pady=(0, 10))
+                        
+                        linux_commands = [
+                            ("Ubuntu / Debian:", "sudo apt install ffmpeg"),
+                            ("Fedora:", "sudo dnf install ffmpeg"),
+                            ("Arch Linux:", "sudo pacman -S ffmpeg"),
+                        ]
+                        
+                        for distro, cmd in linux_commands:
+                            cmd_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
+                            cmd_frame.pack(fill="x", pady=3)
+                            
+                            distro_label = customtkinter.CTkLabel(cmd_frame, text=distro, anchor="w", width=120)
+                            distro_label.pack(side="left", padx=10, pady=8)
+                            
+                            inner_frame = customtkinter.CTkFrame(cmd_frame, fg_color="#1E1E1E", corner_radius=5)
+                            inner_frame.pack(side="left", fill="x", expand=True, padx=(0, 5), pady=5)
+                            
+                            cmd_label = customtkinter.CTkLabel(inner_frame, text=cmd, font=("Consolas", 11), anchor="w", text_color="#98C379")
+                            cmd_label.pack(side="left", fill="x", expand=True, padx=10, pady=6)
+                            
+                            # Create button first, then configure command to capture correct reference
+                            copy_btn = customtkinter.CTkButton(
+                                cmd_frame, text="📋", width=32, height=28,
+                                fg_color="#3B3B3B", hover_color="#4B4B4B", corner_radius=3
+                            )
+                            copy_btn.configure(command=lambda c=cmd, b=copy_btn: copy_command(c, b))
+                            copy_btn.pack(side="right", padx=5, pady=5)
+                        
+                        restart_label = customtkinter.CTkLabel(main_frame, text="Then restart OrpheusDL GUI", anchor="w")
+                        restart_label.pack(fill="x", pady=(15, 5))
+                    
+                    # OK button
+                    ok_btn = customtkinter.CTkButton(main_frame, text="OK", command=dialog.destroy, width=100)
+                    ok_btn.pack(pady=(15, 0))
+                    
+                    # Center on parent
+                    dialog.update_idletasks()
+                    parent_x = app.winfo_x()
+                    parent_y = app.winfo_y()
+                    parent_width = app.winfo_width()
+                    parent_height = app.winfo_height()
+                    dialog_width = dialog.winfo_width()
+                    dialog_height = dialog.winfo_height()
+                    center_x = parent_x + (parent_width // 2) - (dialog_width // 2)
+                    center_y = parent_y + (parent_height // 2) - (dialog_height // 2)
+                    dialog.geometry(f"+{center_x}+{center_y}")
+                    
+                    dialog.grab_set()
+                    
                 app.after(1000, _show_ffmpeg_install_message)
         
         setup_logging(output_queue)
