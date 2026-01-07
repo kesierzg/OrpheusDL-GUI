@@ -7492,7 +7492,7 @@ Unnecessary Lossless-to-Lossless""",
                     
                     if platform.system() == 'Darwin':
                         # macOS instructions
-                        dialog.geometry("620x400")
+                        dialog.geometry("620x480")
                         
                         # Step 1: Homebrew
                         step1_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
@@ -7545,7 +7545,7 @@ Unnecessary Lossless-to-Lossless""",
                         step3_label.pack(fill="x", pady=(10, 5))
                         
                     else:  # Linux
-                        dialog.geometry("520x420")
+                        dialog.geometry("520x500")
                         
                         # Linux instructions with multiple options
                         info_label = customtkinter.CTkLabel(main_frame, text="Install FFmpeg using your package manager:", anchor="w")
