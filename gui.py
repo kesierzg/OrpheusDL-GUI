@@ -564,10 +564,29 @@ def copy_bundled_resources_to_data_dir(data_dir):
             # Make executable on Unix-like systems
             if platform.system() != 'Windows':
                 os.chmod(dest_ffmpeg, 0o755)
+                # Remove quarantine attribute on macOS
+                if platform.system() == 'Darwin':
+                    try:
+                        import subprocess
+                        subprocess.run(['xattr', '-d', 'com.apple.quarantine', dest_ffmpeg], 
+                                       capture_output=True, check=False)
+                    except Exception:
+                        pass  # Ignore if xattr command fails
             print(f"[Resource Copy] Copied ffmpeg to {dest_ffmpeg}")
         except Exception as e:
             print(f"[Resource Copy] Failed to copy ffmpeg: {e}")
     elif os.path.isfile(dest_ffmpeg):
+        # Ensure existing ffmpeg is executable and not quarantined
+        if platform.system() != 'Windows':
+            try:
+                if not os.access(dest_ffmpeg, os.X_OK):
+                    os.chmod(dest_ffmpeg, 0o755)
+                if platform.system() == 'Darwin':
+                    import subprocess
+                    subprocess.run(['xattr', '-d', 'com.apple.quarantine', dest_ffmpeg], 
+                                   capture_output=True, check=False)
+            except Exception:
+                pass
         print(f"[Resource Copy] ffmpeg already exists at {dest_ffmpeg}")
     else:
         print(f"[Resource Copy] No bundled ffmpeg found at {bundled_ffmpeg}")
