@@ -1313,6 +1313,14 @@ def save_settings(show_confirmation: bool = True):
         "advanced.conversion_flags.mp3.setting"
     ]
 
+    # Ensure hide_ffmpeg_warning is preserved even if the Global settings tab hasn't been opened yet
+    hide_ffmpeg_key = "advanced.hide_ffmpeg_warning"
+    if hide_ffmpeg_key not in settings_vars.get("globals", {}):
+        current_val = current_settings.get("globals", {}).get("advanced", {}).get("hide_ffmpeg_warning")
+        if current_val is not None:
+            if "globals" not in settings_vars: settings_vars["globals"] = {}
+            settings_vars["globals"][hide_ffmpeg_key] = tkinter.BooleanVar(value=bool(current_val))
+
     for key_path_str, var in settings_vars.get("globals", {}).items():
         if key_path_str in slider_handled_conversion_flag_keys:
             continue
@@ -1584,32 +1592,6 @@ def run_login_in_thread(orpheus, platform_name, gui_settings):
         if 'app' in globals() and app.winfo_exists():
             app.after(0, lambda: _update_settings_tab_widgets())
             
-def _update_settings_tab_widgets():
-    global credential_tabs_config, current_settings, app
-    
-    for platform_name, tab_info in credential_tabs_config.items():
-        if platform_name in loaded_credential_tabs:
-            tab_frame = tab_info['frame']
-            platform_creds = current_settings.get("credentials", {}).get(platform_name, {})
-            
-            for child in tab_frame.winfo_children():
-                widget_name = getattr(child, '_w', str(child))
-                
-                for setting_key in tab_info['settings']:
-                    entry_attr = f"{setting_key}_entry"
-                    if hasattr(tab_frame, entry_attr):
-                        entry = getattr(tab_frame, entry_attr)
-                        if isinstance(entry, customtkinter.CTkEntry):
-                            entry.unbind("<KeyRelease>")
-                            
-                            current_val = entry.get()
-                            new_val = platform_creds.get(setting_key, '')
-                            if current_val != new_val:
-                                entry.delete(0, "end")
-                                entry.insert(0, new_val)
-                            
-                            entry.bind("<KeyRelease>", lambda event, p=platform_name, k=setting_key, w=entry: _auto_save_credential_change(p, k, w))
-                        break
 
 def start_login_thread(platform_name):
     """Starts the login process in a separate thread."""
@@ -4817,15 +4799,12 @@ def sort_results(column):
     except Exception as e: print(f"Error sorting results by '{column}': {e}"); show_centered_messagebox("Error", f"Sort failed: {e}", dialog_type="error")
 
 def _update_settings_tab_widgets():
-    """Refreshes ONLY the Global settings tab widgets from current_settings."""
-    global current_settings, settings_vars, path_var_main, DEFAULT_SETTINGS
+    """Refreshes Global settings tab widgets AND credential tabs from current_settings."""
+    global current_settings, settings_vars, path_var_main, DEFAULT_SETTINGS, credential_tabs_config, loaded_credential_tabs, app
     if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
         print("Refreshing Global Settings tab UI from current_settings...")
     try:
         for key, var in settings_vars.get("globals", {}).items():
-            if key in ["advanced.codec_conversions"]:
-                continue
-
             if key == "advanced.codec_conversions":
                 current_codec_conversions_setting = current_settings.get("globals", {}).get("advanced", {}).get("codec_conversions", {})
                 
@@ -4842,12 +4821,10 @@ def _update_settings_tab_widgets():
                             try: var[target_var_key].set(target_codec_from_settings)
                             except Exception as e_set_tgt: print(f"Error setting target var {target_var_key}: {e_set_tgt}")
                 continue
+            
             if not isinstance(var, tkinter.Variable):
-                 if isinstance(var, dict):
-                     if not var:
-                         pass 
-                 else:
-                    print(f"[Update Settings UI WARN] Skipping key '{key}' in settings_vars: value is type {type(var)}, not a tkinter.Variable or handled dict.")
+                continue
+            
             keys = key.split('.')
             temp_dict = current_settings.get("globals", {})
             valid_path = True
@@ -4870,76 +4847,20 @@ def _update_settings_tab_widgets():
                     else: print(f"Error setting variable for {key}: {e_set}")
                 except Exception as e_set_other:
                     print(f"Error setting variable for {key}: {e_set_other}")
-        if 'path_var_main' in globals() and isinstance(path_var_main, tkinter.Variable) and "general.output_path" not in settings_vars.get("globals", {}):
-             main_path_val = current_settings.get("globals", {}).get("general", {}).get("output_path")
-             if main_path_val is not None:
-                  try: path_var_main.set(main_path_val)
-                  except tkinter.TclError as e_set_main:
-                      if "invalid command name" in str(e_set_main): pass
-                      else: print(f"Error setting main path variable: {e_set_main}")
-                  except Exception as e_set_main_other:
-                      print(f"Error setting main path variable: {e_set_main_other}")
-        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-            print("Global Settings tab UI refresh finished.")
-    except Exception as e: print(f"Error during Global settings UI refresh: {e}"); import traceback; traceback.print_exc()
 
-    try:
-        for key, var in settings_vars.get("globals", {}).items():
-
-            if key == "advanced.codec_conversions":
-                current_codec_conversions_setting = current_settings.get("globals", {}).get("advanced", {}).get("codec_conversions", {})
-                
-                if isinstance(var, dict) and isinstance(current_codec_conversions_setting, dict):
-                    for source_codec_from_settings, target_codec_from_settings in current_codec_conversions_setting.items():
-                        source_var_key = f"{source_codec_from_settings}_source"
-                        target_var_key = f"{source_codec_from_settings}_target"
-
-                        if source_var_key in var and isinstance(var[source_var_key], tkinter.StringVar):
-                            try: var[source_var_key].set(source_codec_from_settings)
-                            except Exception as e_set_src: print(f"Error setting source var {source_var_key}: {e_set_src}")
-
-                        if target_var_key in var and isinstance(var[target_var_key], tkinter.StringVar):
-                            try: var[target_var_key].set(target_codec_from_settings)
-                            except Exception as e_set_tgt: print(f"Error setting target var {target_var_key}: {e_set_tgt}")
-                continue
-            if not isinstance(var, tkinter.Variable):
-                 if isinstance(var, dict):
-                     if not var:
-                         pass 
-                 else:
-                    print(f"[Update Settings UI WARN] Skipping key '{key}' in settings_vars: value is type {type(var)}, not a tkinter.Variable or handled dict.")
-            keys = key.split('.')
-            temp_dict = current_settings.get("globals", {})
-            valid_path = True
-            for k_part in keys:
-                if isinstance(temp_dict, dict):
-                    temp_dict = temp_dict.get(k_part)
-                else:
-                    valid_path = False
-                    break
-            value_from_dict = temp_dict if valid_path else None
-            
-            if value_from_dict is not None:
-                try:
-                    if isinstance(var, tkinter.BooleanVar):
-                        var.set(bool(value_from_dict))
-                    else:
-                        var.set(str(value_from_dict))
-                except tkinter.TclError as e_set:
-                    if "invalid command name" in str(e_set): pass
-                    else: print(f"Error setting variable for {key}: {e_set}")
-                except Exception as e_set_other:
-                    print(f"Error setting variable for {key}: {e_set_other}")
+        # Refresh specific advanced settings (sliders, etc.)
         aac_br_var = settings_vars.get("globals", {}).get("advanced.conversion_flags.aac.audio_bitrate")
         if aac_br_var and isinstance(aac_br_var, tkinter.StringVar):
             aac_default_val = DEFAULT_SETTINGS["globals"]["advanced"]["conversion_flags"]["aac"]["audio_bitrate"]
             aac_current_br_from_settings = str(current_settings.get("globals", {}).get("advanced", {}).get("conversion_flags", {}).get("aac", {}).get("audio_bitrate", aac_default_val))
             aac_br_var.set(aac_current_br_from_settings)
+            
         flac_cl_var = settings_vars.get("globals", {}).get("advanced.conversion_flags.flac.compression_level")
         if flac_cl_var and isinstance(flac_cl_var, tkinter.StringVar):
             flac_default_val = DEFAULT_SETTINGS["globals"]["advanced"]["conversion_flags"]["flac"]["compression_level"]
             flac_current_cl_from_settings = str(current_settings.get("globals", {}).get("advanced", {}).get("conversion_flags", {}).get("flac", {}).get("compression_level", flac_default_val))
             flac_cl_var.set(flac_current_cl_from_settings)
+            
         mp3_setting_var = settings_vars.get("globals", {}).get("advanced.conversion_flags.mp3.setting")
         if mp3_setting_var and isinstance(mp3_setting_var, tkinter.StringVar):
             mp3_conf_flags_loaded = current_settings.get("globals", {}).get("advanced", {}).get("conversion_flags", {}).get("mp3", {})
@@ -4951,17 +4872,12 @@ def _update_settings_tab_widgets():
                     resolved_display_val = mp3_conf_flags_loaded["audio_bitrate"]
                 elif "qscale:a" in mp3_conf_flags_loaded and mp3_conf_flags_loaded["qscale:a"] == "0":
                     resolved_display_val = "VBR -V0"
-            if resolved_display_val is None:
-                if "audio_bitrate" in mp3_default_conf_flags_loaded and isinstance(mp3_default_conf_flags_loaded["audio_bitrate"], str) and mp3_default_conf_flags_loaded["audio_bitrate"].endswith('k'):
-                    resolved_display_val = mp3_default_conf_flags_loaded["audio_bitrate"]
-                elif "qscale:a" in mp3_default_conf_flags_loaded and mp3_default_conf_flags_loaded["qscale:a"] == "0":
-                    resolved_display_val = "VBR -V0"
+            
             valid_mp3_ui_options = ["128k", "192k", "256k", "320k", "VBR -V0"]
             if resolved_display_val is None or resolved_display_val not in valid_mp3_ui_options:
                 resolved_display_val = "VBR -V0"
-
             mp3_setting_var.set(resolved_display_val)
-
+        
         if 'path_var_main' in globals() and isinstance(path_var_main, tkinter.Variable) and "general.output_path" not in settings_vars.get("globals", {}):
              main_path_val = current_settings.get("globals", {}).get("general", {}).get("output_path")
              if main_path_val is not None:
@@ -4971,9 +4887,38 @@ def _update_settings_tab_widgets():
                       else: print(f"Error setting main path variable: {e_set_main}")
                   except Exception as e_set_main_other:
                       print(f"Error setting main path variable: {e_set_main_other}")
+
         if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
             print("Global Settings tab UI refresh finished.")
-    except Exception as e: print(f"Error during Global settings UI refresh: {e}"); import traceback; traceback.print_exc()
+        
+        # --- Credential Tabs Refresh (Merged from duplicate function) ---
+        for platform_name, tab_info in credential_tabs_config.items():
+            if platform_name in loaded_credential_tabs:
+                tab_frame = tab_info.get('frame')
+                if not tab_frame: continue
+                platform_creds = current_settings.get("credentials", {}).get(platform_name, {})
+                
+                # Get settings from tab_info if available, otherwise use keys from current_settings
+                settings_to_update = tab_info.get('settings', [])
+                if not settings_to_update:
+                    settings_to_update = list(platform_creds.keys())
+                
+                for setting_key in settings_to_update:
+                    entry_attr = f"{setting_key}_entry"
+                    if hasattr(tab_frame, entry_attr):
+                        entry = getattr(tab_frame, entry_attr)
+                        if isinstance(entry, customtkinter.CTkEntry):
+                            try:
+                                entry.unbind("<KeyRelease>")
+                                current_val = entry.get()
+                                new_val = str(platform_creds.get(setting_key, ''))
+                                if current_val != new_val:
+                                    entry.delete(0, "end")
+                                    entry.insert(0, new_val)
+                                entry.bind("<KeyRelease>", lambda event, p=platform_name, k=setting_key, w=entry: _auto_save_credential_change(p, k, w))
+                            except Exception as e_cred:
+                                print(f"Error updating credential widget for {platform_name}.{setting_key}: {e_cred}")
+    except Exception as e: print(f"Error during Global/Credential settings UI refresh: {e}"); import traceback; traceback.print_exc()
 
 def _create_credential_tab_content(platform_name, tab_frame):
     """Creates the labels and entry fields for a given platform's credentials."""
@@ -6886,6 +6831,7 @@ Lossless-to-Lossy (if not preferred)
 Unnecessary Lossless-to-Lossless""",
             "advanced.ignore_existing_files": "Skips downloading files, if a file with the target name already exists in the output directory.",
             "advanced.ignore_different_artists": "When downloading albums, ignore tracks where the artist differs from the main album artist.",
+            "advanced.hide_ffmpeg_warning": "Hide the warning message that appears when FFmpeg is not found on the system.",
             "advanced.conversion_flags.aac.audio_bitrate": "Set AAC audio bitrate. Higher is better quality but larger file. Options: 128k, 192k, 256k, 320k.",
             "advanced.conversion_flags.flac.compression_level": "Set FLAC compression level (0-8). Higher level means smaller file but slower encoding, 0 is fastest, 8 is smallest."
         }
