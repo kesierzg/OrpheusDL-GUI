@@ -6004,7 +6004,6 @@ def _setup_macos_window_management():
         global _is_window_minimized, _restore_timer_id
         try:
             if _is_window_minimized:
-                print("[macOS] Restoring window from minimized state")
                 _is_window_minimized = False
                 if _restore_timer_id:
                     app.after_cancel(_restore_timer_id)
@@ -6025,7 +6024,6 @@ def _setup_macos_window_management():
         try:
             current_state = app.state()
             if current_state == 'iconic' and not _is_window_minimized:
-                print("[macOS] Window minimized, switching to withdraw() to fix dock behavior")
                 _is_window_minimized = True
                 app.after_idle(lambda: app.withdraw())
                 def check_for_restore():
@@ -6046,7 +6044,6 @@ def _setup_macos_window_management():
             return
             
         if _is_window_minimized:
-            print("[macOS] Window mapped - restoring from minimized state")
             _is_window_minimized = False
             if _restore_timer_id:
                 app.after_cancel(_restore_timer_id)
@@ -6064,11 +6061,8 @@ def _setup_macos_window_management():
         app.bind('<FocusIn>', on_focus_in)
         try:
             app.createcommand('::tk::mac::ReopenApplication', restore_window)
-            print("[macOS] Added dock menu restore command")
         except Exception as menu_e:
-            print(f"[macOS] Could not set up dock menu (normal on non-bundled apps): {menu_e}")
-        
-        print("[macOS] Window management setup complete")
+            pass  # Normal on non-bundled apps
         
     except Exception as e:
         print(f"[macOS] Error setting up window management: {e}")
