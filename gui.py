@@ -970,7 +970,8 @@ def load_settings():
                         "disable_subscription_checks": False,
                         "enable_undesirable_conversions": False,
                         "ignore_existing_files": False,
-                        "ignore_different_artists": True
+                        "ignore_different_artists": True,
+                        "hide_ffmpeg_warning": False
                     }
                 },
                 "modules": {
@@ -6493,7 +6494,8 @@ if __name__ == "__main__":
                     "disable_subscription_checks": False,
                     "enable_undesirable_conversions": False,
                     "ignore_existing_files": False,
-                    "ignore_different_artists": True
+                    "ignore_different_artists": True,
+                    "hide_ffmpeg_warning": False
                 }
             },
             "credentials": {
@@ -7445,6 +7447,10 @@ Unnecessary Lossless-to-Lossless""",
             ffmpeg_found, ffmpeg_path = find_system_ffmpeg()
             if not ffmpeg_found:
                 def _show_ffmpeg_install_message():
+                    # Check if user chose to hide this message
+                    if current_settings.get("globals", {}).get("advanced", {}).get("hide_ffmpeg_warning", False):
+                        return
+                    
                     dialog = customtkinter.CTkToplevel(app)
                     dialog.title("FFmpeg Not Found")
                     dialog.resizable(False, False)
@@ -7486,7 +7492,7 @@ Unnecessary Lossless-to-Lossless""",
                     
                     if platform.system() == 'Darwin':
                         # macOS instructions
-                        dialog.geometry("580x340")
+                        dialog.geometry("620x400")
                         
                         # Step 1: Homebrew
                         step1_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
@@ -7499,15 +7505,17 @@ Unnecessary Lossless-to-Lossless""",
                         cmd1_frame = customtkinter.CTkFrame(step1_frame, fg_color="#1E1E1E", corner_radius=5)
                         cmd1_frame.pack(fill="x", padx=10, pady=(2, 8))
                         
-                        cmd1_label = customtkinter.CTkLabel(cmd1_frame, text=homebrew_cmd, font=("Consolas", 11), anchor="w", text_color="#98C379")
+                        cmd1_label = customtkinter.CTkLabel(cmd1_frame, text=homebrew_cmd, font=("Consolas", 10), anchor="w", text_color="#98C379")
                         cmd1_label.pack(side="left", fill="x", expand=True, padx=10, pady=8)
                         
                         copy1_btn = customtkinter.CTkButton(
-                            cmd1_frame, text="📋", width=32, height=28, 
-                            fg_color="#3B3B3B", hover_color="#4B4B4B", corner_radius=3,
+                            cmd1_frame, text="⧉", width=24, height=24, 
+                            font=("Segoe UI", 14),
+                            fg_color="transparent", hover_color="#3B3B3B", 
+                            text_color="#DCE4EE", corner_radius=3,
                             command=lambda: copy_command(homebrew_cmd, copy1_btn)
                         )
-                        copy1_btn.pack(side="right", padx=5, pady=5)
+                        copy1_btn.pack(side="right", padx=8, pady=5)
                         
                         # Step 2: FFmpeg
                         step2_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
@@ -7524,18 +7532,20 @@ Unnecessary Lossless-to-Lossless""",
                         cmd2_label.pack(side="left", fill="x", expand=True, padx=10, pady=8)
                         
                         copy2_btn = customtkinter.CTkButton(
-                            cmd2_frame, text="📋", width=32, height=28,
-                            fg_color="#3B3B3B", hover_color="#4B4B4B", corner_radius=3,
+                            cmd2_frame, text="⧉", width=24, height=24,
+                            font=("Segoe UI", 14),
+                            fg_color="transparent", hover_color="#3B3B3B",
+                            text_color="#DCE4EE", corner_radius=3,
                             command=lambda: copy_command(ffmpeg_cmd, copy2_btn)
                         )
-                        copy2_btn.pack(side="right", padx=5, pady=5)
+                        copy2_btn.pack(side="right", padx=8, pady=5)
                         
                         # Step 3
                         step3_label = customtkinter.CTkLabel(main_frame, text="3. Restart OrpheusDL GUI", anchor="w")
                         step3_label.pack(fill="x", pady=(10, 5))
                         
                     else:  # Linux
-                        dialog.geometry("480x380")
+                        dialog.geometry("520x420")
                         
                         # Linux instructions with multiple options
                         info_label = customtkinter.CTkLabel(main_frame, text="Install FFmpeg using your package manager:", anchor="w")
@@ -7562,18 +7572,47 @@ Unnecessary Lossless-to-Lossless""",
                             
                             # Create button first, then configure command to capture correct reference
                             copy_btn = customtkinter.CTkButton(
-                                cmd_frame, text="📋", width=32, height=28,
-                                fg_color="#3B3B3B", hover_color="#4B4B4B", corner_radius=3
+                                cmd_frame, text="⧉", width=24, height=24,
+                                font=("Segoe UI", 14),
+                                fg_color="transparent", hover_color="#3B3B3B",
+                                text_color="#DCE4EE", corner_radius=3
                             )
                             copy_btn.configure(command=lambda c=cmd, b=copy_btn: copy_command(c, b))
-                            copy_btn.pack(side="right", padx=5, pady=5)
+                            copy_btn.pack(side="right", padx=8, pady=5)
                         
                         restart_label = customtkinter.CTkLabel(main_frame, text="Then restart OrpheusDL GUI", anchor="w")
                         restart_label.pack(fill="x", pady=(15, 5))
                     
+                    # "Don't show again" checkbox
+                    dont_show_var = customtkinter.BooleanVar(value=False)
+                    
+                    def on_close():
+                        if dont_show_var.get():
+                            # Save preference to settings
+                            if "globals" not in current_settings:
+                                current_settings["globals"] = {}
+                            if "advanced" not in current_settings["globals"]:
+                                current_settings["globals"]["advanced"] = {}
+                            current_settings["globals"]["advanced"]["hide_ffmpeg_warning"] = True
+                            save_settings()
+                        dialog.destroy()
+                    
+                    checkbox_frame = customtkinter.CTkFrame(main_frame, fg_color="transparent")
+                    checkbox_frame.pack(fill="x", pady=(15, 5))
+                    
+                    dont_show_checkbox = customtkinter.CTkCheckBox(
+                        checkbox_frame,
+                        text="Don't show this message again",
+                        variable=dont_show_var,
+                        font=("", 12),
+                        checkbox_height=18,
+                        checkbox_width=18
+                    )
+                    dont_show_checkbox.pack(anchor="center")
+                    
                     # OK button
-                    ok_btn = customtkinter.CTkButton(main_frame, text="OK", command=dialog.destroy, width=100)
-                    ok_btn.pack(pady=(15, 0))
+                    ok_btn = customtkinter.CTkButton(main_frame, text="OK", command=on_close, width=100)
+                    ok_btn.pack(pady=(10, 0))
                     
                     # Center on parent
                     dialog.update_idletasks()
