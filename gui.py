@@ -6510,6 +6510,8 @@ if __name__ == "__main__":
             print(f"[DEBUG] Before GUI setup: output_path = {current_settings.get('globals', {}).get('general', {}).get('output_path')}")
         customtkinter.set_appearance_mode("dark")
         app = customtkinter.CTk()
+        # Use alpha to hide window instead of withdraw, as withdraw can cause issues on some systems
+        app.attributes('-alpha', 0)
         app.title("OrpheusDL GUI")
         app.geometry("940x600")
         
@@ -7596,6 +7598,14 @@ Unnecessary Lossless-to-Lossless""",
         _initial_ui_update()
         app.protocol("WM_DELETE_WINDOW", _on_gui_exit)
         _setup_macos_window_management()
+        
+        app.attributes('-alpha', 1)
+        app.deiconify() # Ensure it's not minimized
+        try:
+            app.state("normal")
+        except:
+            pass
+        app.lift()
         
         app.mainloop()
     else:
