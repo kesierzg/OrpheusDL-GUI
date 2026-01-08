@@ -5045,7 +5045,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(anchor="w", padx=15, pady=15)
+            help_container.pack(anchor="w", padx=15, pady=12)
             
             # Left column - title
             help_title = customtkinter.CTkLabel(
@@ -5131,15 +5131,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             )
             copy_button.pack(side="left")
             
-            # Hover effect to make icon bigger
-            def on_copy_enter(e):
-                copy_button.configure(font=("Segoe UI", 16))
-            
-            def on_copy_leave(e):
-                copy_button.configure(font=("Segoe UI", 14))
-            
-            copy_button.bind("<Enter>", on_copy_enter)
-            copy_button.bind("<Leave>", on_copy_leave)
+
             
             step4_label = customtkinter.CTkLabel(
                 instructions_frame,
@@ -5165,7 +5157,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(anchor="w", padx=15, pady=15)
+            help_container.pack(anchor="w", padx=15, pady=12)
             
             # Left column - title
             help_title = customtkinter.CTkLabel(
@@ -5311,7 +5303,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(anchor="w", padx=15, pady=15)
+            help_container.pack(anchor="w", padx=15, pady=12)
             
             # Left column - title
             help_title = customtkinter.CTkLabel(
@@ -5362,12 +5354,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             )
             client_id_copy_button.pack(side="left")
             
-            def on_client_id_copy_enter(e):
-                client_id_copy_button.configure(font=("Segoe UI", 16))
-            def on_client_id_copy_leave(e):
-                client_id_copy_button.configure(font=("Segoe UI", 14))
-            client_id_copy_button.bind("<Enter>", on_client_id_copy_enter)
-            client_id_copy_button.bind("<Leave>", on_client_id_copy_leave)
+
             
             # client_secret value with copy button
             client_secret_container = customtkinter.CTkFrame(values_frame, fg_color="transparent")
@@ -5405,12 +5392,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             )
             client_secret_copy_button.pack(side="left")
             
-            def on_client_secret_copy_enter(e):
-                client_secret_copy_button.configure(font=("Segoe UI", 16))
-            def on_client_secret_copy_leave(e):
-                client_secret_copy_button.configure(font=("Segoe UI", 14))
-            client_secret_copy_button.bind("<Enter>", on_client_secret_copy_enter)
-            client_secret_copy_button.bind("<Leave>", on_client_secret_copy_leave)
+
             
             # bf_secret value with copy button
             bf_secret_container = customtkinter.CTkFrame(values_frame, fg_color="transparent")
@@ -5448,12 +5430,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             )
             bf_secret_copy_button.pack(side="left")
             
-            def on_bf_secret_copy_enter(e):
-                bf_secret_copy_button.configure(font=("Segoe UI", 16))
-            def on_bf_secret_copy_leave(e):
-                bf_secret_copy_button.configure(font=("Segoe UI", 14))
-            bf_secret_copy_button.bind("<Enter>", on_bf_secret_copy_enter)
-            bf_secret_copy_button.bind("<Leave>", on_bf_secret_copy_leave)
+
         
         # Add help text for Qobuz module
         if platform_name == "Qobuz":
@@ -5479,7 +5456,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(anchor="w", padx=15, pady=15)
+            help_container.pack(anchor="w", padx=15, pady=12)
             
             # Left column - title
             help_title = customtkinter.CTkLabel(
@@ -5530,12 +5507,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             )
             app_id_copy_button.pack(side="left")
             
-            def on_app_id_copy_enter(e):
-                app_id_copy_button.configure(font=("Segoe UI", 16))
-            def on_app_id_copy_leave(e):
-                app_id_copy_button.configure(font=("Segoe UI", 14))
-            app_id_copy_button.bind("<Enter>", on_app_id_copy_enter)
-            app_id_copy_button.bind("<Leave>", on_app_id_copy_leave)
+
             
             # app_secret value with copy button
             app_secret_container = customtkinter.CTkFrame(values_frame, fg_color="transparent")
@@ -5573,12 +5545,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             )
             app_secret_copy_button.pack(side="left")
             
-            def on_app_secret_copy_enter(e):
-                app_secret_copy_button.configure(font=("Segoe UI", 16))
-            def on_app_secret_copy_leave(e):
-                app_secret_copy_button.configure(font=("Segoe UI", 14))
-            app_secret_copy_button.bind("<Enter>", on_app_secret_copy_enter)
-            app_secret_copy_button.bind("<Leave>", on_app_secret_copy_leave)
+
         
         # Add help text for SoundCloud module
         if platform_name == "SoundCloud":
@@ -5588,7 +5555,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(anchor="w", padx=15, pady=15)
+            help_container.pack(anchor="w", padx=15, pady=12)
             
             # Left column - title
             help_title = customtkinter.CTkLabel(
