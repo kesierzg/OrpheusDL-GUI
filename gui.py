@@ -644,60 +644,79 @@ def copy_bundled_resources_to_data_dir(data_dir):
 _app_dir = get_script_directory()
 if _app_dir not in sys.path:
     sys.path.insert(0, _app_dir)
-try:
-    import orpheus.core
-    _orpheus_core_available = True
-except ImportError as e:
-    print(f"ERROR: Failed to import orpheus.core: {e}. Patching and core functionality might fail.")
-    _orpheus_core_available = False
-    orpheus = type('obj', (object,), {'core': None})()
+
+# Global placeholders for lazy loading
+Orpheus = None
+MediaIdentification = None
+ManualEnum = None
+ModuleModes = None
+Downloader = None
+ImageFileTypeEnum = None
+CoverCompressionEnum = None
+Oprinter = None
+DownloadTypeEnum = None
+ORPHEUS_AVAILABLE = False
 _original_resource_path = None
-if _orpheus_core_available and hasattr(orpheus.core, 'resource_path'):
-    _original_resource_path = orpheus.core.resource_path
-    print("[Patch] Stored original orpheus.core.resource_path")
 
-    def patched_resource_path(relative_path):
-        """ Patched version to always return path relative to executable dir """
-        executable_dir = get_script_directory()
-        patched_path = os.path.join(executable_dir, relative_path)
-        return patched_path
+def beauty_format_seconds(s): return str(s) # Default simple implementation
 
-    orpheus.core.resource_path = patched_resource_path
-    print("[Patch] Patched orpheus.core.resource_path")
-elif _orpheus_core_available:
-    print("[Patch] WARNING: orpheus.core.resource_path not found for patching.")
-if _orpheus_core_available:
+def _import_orpheus_modules():
+    global Orpheus, MediaIdentification, ManualEnum, ModuleModes, Downloader
+    global ImageFileTypeEnum, CoverCompressionEnum, Oprinter, DownloadTypeEnum
+    global ORPHEUS_AVAILABLE, beauty_format_seconds, _original_resource_path
+    
     try:
-        from orpheus.core import Orpheus, MediaIdentification, ManualEnum, ModuleModes
-        from orpheus.music_downloader import beauty_format_seconds, Downloader
-        from utils.models import (ImageFileTypeEnum, CoverCompressionEnum, Oprinter, DownloadTypeEnum)
+        # Import orpheus.core first to patch resource_path
+        import orpheus.core
+        
+        # Patch resource_path
+        if hasattr(orpheus.core, 'resource_path'):
+            _original_resource_path = orpheus.core.resource_path
+            print("[Patch] Stored original orpheus.core.resource_path")
+
+            def patched_resource_path(relative_path):
+                """ Patched version to always return path relative to executable dir """
+                executable_dir = get_script_directory()
+                patched_path = os.path.join(executable_dir, relative_path)
+                return patched_path
+
+            orpheus.core.resource_path = patched_resource_path
+            print("[Patch] Patched orpheus.core.resource_path")
+        else:
+            print("[Patch] WARNING: orpheus.core.resource_path not found for patching.")
+
+        # Import components
+        from orpheus.core import Orpheus as _Orpheus, MediaIdentification as _MediaIdentification, ManualEnum as _ManualEnum, ModuleModes as _ModuleModes
+        from orpheus.music_downloader import beauty_format_seconds as _beauty_format_seconds, Downloader as _Downloader
+        from utils.models import (ImageFileTypeEnum as _ImageFileTypeEnum, CoverCompressionEnum as _CoverCompressionEnum, Oprinter as _Oprinter, DownloadTypeEnum as _DownloadTypeEnum)
+        
+        Orpheus = _Orpheus
+        MediaIdentification = _MediaIdentification
+        ManualEnum = _ManualEnum
+        ModuleModes = _ModuleModes
+        beauty_format_seconds = _beauty_format_seconds
+        Downloader = _Downloader
+        ImageFileTypeEnum = _ImageFileTypeEnum
+        CoverCompressionEnum = _CoverCompressionEnum
+        Oprinter = _Oprinter
+        DownloadTypeEnum = _DownloadTypeEnum
+        
         ORPHEUS_AVAILABLE = True
+        print("[Import] Orpheus modules imported successfully.")
+        
     except (ImportError, AttributeError) as e:
-        print(f"ERROR: Failed to import Orpheus library components after patching: {e}. Core functionality will be unavailable.")
+        print(f"ERROR: Failed to import Orpheus library components: {e}. Core functionality will be unavailable.")
+        # Define dummy classes if import fails
         class Orpheus: pass
         class MediaIdentification: pass
         class ManualEnum: manual = 1
         class ModuleModes: lyrics=1; covers=2; credits=3
-        def beauty_format_seconds(s): return str(s)
         class Downloader: pass
         class ImageFileTypeEnum(enum.Enum): pass
         class CoverCompressionEnum(enum.Enum): pass
         class Oprinter: pass
         class DownloadTypeEnum(enum.Enum): track="track"; artist="artist"; playlist="playlist"; album="album"
         ORPHEUS_AVAILABLE = False
-else:
-    print("Skipping import of Orpheus components as orpheus.core was not found.")
-    class Orpheus: pass
-    class MediaIdentification: pass
-    class ManualEnum: manual = 1
-    class ModuleModes: lyrics=1; covers=2; credits=3
-    def beauty_format_seconds(s): return str(s)
-    class Downloader: pass
-    class ImageFileTypeEnum(enum.Enum): pass
-    class CoverCompressionEnum(enum.Enum): pass
-    class Oprinter: pass
-    class DownloadTypeEnum(enum.Enum): track="track"; artist="artist"; playlist="playlist"; album="album"
-    ORPHEUS_AVAILABLE = False
 _original_get_terminal_size = os.get_terminal_size
 
 def _patched_get_terminal_size(fd=None):
@@ -1122,6 +1141,10 @@ def load_settings():
 def initialize_orpheus():
     """Attempts to initialize the global Orpheus instance."""
     global orpheus_instance, app, download_button, search_button, DATA_DIR, _SCRIPT_DIR, _DATA_DIR
+    
+    # Lazy load modules if not already loaded
+    if not ORPHEUS_AVAILABLE:
+        _import_orpheus_modules()
 
     if not ORPHEUS_AVAILABLE:
         print("Orpheus library not available. Skipping initialization.")
@@ -6492,15 +6515,8 @@ if __name__ == "__main__":
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print(f"[DEBUG] After load_settings: output_path = {current_settings.get('globals', {}).get('general', {}).get('output_path')}")
             
-            init_success = initialize_orpheus()
-            
-            # If initialization failed on first run, Orpheus may have written necessary config
-            # Try once more after reloading settings
-            if not init_success and _settings_just_created:
-                print("[First Run] Initial Orpheus setup may have updated settings. Retrying initialization...")
-                time.sleep(0.5)  # Brief pause to ensure file writes complete
-                load_settings()  # Reload potentially updated settings
-                initialize_orpheus()  # Retry
+            # Initialization moved to background thread to speed up startup
+            pass
         except FileNotFoundError as e:
              print(f"Initialization failed: {e}")
              sys.exit(1)
@@ -6591,7 +6607,7 @@ if __name__ == "__main__":
         url_entry.bind("<FocusIn>", lambda e, w=url_entry: handle_focus_in(w))
         url_entry.bind("<FocusOut>", lambda e, w=url_entry: handle_focus_out(w))
         clear_url_button = customtkinter.CTkButton(url_frame, text="Clear", width=100, height=30, command=clear_url_entry, fg_color="#343638", hover_color="#1F6AA5"); clear_url_button.grid(row=0, column=2, sticky="e", padx=5)
-        download_button = customtkinter.CTkButton(url_frame, text="Download", width=100, height=30, command=start_download_thread, fg_color="#343638", hover_color="#1F6AA5"); download_button.grid(row=0, column=3, sticky="e", padx=5)
+        download_button = customtkinter.CTkButton(url_frame, text="Download", width=100, height=30, command=start_download_thread, fg_color="#343638", hover_color="#1F6AA5", state="disabled"); download_button.grid(row=0, column=3, sticky="e", padx=5)
         path_frame = customtkinter.CTkFrame(download_tab, fg_color="transparent"); path_frame.grid(row=1, column=0, columnspan=4, sticky="ew", padx=10, pady=5); path_frame.grid_columnconfigure(1, weight=1)
         path_label = customtkinter.CTkLabel(path_frame, text="Output Path"); path_label.grid(row=0, column=0, sticky="w", padx=5)
         path_var_main = tkinter.StringVar(value=current_settings.get("globals", {}).get("general", {}).get("output_path", DEFAULT_SETTINGS["globals"]["general"]["output_path"]))
@@ -6646,7 +6662,7 @@ if __name__ == "__main__":
         search_entry.bind("<FocusOut>", lambda e, w=search_entry: handle_focus_out(w))
         clear_search_button = customtkinter.CTkButton(search_input_frame, text="Clear", command=clear_search_entry, width=100, height=30, fg_color="#343638", hover_color="#1F6AA5"); clear_search_button.pack(side="left", padx=(10, 0))
         button_search_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent"); button_search_frame.grid(row=0, column=5, padx=(5,0))
-        search_button = customtkinter.CTkButton(button_search_frame, text="Search", command=start_search, width=100, height=30, fg_color="#343638", hover_color="#1F6AA5"); search_button.pack(side="left", padx=(0, 6))
+        search_button = customtkinter.CTkButton(button_search_frame, text="Search", command=start_search, width=100, height=30, fg_color="#343638", hover_color="#1F6AA5", state="disabled"); search_button.pack(side="left", padx=(0, 6))
         update_search_types(platform_var.get())
         results_outer_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); results_outer_frame.pack(fill="both", expand=True, pady=(8,8))
         results_label = customtkinter.CTkLabel(results_outer_frame, text="RESULTS", text_color="#898c8d", font=("Segoe UI", 11)); results_label.pack(anchor="w", padx=6, pady=0)
@@ -7317,61 +7333,7 @@ Unnecessary Lossless-to-Lossless""",
                 hover_color="#1F6AA5"
             )
             button.grid(row=row, column=col, padx=button_padx, pady=button_pady, sticky="nsew")
-        if not orpheus_instance:
-            print("Disabling Download/Search buttons due to Orpheus initialization failure.")
-            if 'download_button' in globals() and download_button and download_button.winfo_exists(): download_button.configure(state="disabled")
-            if 'search_button' in globals() and search_button and search_button.winfo_exists(): search_button.configure(state="disabled")
-            if 'search_download_button' in globals() and search_download_button and search_download_button.winfo_exists(): search_download_button.configure(state="disabled")
-            # Show delayed error message after GUI is fully loaded with View Logs option
-            def _show_init_error_with_logs():
-                global app
-                dialog = customtkinter.CTkToplevel(app)
-                dialog.title("Initialization Error")
-                dialog.geometry("500x220")
-                dialog.resizable(False, False)
-                dialog.attributes("-topmost", True)
-                dialog.transient(app)
-                dialog.update_idletasks()
-                
-                # Center on parent
-                parent_width = app.winfo_width()
-                parent_height = app.winfo_height()
-                parent_x = app.winfo_x()
-                parent_y = app.winfo_y()
-                dialog_width = 500
-                dialog_height = 220
-                center_x = parent_x + (parent_width // 2) - (dialog_width // 2)
-                center_y = parent_y + (parent_height // 2) - (dialog_height // 2)
-                dialog.geometry(f"{dialog_width}x{dialog_height}+{center_x}+{center_y}")
-                
-                message = (
-                    "The Orpheus download engine failed to initialize.\n\n"
-                    "This usually happens when:\n"
-                    "• No download modules are installed in the 'modules' folder\n"
-                    "• The settings.json file is corrupted\n"
-                    "• Required dependencies are missing\n\n"
-                    "Download and Search features are disabled."
-                )
-                
-                message_label = customtkinter.CTkLabel(dialog, text=message, wraplength=460, justify="left")
-                message_label.pack(pady=(20, 15), padx=20)
-                
-                button_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
-                button_frame.pack(fill="x", padx=20, pady=(0, 20))
-                
-                def view_logs():
-                    dialog.destroy()
-                    show_log_viewer("Initialization Logs", parent=app)
-                
-                view_logs_btn = customtkinter.CTkButton(button_frame, text="View Logs", command=view_logs, width=120, fg_color="#2D5A88", hover_color="#1F6AA5")
-                view_logs_btn.pack(side="left", padx=5)
-                
-                ok_btn = customtkinter.CTkButton(button_frame, text="OK", command=dialog.destroy, width=100)
-                ok_btn.pack(side="right", padx=5)
-                
-                dialog.grab_set()
-            
-            app.after(500, _show_init_error_with_logs)
+
         
         # Check for FFmpeg on macOS/Linux and show helpful message if missing
         if platform.system() in ('Darwin', 'Linux'):
@@ -7599,6 +7561,7 @@ Unnecessary Lossless-to-Lossless""",
         app.protocol("WM_DELETE_WINDOW", _on_gui_exit)
         _setup_macos_window_management()
         
+        
         app.attributes('-alpha', 1)
         app.deiconify() # Ensure it's not minimized
         try:
@@ -7606,6 +7569,83 @@ Unnecessary Lossless-to-Lossless""",
         except:
             pass
         app.lift()
+        
+        # Start background initialization
+        def run_async_init():
+            global _settings_just_created
+            print("[Async Init] Starting background initialization...")
+            init_success = initialize_orpheus()
+            
+            if not init_success and _settings_just_created:
+                print("[First Run] Initial Orpheus setup may have updated settings. Retrying initialization...")
+                time.sleep(0.5)
+                load_settings()
+                init_success = initialize_orpheus()
+            
+            if init_success:
+                def enable_buttons():
+                    print("[Async Init] Enabling buttons...")
+                    if 'download_button' in globals() and download_button and download_button.winfo_exists():
+                        download_button.configure(state="normal")
+                    if 'search_button' in globals() and search_button and search_button.winfo_exists():
+                        search_button.configure(state="normal")
+                
+                if app and app.winfo_exists():
+                    app.after(0, enable_buttons)
+            else:
+                def show_init_error():
+                    print("Disabling Download/Search buttons due to Orpheus initialization failure.")
+                    # Define and show the dialog
+                    dialog = customtkinter.CTkToplevel(app)
+                    dialog.title("Initialization Error")
+                    dialog.geometry("500x220")
+                    dialog.resizable(False, False)
+                    dialog.attributes("-topmost", True)
+                    dialog.transient(app)
+                    dialog.update_idletasks()
+                    
+                    # Center on parent
+                    parent_width = app.winfo_width()
+                    parent_height = app.winfo_height()
+                    parent_x = app.winfo_x()
+                    parent_y = app.winfo_y()
+                    dialog_width = 500
+                    dialog_height = 220
+                    center_x = parent_x + (parent_width // 2) - (dialog_width // 2)
+                    center_y = parent_y + (parent_height // 2) - (dialog_height // 2)
+                    dialog.geometry(f"{dialog_width}x{dialog_height}+{center_x}+{center_y}")
+                    
+                    message = (
+                        "The Orpheus download engine failed to initialize.\n\n"
+                        "This usually happens when:\n"
+                        "• No download modules are installed in the 'modules' folder\n"
+                        "• The settings.json file is corrupted\n"
+                        "• Required dependencies are missing\n\n"
+                        "Download and Search features are disabled."
+                    )
+                    
+                    message_label = customtkinter.CTkLabel(dialog, text=message, wraplength=460, justify="left")
+                    message_label.pack(pady=(20, 15), padx=20)
+                    
+                    button_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
+                    button_frame.pack(fill="x", padx=20, pady=(0, 20))
+                    
+                    def view_logs():
+                        dialog.destroy()
+                        show_log_viewer("Initialization Logs", parent=app)
+                    
+                    view_logs_btn = customtkinter.CTkButton(button_frame, text="View Logs", command=view_logs, width=120, fg_color="#2D5A88", hover_color="#1F6AA5")
+                    view_logs_btn.pack(side="left", padx=5)
+                    
+                    ok_btn = customtkinter.CTkButton(button_frame, text="OK", command=dialog.destroy, width=100)
+                    ok_btn.pack(side="right", padx=5)
+                    
+                    dialog.grab_set()
+
+                if app and app.winfo_exists():
+                    app.after(0, show_init_error)
+
+        threading.Thread(target=run_async_init, daemon=True).start()
         
         app.mainloop()
     else:
