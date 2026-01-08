@@ -5123,13 +5123,15 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 width=24,
                 height=24,
                 font=("Segoe UI", 14),
-                fg_color="transparent",
+                fg_color="#333333",
                 hover_color="#3B3B3B",
-                text_color="#DCE4EE",
+                text_color="#999999",
                 corner_radius=3,
                 command=lambda: _copy_url_to_clipboard(copy_url, copy_button)
             )
             copy_button.pack(side="left")
+            copy_button.bind("<Enter>", lambda e: copy_button.configure(text_color="#FFFFFF"))
+            copy_button.bind("<Leave>", lambda e: copy_button.configure(text_color="#999999"))
             
 
             
@@ -5346,13 +5348,15 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 width=24,
                 height=24,
                 font=("Segoe UI", 14),
-                fg_color="transparent",
+                fg_color="#333333",
                 hover_color="#3B3B3B",
-                text_color="#DCE4EE",
+                text_color="#999999",
                 corner_radius=3,
                 command=lambda: _copy_deezer_value(client_id_value, client_id_copy_button)
             )
             client_id_copy_button.pack(side="left")
+            client_id_copy_button.bind("<Enter>", lambda e: client_id_copy_button.configure(text_color="#FFFFFF"))
+            client_id_copy_button.bind("<Leave>", lambda e: client_id_copy_button.configure(text_color="#999999"))
             
 
             
@@ -5384,13 +5388,15 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 width=24,
                 height=24,
                 font=("Segoe UI", 14),
-                fg_color="transparent",
+                fg_color="#333333",
                 hover_color="#3B3B3B",
-                text_color="#DCE4EE",
+                text_color="#999999",
                 corner_radius=3,
                 command=lambda: _copy_deezer_value(client_secret_value, client_secret_copy_button)
             )
             client_secret_copy_button.pack(side="left")
+            client_secret_copy_button.bind("<Enter>", lambda e: client_secret_copy_button.configure(text_color="#FFFFFF"))
+            client_secret_copy_button.bind("<Leave>", lambda e: client_secret_copy_button.configure(text_color="#999999"))
             
 
             
@@ -5422,13 +5428,15 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 width=24,
                 height=24,
                 font=("Segoe UI", 14),
-                fg_color="transparent",
+                fg_color="#333333",
                 hover_color="#3B3B3B",
-                text_color="#DCE4EE",
+                text_color="#999999",
                 corner_radius=3,
                 command=lambda: _copy_deezer_value(bf_secret_value, bf_secret_copy_button)
             )
             bf_secret_copy_button.pack(side="left")
+            bf_secret_copy_button.bind("<Enter>", lambda e: bf_secret_copy_button.configure(text_color="#FFFFFF"))
+            bf_secret_copy_button.bind("<Leave>", lambda e: bf_secret_copy_button.configure(text_color="#999999"))
             
 
         
@@ -5499,13 +5507,15 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 width=24,
                 height=24,
                 font=("Segoe UI", 14),
-                fg_color="transparent",
+                fg_color="#333333",
                 hover_color="#3B3B3B",
-                text_color="#DCE4EE",
+                text_color="#999999",
                 corner_radius=3,
                 command=lambda: _copy_qobuz_value(app_id_value, app_id_copy_button)
             )
             app_id_copy_button.pack(side="left")
+            app_id_copy_button.bind("<Enter>", lambda e: app_id_copy_button.configure(text_color="#FFFFFF"))
+            app_id_copy_button.bind("<Leave>", lambda e: app_id_copy_button.configure(text_color="#999999"))
             
 
             
@@ -5537,13 +5547,15 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 width=24,
                 height=24,
                 font=("Segoe UI", 14),
-                fg_color="transparent",
+                fg_color="#333333",
                 hover_color="#3B3B3B",
-                text_color="#DCE4EE",
+                text_color="#999999",
                 corner_radius=3,
                 command=lambda: _copy_qobuz_value(app_secret_value, app_secret_copy_button)
             )
             app_secret_copy_button.pack(side="left")
+            app_secret_copy_button.bind("<Enter>", lambda e: app_secret_copy_button.configure(text_color="#FFFFFF"))
+            app_secret_copy_button.bind("<Leave>", lambda e: app_secret_copy_button.configure(text_color="#999999"))
             
 
         
@@ -5731,15 +5743,16 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 width=24,
                 height=24,
                 font=("Segoe UI", 14),
-                fg_color="transparent",
+                fg_color="#333333",
                 hover_color="#3B3B3B",
-                text_color="#DCE4EE",
+                text_color="#999999",
                 corner_radius=3,
                 command=lambda: _copy_tidal_value(tv_atmos_token_value, tv_atmos_token_copy_btn)
             )
             tv_atmos_token_copy_btn.pack(side="left")
-            tv_atmos_token_copy_btn.bind("<Enter>", lambda e: tv_atmos_token_copy_btn.configure(font=("Segoe UI", 16)))
-            tv_atmos_token_copy_btn.bind("<Leave>", lambda e: tv_atmos_token_copy_btn.configure(font=("Segoe UI", 14)))
+            tv_atmos_token_copy_btn.bind("<Enter>", lambda e: tv_atmos_token_copy_btn.configure(text_color="#FFFFFF"))
+            tv_atmos_token_copy_btn.bind("<Leave>", lambda e: tv_atmos_token_copy_btn.configure(text_color="#999999"))
+
             
             # tv_atmos_secret
             tv_atmos_secret_container = customtkinter.CTkFrame(values_frame, fg_color="transparent")
@@ -5768,15 +5781,16 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 width=24,
                 height=24,
                 font=("Segoe UI", 14),
-                fg_color="transparent",
+                fg_color="#333333",
                 hover_color="#3B3B3B",
-                text_color="#DCE4EE",
+                text_color="#999999",
                 corner_radius=3,
                 command=lambda: _copy_tidal_value(tv_atmos_secret_value, tv_atmos_secret_copy_btn)
             )
             tv_atmos_secret_copy_btn.pack(side="left")
-            tv_atmos_secret_copy_btn.bind("<Enter>", lambda e: tv_atmos_secret_copy_btn.configure(font=("Segoe UI", 16)))
-            tv_atmos_secret_copy_btn.bind("<Leave>", lambda e: tv_atmos_secret_copy_btn.configure(font=("Segoe UI", 14)))
+            tv_atmos_secret_copy_btn.bind("<Enter>", lambda e: tv_atmos_secret_copy_btn.configure(text_color="#FFFFFF"))
+            tv_atmos_secret_copy_btn.bind("<Leave>", lambda e: tv_atmos_secret_copy_btn.configure(text_color="#999999"))
+
             
             # mobile_atmos_hires_token
             mobile_atmos_container = customtkinter.CTkFrame(values_frame, fg_color="transparent")
@@ -5805,15 +5819,16 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 width=24,
                 height=24,
                 font=("Segoe UI", 14),
-                fg_color="transparent",
+                fg_color="#333333",
                 hover_color="#3B3B3B",
-                text_color="#DCE4EE",
+                text_color="#999999",
                 corner_radius=3,
                 command=lambda: _copy_tidal_value(mobile_atmos_value, mobile_atmos_copy_btn)
             )
             mobile_atmos_copy_btn.pack(side="left")
-            mobile_atmos_copy_btn.bind("<Enter>", lambda e: mobile_atmos_copy_btn.configure(font=("Segoe UI", 16)))
-            mobile_atmos_copy_btn.bind("<Leave>", lambda e: mobile_atmos_copy_btn.configure(font=("Segoe UI", 14)))
+            mobile_atmos_copy_btn.bind("<Enter>", lambda e: mobile_atmos_copy_btn.configure(text_color="#FFFFFF"))
+            mobile_atmos_copy_btn.bind("<Leave>", lambda e: mobile_atmos_copy_btn.configure(text_color="#999999"))
+
             
             # mobile_hires_token
             mobile_hires_container = customtkinter.CTkFrame(values_frame, fg_color="transparent")
@@ -5842,15 +5857,16 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 width=24,
                 height=24,
                 font=("Segoe UI", 14),
-                fg_color="transparent",
+                fg_color="#333333",
                 hover_color="#3B3B3B",
-                text_color="#DCE4EE",
+                text_color="#999999",
                 corner_radius=3,
                 command=lambda: _copy_tidal_value(mobile_hires_value, mobile_hires_copy_btn)
             )
             mobile_hires_copy_btn.pack(side="left")
-            mobile_hires_copy_btn.bind("<Enter>", lambda e: mobile_hires_copy_btn.configure(font=("Segoe UI", 16)))
-            mobile_hires_copy_btn.bind("<Leave>", lambda e: mobile_hires_copy_btn.configure(font=("Segoe UI", 14)))
+            mobile_hires_copy_btn.bind("<Enter>", lambda e: mobile_hires_copy_btn.configure(text_color="#FFFFFF"))
+            mobile_hires_copy_btn.bind("<Leave>", lambda e: mobile_hires_copy_btn.configure(text_color="#999999"))
+
     except Exception as e:
         import traceback
         traceback.print_exc(file=sys.__stderr__)
@@ -7424,11 +7440,13 @@ Unnecessary Lossless-to-Lossless""",
                         copy1_btn = customtkinter.CTkButton(
                             cmd1_frame, text="⧉", width=24, height=24, 
                             font=("Segoe UI", 14),
-                            fg_color="transparent", hover_color="#3B3B3B", 
-                            text_color="#DCE4EE", corner_radius=3,
+                            fg_color="#333333", hover_color="#3B3B3B", 
+                            text_color="#999999", corner_radius=3,
                             command=lambda: copy_command(homebrew_cmd, copy1_btn)
                         )
                         copy1_btn.pack(side="right", padx=8, pady=5)
+                        copy1_btn.bind("<Enter>", lambda e: copy1_btn.configure(text_color="#FFFFFF"))
+                        copy1_btn.bind("<Leave>", lambda e: copy1_btn.configure(text_color="#999999"))
                         
                         # Step 2: FFmpeg
                         step2_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
@@ -7447,11 +7465,13 @@ Unnecessary Lossless-to-Lossless""",
                         copy2_btn = customtkinter.CTkButton(
                             cmd2_frame, text="⧉", width=24, height=24,
                             font=("Segoe UI", 14),
-                            fg_color="transparent", hover_color="#3B3B3B",
-                            text_color="#DCE4EE", corner_radius=3,
+                            fg_color="#333333", hover_color="#3B3B3B",
+                            text_color="#999999", corner_radius=3,
                             command=lambda: copy_command(ffmpeg_cmd, copy2_btn)
                         )
                         copy2_btn.pack(side="right", padx=8, pady=5)
+                        copy2_btn.bind("<Enter>", lambda e: copy2_btn.configure(text_color="#FFFFFF"))
+                        copy2_btn.bind("<Leave>", lambda e: copy2_btn.configure(text_color="#999999"))
                         
                         # Step 3
                         step3_label = customtkinter.CTkLabel(main_frame, text="3. Restart OrpheusDL GUI", anchor="w")
@@ -7487,11 +7507,13 @@ Unnecessary Lossless-to-Lossless""",
                             copy_btn = customtkinter.CTkButton(
                                 cmd_frame, text="⧉", width=24, height=24,
                                 font=("Segoe UI", 14),
-                                fg_color="transparent", hover_color="#3B3B3B",
-                                text_color="#DCE4EE", corner_radius=3
+                                fg_color="#333333", hover_color="#3B3B3B",
+                                text_color="#999999", corner_radius=3
                             )
                             copy_btn.configure(command=lambda c=cmd, b=copy_btn: copy_command(c, b))
                             copy_btn.pack(side="right", padx=8, pady=5)
+                            copy_btn.bind("<Enter>", lambda e, b=copy_btn: b.configure(text_color="#FFFFFF"))
+                            copy_btn.bind("<Leave>", lambda e, b=copy_btn: b.configure(text_color="#999999"))
                         
                         restart_label = customtkinter.CTkLabel(main_frame, text="Then restart OrpheusDL GUI", anchor="w")
                         restart_label.pack(fill="x", pady=(15, 5))
