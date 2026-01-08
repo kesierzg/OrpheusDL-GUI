@@ -5045,7 +5045,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(anchor="w", padx=15, pady=12)
+            help_container.pack(anchor="w", padx=15, pady=15)
             
             # Left column - title
             help_title = customtkinter.CTkLabel(
@@ -5165,7 +5165,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(anchor="w", padx=15, pady=12)
+            help_container.pack(anchor="w", padx=15, pady=15)
             
             # Left column - title
             help_title = customtkinter.CTkLabel(
@@ -5311,7 +5311,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(anchor="w", padx=15, pady=12)
+            help_container.pack(anchor="w", padx=15, pady=15)
             
             # Left column - title
             help_title = customtkinter.CTkLabel(
@@ -5479,7 +5479,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(anchor="w", padx=15, pady=12)
+            help_container.pack(anchor="w", padx=15, pady=15)
             
             # Left column - title
             help_title = customtkinter.CTkLabel(
@@ -5588,7 +5588,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             # Left-aligned container for two-column layout
             help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            help_container.pack(anchor="w", padx=15, pady=12)
+            help_container.pack(anchor="w", padx=15, pady=15)
             
             # Left column - title
             help_title = customtkinter.CTkLabel(
