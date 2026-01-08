@@ -112,17 +112,13 @@ if platform.system() == 'Darwin':
     exe = EXE(
         pyz,
         a.scripts,
-        a.binaries,
-        a.zipfiles,
-        a.datas,
         [],
+        exclude_binaries=True,
         name='OrpheusDL_GUI',
         debug=False,
         bootloader_ignore_signals=False,
         strip=False,
         upx=True,
-        upx_exclude=[],
-        runtime_tmpdir=None,
         console=False,
         disable_windowed_traceback=False,
         argv_emulation=False,
@@ -130,11 +126,21 @@ if platform.system() == 'Darwin':
         codesign_identity=None,
         entitlements_file=None,
         icon='icon.icns',
-        onefile=False  # <<< added this
+    )
+    
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        name='OrpheusDL_GUI',
     )
 
     app = BUNDLE(
-        exe,
+        coll,
         name='OrpheusDL GUI.app',
         icon='icon.icns',
         bundle_identifier='com.orpheusdl.gui',
