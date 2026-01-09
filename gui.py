@@ -629,6 +629,11 @@ def copy_bundled_resources_to_data_dir(data_dir):
         ffmpeg_found, ffmpeg_path = find_system_ffmpeg()
         if ffmpeg_found:
             print(f"[FFmpeg] Found FFmpeg at: {ffmpeg_path}")
+            # Add FFmpeg directory to PATH so subprocess calls (like in ffmpeg-python) can find it
+            ffmpeg_dir = os.path.dirname(ffmpeg_path)
+            if ffmpeg_dir not in os.environ["PATH"]:
+                os.environ["PATH"] += os.pathsep + ffmpeg_dir
+                print(f"[FFmpeg] Added {ffmpeg_dir} to PATH")
         else:
             print(f"[FFmpeg] FFmpeg not found. Audio conversion will not work.")
             print(f"[FFmpeg] Install via Homebrew: brew install ffmpeg")
