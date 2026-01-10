@@ -7485,7 +7485,11 @@ Unnecessary Lossless-to-Lossless""",
                         download_btn.bind("<Leave>", on_leave)
 
                         def open_app_folder():
-                            app_dir = get_script_directory()
+                            # Use get_data_directory() to get the correct writable path (Application Support on macOS)
+                            app_dir = get_data_directory()
+                            if not app_dir:
+                                app_dir = get_script_directory()
+                                
                             if platform.system() == "Windows":
                                 os.startfile(app_dir)
                             elif platform.system() == "Darwin":
@@ -7493,7 +7497,7 @@ Unnecessary Lossless-to-Lossless""",
                             else:
                                 subprocess.Popen(["xdg-open", app_dir])
 
-                        # Container for the text
+                        # Container for the text - Horizontal flow
                         instr_container = customtkinter.CTkFrame(step4_frame, fg_color="transparent")
                         instr_container.pack(fill="x", padx=10, pady=(0, 8))
 
@@ -7504,21 +7508,17 @@ Unnecessary Lossless-to-Lossless""",
                             text_color="#AAAAAA", font=("", 11),
                             anchor="w"
                         )
-                        part1.pack(anchor="w")
-
-                        # Line 2 container
-                        line2_frame = customtkinter.CTkFrame(instr_container, fg_color="transparent")
-                        line2_frame.pack(anchor="w")
+                        part1.pack(side="left", padx=0)
 
                         # Part 2: Link
                         # Use CTkFont for better control over underlining
                         link_font = customtkinter.CTkFont(size=11, underline=True)
                         
                         part2_btn = customtkinter.CTkButton(
-                            line2_frame,
+                            instr_container,
                             text="same folder",
                             command=open_app_folder,
-                            width=70,  # Set a reasonable small width or let it expand
+                            width=70,
                             height=20,
                             fg_color="transparent",
                             text_color="#3B8ED0",
@@ -7528,14 +7528,20 @@ Unnecessary Lossless-to-Lossless""",
                         )
                         part2_btn.pack(side="left", padx=0)
 
-                        # Part 3: Text after link
+                        # Part 3: Text after link + Path
+                        target_dir = get_data_directory()
+                        if not target_dir: target_dir = get_script_directory()
+                        
+                        # User requested single line format
+                        part3_text = f" as this app (OrpheusDL GUI) (Default: {target_dir})"
+                        
                         part3 = customtkinter.CTkLabel(
-                            line2_frame,
-                            text=" as this app (OrpheusDL GUI).",
+                            instr_container,
+                            text=part3_text,
                             text_color="#AAAAAA", font=("", 11),
                             anchor="w"
                         )
-                        part3.pack(side="left")
+                        part3.pack(side="left", padx=0)
                         
                         # Hover effects
                         def on_enter_folder(e): 
