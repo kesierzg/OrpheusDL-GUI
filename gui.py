@@ -7499,7 +7499,7 @@ Unnecessary Lossless-to-Lossless""",
 
                         # Container for the text - Horizontal flow
                         instr_container = customtkinter.CTkFrame(step4_frame, fg_color="transparent")
-                        instr_container.pack(fill="x", padx=10, pady=(0, 0))
+                        instr_container.pack(fill="x", padx=(15, 10), pady=(0, 0))
 
                         # Part 1: Text before link
                         part1 = customtkinter.CTkLabel(
@@ -7519,7 +7519,7 @@ Unnecessary Lossless-to-Lossless""",
                             text="same folder",
                             text_color="#3B8ED0",
                             font=link_font,
-                            cursor="hand2"
+                            cursor="pointinghand"
                         )
                         part2_link.pack(side="left", padx=0)
                         part2_link.bind("<Button-1>", open_app_folder)
@@ -7535,9 +7535,9 @@ Unnecessary Lossless-to-Lossless""",
                         
                         # Hover effects for link
                         def on_enter_link(e): 
-                            part2_link.configure(text_color="#1F6AA5")
+                            part2_link.configure(text_color="#1F6AA5", cursor="pointinghand")
                         def on_leave_link(e): 
-                            part2_link.configure(text_color="#3B8ED0")
+                            part2_link.configure(text_color="#3B8ED0", cursor="arrow")
                         part2_link.bind("<Enter>", on_enter_link)
                         part2_link.bind("<Leave>", on_leave_link)
 
@@ -7551,7 +7551,7 @@ Unnecessary Lossless-to-Lossless""",
                             text_color="#888888", font=("", 10),
                             anchor="w"
                         )
-                        part4.pack(fill="x", padx=10, pady=(0, 8))
+                        part4.pack(fill="x", padx=(15, 10), pady=(0, 8))
                         
                     else:  # Linux
                         dialog.geometry("520x500")
