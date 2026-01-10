@@ -7474,7 +7474,7 @@ Unnecessary Lossless-to-Lossless""",
                             hover_color="#2B2B2B",
                             anchor="w"
                         )
-                        download_btn.pack(padx=10, pady=(0, 5), anchor="w")
+                        download_btn.pack(padx=10, pady=(0, 0), anchor="w")
                         
                         # Add underline effect on hover
                         def on_enter(e):
@@ -7547,7 +7547,7 @@ Unnecessary Lossless-to-Lossless""",
                         
                         part4 = customtkinter.CTkLabel(
                             step4_frame,
-                            text=f"(Default: {target_dir})",
+                            text=f"Default: {target_dir}",
                             text_color="#888888", font=("", 10),
                             anchor="w"
                         )
