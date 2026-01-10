@@ -7400,7 +7400,7 @@ Unnecessary Lossless-to-Lossless""",
                     
                     if platform.system() == 'Darwin':
                         # macOS instructions
-                        dialog.geometry("620x560")
+                        dialog.geometry("620x600")
                         
                         # Step 1: Homebrew
                         step1_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
@@ -7484,7 +7484,7 @@ Unnecessary Lossless-to-Lossless""",
                         download_btn.bind("<Enter>", on_enter)
                         download_btn.bind("<Leave>", on_leave)
 
-                        def open_app_folder():
+                        def open_app_folder(event=None):
                             # Use get_data_directory() to get the correct writable path (Application Support on macOS)
                             app_dir = get_data_directory()
                             if not app_dir:
@@ -7499,7 +7499,7 @@ Unnecessary Lossless-to-Lossless""",
 
                         # Container for the text - Horizontal flow
                         instr_container = customtkinter.CTkFrame(step4_frame, fg_color="transparent")
-                        instr_container.pack(fill="x", padx=10, pady=(0, 8))
+                        instr_container.pack(fill="x", padx=10, pady=(0, 0))
 
                         # Part 1: Text before link
                         part1 = customtkinter.CTkLabel(
@@ -7510,48 +7510,48 @@ Unnecessary Lossless-to-Lossless""",
                         )
                         part1.pack(side="left", padx=0)
 
-                        # Part 2: Link
-                        # Use CTkFont for better control over underlining
+                        # Part 2: Link (Label instead of Button for better spacing)
+                        # Use CTkFont for proper underlining
                         link_font = customtkinter.CTkFont(size=11, underline=True)
                         
-                        part2_btn = customtkinter.CTkButton(
+                        part2_link = customtkinter.CTkLabel(
                             instr_container,
                             text="same folder",
-                            command=open_app_folder,
-                            width=70,
-                            height=20,
-                            fg_color="transparent",
                             text_color="#3B8ED0",
-                            hover_color="#2B2B2B",
                             font=link_font,
-                            anchor="w"
+                            cursor="hand2"
                         )
-                        part2_btn.pack(side="left", padx=0)
+                        part2_link.pack(side="left", padx=0)
+                        part2_link.bind("<Button-1>", open_app_folder)
 
-                        # Part 3: Text after link + Path
-                        target_dir = get_data_directory()
-                        if not target_dir: target_dir = get_script_directory()
-                        
-                        # User requested single line format
-                        part3_text = f" as this app (OrpheusDL GUI) (Default: {target_dir})"
-                        
+                        # Part 3: Text after link
                         part3 = customtkinter.CTkLabel(
                             instr_container,
-                            text=part3_text,
+                            text=" as this app.",
                             text_color="#AAAAAA", font=("", 11),
                             anchor="w"
                         )
                         part3.pack(side="left", padx=0)
                         
-                        # Hover effects
-                        def on_enter_folder(e): 
-                            part2_btn.configure(text_color="#1F6AA5")
-                            part2_btn.configure(cursor="hand2")
-                        def on_leave_folder(e): 
-                            part2_btn.configure(text_color="#3B8ED0")
-                            part2_btn.configure(cursor="arrow")
-                        part2_btn.bind("<Enter>", on_enter_folder)
-                        part2_btn.bind("<Leave>", on_leave_folder)
+                        # Hover effects for link
+                        def on_enter_link(e): 
+                            part2_link.configure(text_color="#1F6AA5")
+                        def on_leave_link(e): 
+                            part2_link.configure(text_color="#3B8ED0")
+                        part2_link.bind("<Enter>", on_enter_link)
+                        part2_link.bind("<Leave>", on_leave_link)
+
+                        # Part 4: Path on new line
+                        target_dir = get_data_directory()
+                        if not target_dir: target_dir = get_script_directory()
+                        
+                        part4 = customtkinter.CTkLabel(
+                            step4_frame,
+                            text=f"(Default: {target_dir})",
+                            text_color="#888888", font=("", 10),
+                            anchor="w"
+                        )
+                        part4.pack(fill="x", padx=10, pady=(0, 8))
                         
                     else:  # Linux
                         dialog.geometry("520x500")
