@@ -7400,7 +7400,7 @@ Unnecessary Lossless-to-Lossless""",
                     
                     if platform.system() == 'Darwin':
                         # macOS instructions
-                        dialog.geometry("620x480")
+                        dialog.geometry("620x560")
                         
                         # Step 1: Homebrew
                         step1_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
@@ -7469,9 +7469,20 @@ Unnecessary Lossless-to-Lossless""",
                             step4_frame, text="Download FFmpeg (evermeet.cx)", 
                             command=open_ffmpeg_site,
                             height=24,
-                            fg_color="#343638", hover_color="#1F6AA5"
+                            fg_color="transparent", 
+                            text_color="#3B8ED0",
+                            hover_color="#2B2B2B",
+                            anchor="w"
                         )
                         download_btn.pack(padx=10, pady=(0, 5), anchor="w")
+                        
+                        # Add underline effect on hover
+                        def on_enter(e):
+                            download_btn.configure(text_color="#1F6AA5")
+                        def on_leave(e):
+                            download_btn.configure(text_color="#3B8ED0")
+                        download_btn.bind("<Enter>", on_enter)
+                        download_btn.bind("<Leave>", on_leave)
 
                         manual_instr_label = customtkinter.CTkLabel(
                             step4_frame, 
