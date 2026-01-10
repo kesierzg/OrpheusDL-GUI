@@ -7511,15 +7511,19 @@ Unnecessary Lossless-to-Lossless""",
                         line2_frame.pack(anchor="w")
 
                         # Part 2: Link
+                        # Use CTkFont for better control over underlining
+                        link_font = customtkinter.CTkFont(size=11, underline=True)
+                        
                         part2_btn = customtkinter.CTkButton(
                             line2_frame,
                             text="same folder",
                             command=open_app_folder,
-                            width=0, height=0,
+                            width=70,  # Set a reasonable small width or let it expand
+                            height=20,
                             fg_color="transparent",
                             text_color="#3B8ED0",
                             hover_color="#2B2B2B",
-                            font=("", 11, "underline"),
+                            font=link_font,
                             anchor="w"
                         )
                         part2_btn.pack(side="left", padx=0)
@@ -7534,8 +7538,12 @@ Unnecessary Lossless-to-Lossless""",
                         part3.pack(side="left")
                         
                         # Hover effects
-                        def on_enter_folder(e): part2_btn.configure(text_color="#1F6AA5")
-                        def on_leave_folder(e): part2_btn.configure(text_color="#3B8ED0")
+                        def on_enter_folder(e): 
+                            part2_btn.configure(text_color="#1F6AA5")
+                            part2_btn.configure(cursor="hand2")
+                        def on_leave_folder(e): 
+                            part2_btn.configure(text_color="#3B8ED0")
+                            part2_btn.configure(cursor="arrow")
                         part2_btn.bind("<Enter>", on_enter_folder)
                         part2_btn.bind("<Leave>", on_leave_folder)
                         
