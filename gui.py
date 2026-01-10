@@ -266,7 +266,8 @@ class QueueLogHandler(logging.Handler):
                     "Possible Solutions:\n"
                     "1. Install FFmpeg: If not installed, download from ffmpeg.org and install it.\n"
                     "2. Check PATH: Ensure the directory containing ffmpeg.exe (or ffmpeg) is in your system's PATH environment variable.\n"
-                    "3. Configure in GUI: Go to Settings > Global > Advanced > FFmpeg Path, and set the full path to your ffmpeg executable.\n\n"
+                    "3. Configure in GUI: Go to Settings > Global > Advanced > FFmpeg Path, and set the full path to your ffmpeg executable.\n"
+                    "4. Place in App Folder: Download the FFmpeg binary and place it in the application folder or data folder.\n\n"
                     f"Current FFmpeg Path setting in GUI: '{ffmpeg_path_setting}'\n\n"
                     "Download process aborted due to FFmpeg issue."
                 )
@@ -527,6 +528,13 @@ def find_system_ffmpeg():
             '/opt/homebrew/bin/ffmpeg',   # Apple Silicon
             '/usr/local/bin/ffmpeg',      # Intel
         ]
+        
+        # Add local app directories for manual installation (fallback)
+        try:
+            common_paths.append(os.path.join(get_data_directory(), 'ffmpeg'))
+            common_paths.append(os.path.join(get_script_directory(), 'ffmpeg'))
+        except Exception:
+            pass
     elif platform.system() == 'Linux':
         # Linux - common package manager locations
         common_paths = [
@@ -3919,7 +3927,8 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                     "Possible Solutions:\n"
                     "1. Install FFmpeg: If not installed, download from ffmpeg.org and install it.\n"
                     "2. Check PATH: Ensure the directory containing ffmpeg.exe (or ffmpeg) is in your system's PATH environment variable.\n"
-                    "3. or Configure in GUI: Go to Settings > Global > Advanced > FFmpeg Path, and set the full path to your ffmpeg executable.\n\n"
+                    "3. Configure in GUI: Go to Settings > Global > Advanced > FFmpeg Path, and set the full path to your ffmpeg executable.\n"
+                    "4. Place in App Folder: Download the FFmpeg binary and place it in the application folder or data folder.\n\n"
                     f"Current FFmpeg Path setting in GUI: '{ffmpeg_path_setting}'\n\n"
                     "Download process aborted."
                 )
@@ -3955,7 +3964,8 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                 "Possible Solutions:\n"
                 "1. Install FFmpeg: If not installed, download from ffmpeg.org and install it.\n"
                 "2. Check PATH: Ensure the directory containing ffmpeg.exe (or ffmpeg) is in your system's PATH environment variable.\n"
-                "3. Configure in GUI: Go to Settings > Global > Advanced > FFmpeg Path, and set the full path to your ffmpeg executable.\n\n"
+                "3. Configure in GUI: Go to Settings > Global > Advanced > FFmpeg Path, and set the full path to your ffmpeg executable.\n"
+                "4. Place in App Folder: Download the FFmpeg binary and place it in the application folder or data folder.\n\n"
                 f"Current FFmpeg Path setting in GUI: '{ffmpeg_path_setting}'\n\n"
                 "Download process aborted."
             )
@@ -7442,9 +7452,33 @@ Unnecessary Lossless-to-Lossless""",
                         copy2_btn.bind("<Enter>", lambda e: copy2_btn.configure(text_color="#FFFFFF"))
                         copy2_btn.bind("<Leave>", lambda e: copy2_btn.configure(text_color="#999999"))
                         
-                        # Step 3
                         step3_label = customtkinter.CTkLabel(main_frame, text="3. Restart OrpheusDL GUI", anchor="w")
                         step3_label.pack(fill="x", pady=(10, 5))
+
+                        # Option 4: Manual Install (Alternative)
+                        step4_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
+                        step4_frame.pack(fill="x", pady=5)
+
+                        step4_label = customtkinter.CTkLabel(step4_frame, text="Alternative: Manual Install", anchor="w", font=("", 12, "bold"))
+                        step4_label.pack(fill="x", padx=10, pady=(8, 2))
+
+                        def open_ffmpeg_site():
+                            webbrowser.open("https://evermeet.cx/ffmpeg/")
+
+                        download_btn = customtkinter.CTkButton(
+                            step4_frame, text="Download FFmpeg (evermeet.cx)", 
+                            command=open_ffmpeg_site,
+                            height=24,
+                            fg_color="#343638", hover_color="#1F6AA5"
+                        )
+                        download_btn.pack(padx=10, pady=(0, 5), anchor="w")
+
+                        manual_instr_label = customtkinter.CTkLabel(
+                            step4_frame, 
+                            text="Download, unzip, and place the 'ffmpeg' file in the\nsame folder as this app (OrpheusDL GUI).", 
+                            anchor="w", justify="left", text_color="#AAAAAA", font=("", 11)
+                        )
+                        manual_instr_label.pack(fill="x", padx=10, pady=(0, 8))
                         
                     else:  # Linux
                         dialog.geometry("520x500")
