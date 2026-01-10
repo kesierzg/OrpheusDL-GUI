@@ -7484,12 +7484,60 @@ Unnecessary Lossless-to-Lossless""",
                         download_btn.bind("<Enter>", on_enter)
                         download_btn.bind("<Leave>", on_leave)
 
-                        manual_instr_label = customtkinter.CTkLabel(
-                            step4_frame, 
-                            text="Download, unzip, and place the 'ffmpeg' file in the same folder as this app (OrpheusDL GUI).", 
-                            anchor="w", justify="left", text_color="#AAAAAA", font=("", 11)
+                        def open_app_folder():
+                            app_dir = get_script_directory()
+                            if platform.system() == "Windows":
+                                os.startfile(app_dir)
+                            elif platform.system() == "Darwin":
+                                subprocess.Popen(["open", app_dir])
+                            else:
+                                subprocess.Popen(["xdg-open", app_dir])
+
+                        # Container for the text
+                        instr_container = customtkinter.CTkFrame(step4_frame, fg_color="transparent")
+                        instr_container.pack(fill="x", padx=10, pady=(0, 8))
+
+                        # Part 1: Text before link
+                        part1 = customtkinter.CTkLabel(
+                            instr_container, 
+                            text="Download, unzip, and place the 'ffmpeg' file in the ", 
+                            text_color="#AAAAAA", font=("", 11),
+                            anchor="w"
                         )
-                        manual_instr_label.pack(fill="x", padx=10, pady=(0, 8))
+                        part1.pack(anchor="w")
+
+                        # Line 2 container
+                        line2_frame = customtkinter.CTkFrame(instr_container, fg_color="transparent")
+                        line2_frame.pack(anchor="w")
+
+                        # Part 2: Link
+                        part2_btn = customtkinter.CTkButton(
+                            line2_frame,
+                            text="same folder",
+                            command=open_app_folder,
+                            width=0, height=0,
+                            fg_color="transparent",
+                            text_color="#3B8ED0",
+                            hover_color="#2B2B2B",
+                            font=("", 11, "underline"),
+                            anchor="w"
+                        )
+                        part2_btn.pack(side="left", padx=0)
+
+                        # Part 3: Text after link
+                        part3 = customtkinter.CTkLabel(
+                            line2_frame,
+                            text=" as this app (OrpheusDL GUI).",
+                            text_color="#AAAAAA", font=("", 11),
+                            anchor="w"
+                        )
+                        part3.pack(side="left")
+                        
+                        # Hover effects
+                        def on_enter_folder(e): part2_btn.configure(text_color="#1F6AA5")
+                        def on_leave_folder(e): part2_btn.configure(text_color="#3B8ED0")
+                        part2_btn.bind("<Enter>", on_enter_folder)
+                        part2_btn.bind("<Leave>", on_leave_folder)
                         
                     else:  # Linux
                         dialog.geometry("520x500")
