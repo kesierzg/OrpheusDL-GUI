@@ -7453,7 +7453,7 @@ Unnecessary Lossless-to-Lossless""",
                         copy2_btn.bind("<Leave>", lambda e: copy2_btn.configure(text_color="#999999"))
                         
                         step3_label = customtkinter.CTkLabel(main_frame, text="3. Restart OrpheusDL GUI", anchor="w")
-                        step3_label.pack(fill="x", pady=(10, 5))
+                        step3_label.pack(fill="x", pady=(10, 5), padx=10)
 
                         # Option 4: Manual Install (Alternative)
                         step4_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
@@ -7486,7 +7486,7 @@ Unnecessary Lossless-to-Lossless""",
 
                         manual_instr_label = customtkinter.CTkLabel(
                             step4_frame, 
-                            text="Download, unzip, and place the 'ffmpeg' file in the\nsame folder as this app (OrpheusDL GUI).", 
+                            text="Download, unzip, and place the 'ffmpeg' file in the same folder as this app (OrpheusDL GUI).", 
                             anchor="w", justify="left", text_color="#AAAAAA", font=("", 11)
                         )
                         manual_instr_label.pack(fill="x", padx=10, pady=(0, 8))
