@@ -6555,15 +6555,12 @@ if __name__ == "__main__":
         if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
             print(f"[DEBUG] Before GUI setup: output_path = {current_settings.get('globals', {}).get('general', {}).get('output_path')}")
         customtkinter.set_appearance_mode("dark")
-        app = customtkinter.CTk()
-        # Set window class to match desktop file StartupWMClass
-        # Set window class to match desktop file StartupWMClass
+        
+        # Pass className directly to constructor to set WM_CLASS correctly on Linux
         if platform.system() == "Linux":
-            try:
-                # Use Tcl command directly as wm_class might not be exposed on CTk
-                app.tk.call('wm', 'class', app._w, "OrpheusDL_GUI", "OrpheusDL_GUI")
-            except Exception as e:
-                print(f"[Init] Warning: Could not set WM_CLASS: {e}")
+            app = customtkinter.CTk(className="OrpheusDL_GUI")
+        else:
+            app = customtkinter.CTk()
             
         # Use alpha to hide window instead of withdraw, as withdraw can cause issues on some systems
         app.attributes('-alpha', 0)
@@ -6580,7 +6577,7 @@ if __name__ == "__main__":
         
         # Set icon after window geometry is established
         try:
-            # On Linux, use PNG and iconphoto
+            # On Linux, use PNG and wm_iconphoto
             if platform.system() == "Linux":
                 icon_filename = "icon.png"
                 icon_path = resource_path(icon_filename)
@@ -6589,10 +6586,11 @@ if __name__ == "__main__":
                 if os.path.exists(icon_path):
                     try:
                         icon_image = tkinter.PhotoImage(file=icon_path)
-                        app.iconphoto(False, icon_image)
-                        print(f"[Icon] Successfully set Linux icon using app.iconphoto")
+                        # Use wm_iconphoto(True, ...) to set it for all future toplevels too
+                        app.wm_iconphoto(True, icon_image)
+                        print(f"[Icon] Successfully set Linux icon using app.wm_iconphoto")
                     except Exception as e_linux:
-                        print(f"[Icon] Linux iconphoto failed: {e_linux}")
+                        print(f"[Icon] Linux wm_iconphoto failed: {e_linux}")
             else:
                 # Windows/macOS logic
                 icon_filename = "icon.icns" if platform.system() == "Darwin" else "icon.ico"
