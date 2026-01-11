@@ -438,6 +438,21 @@ def get_data_directory():
         elif is_frozen and has_meipass:
             is_macos_app_bundle = True
             detection_reason = "frozen PyInstaller app on macOS"
+            
+    # Linux installation check
+    print(f"[get_data_directory] Checking Linux: frozen={is_frozen}, platform={platform.system()}")
+    if is_frozen and platform.system().lower() == "linux":
+        print("[get_data_directory] Linux detected")
+        # Use ~/.config/OrpheusDL-GUI for installed Linux apps
+        config_dir = os.path.expanduser("~/.config/OrpheusDL-GUI")
+        try:
+            os.makedirs(config_dir, exist_ok=True)
+            print(f"[Linux] Using config directory: {config_dir}")
+            return config_dir
+        except Exception as e:
+            print(f"[Linux] ERROR: Could not create config directory: {e}")
+            # Fallback to tmp
+            return os.path.join("/tmp", "OrpheusDL-GUI")
     
     print(f"[get_data_directory] frozen={is_frozen}, has_meipass={has_meipass}, platform={platform.system()}, is_app_bundle={is_macos_app_bundle}")
     print(f"[get_data_directory] Executable path: {abs_executable_path}")
