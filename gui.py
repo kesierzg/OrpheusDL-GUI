@@ -6561,7 +6561,7 @@ if __name__ == "__main__":
         if platform.system() == "Linux":
             try:
                 # Use Tcl command directly as wm_class might not be exposed on CTk
-                app.tk.call('wm', 'class', app._w, "OrpheusDL_GUI")
+                app.tk.call('wm', 'class', app._w, "OrpheusDL_GUI", "OrpheusDL_GUI")
             except Exception as e:
                 print(f"[Init] Warning: Could not set WM_CLASS: {e}")
             
