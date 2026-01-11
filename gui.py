@@ -6571,42 +6571,55 @@ if __name__ == "__main__":
         
         # Set icon after window geometry is established
         try:
-            icon_filename = "icon.icns" if platform.system() == "Darwin" else "icon.ico"
-            icon_path = resource_path(icon_filename)
-            
-            # Always print icon path for debugging this issue
-            print(f"[Icon] Looking for icon at: {icon_path}")
-            print(f"[Icon] File exists: {os.path.exists(icon_path)}")
-            print(f"[Icon] Absolute path: {os.path.abspath(icon_path)}")
-            
-            if os.path.exists(icon_path):
-                if platform.system() != "Darwin":
-                    # Try multiple methods to set the icon
+            # On Linux, use PNG and iconphoto
+            if platform.system() == "Linux":
+                icon_filename = "icon.png"
+                icon_path = resource_path(icon_filename)
+                print(f"[Icon] Linux detected. Looking for icon at: {icon_path}")
+                
+                if os.path.exists(icon_path):
                     try:
-                        app.iconbitmap(icon_path)
-                        print(f"[Icon] Successfully set icon using app.iconbitmap")
-                        # Also set as default for child windows (Toplevel inheritance)
+                        icon_image = tkinter.PhotoImage(file=icon_path)
+                        app.iconphoto(False, icon_image)
+                        print(f"[Icon] Successfully set Linux icon using app.iconphoto")
+                    except Exception as e_linux:
+                        print(f"[Icon] Linux iconphoto failed: {e_linux}")
+            else:
+                # Windows/macOS logic
+                icon_filename = "icon.icns" if platform.system() == "Darwin" else "icon.ico"
+                icon_path = resource_path(icon_filename)
+                
+                # Always print icon path for debugging this issue
+                print(f"[Icon] Looking for icon at: {icon_path}")
+                print(f"[Icon] File exists: {os.path.exists(icon_path)}")
+                print(f"[Icon] Absolute path: {os.path.abspath(icon_path)}")
+                
+                if os.path.exists(icon_path):
+                    if platform.system() != "Darwin":
+                        # Try multiple methods to set the icon
                         try:
-                            app.iconbitmap(default=icon_path)
-                        except Exception:
-                            pass
-                    except Exception as e1:
-                        print(f"[Icon] app.iconbitmap failed: {e1}")
-                        try:
-                            # Try accessing the underlying tk window
-                            app.tk.call('wm', 'iconbitmap', app._w, icon_path)
-                            print(f"[Icon] Successfully set icon using tk.call")
-                            # Also set as default for child windows
+                            app.iconbitmap(icon_path)
+                            print(f"[Icon] Successfully set icon using app.iconbitmap")
+                            # Also set as default for child windows (Toplevel inheritance)
                             try:
-                                app.tk.call('wm', 'iconbitmap', app._w, '-default', icon_path)
+                                app.iconbitmap(default=icon_path)
                             except Exception:
                                 pass
-                        except Exception as e2:
-                            print(f"[Icon] tk.call also failed: {e2}")
+                        except Exception as e1:
+                            print(f"[Icon] app.iconbitmap failed: {e1}")
+                            try:
+                                # Try accessing the underlying tk window
+                                app.tk.call('wm', 'iconbitmap', app._w, icon_path)
+                                print(f"[Icon] Successfully set icon using tk.call")
+                                # Also set as default for child windows
+                                try:
+                                    app.tk.call('wm', 'iconbitmap', app._w, '-default', icon_path)
+                                except Exception:
+                                    pass
+                            except Exception as e2:
+                                print(f"[Icon] tk.call failed: {e2}")
                 else:
-                    print("[Icon] Skipping iconbitmap on macOS")
-            else:
-                print(f"[Icon] ERROR: Icon file not found at: {icon_path}")
+                    print(f"[Icon] ERROR: Icon file not found at: {icon_path}")
         except Exception as e:
             print(f"[Icon] ERROR setting window icon: {e}")
             import traceback
