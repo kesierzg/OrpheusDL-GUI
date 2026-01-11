@@ -6556,6 +6556,10 @@ if __name__ == "__main__":
             print(f"[DEBUG] Before GUI setup: output_path = {current_settings.get('globals', {}).get('general', {}).get('output_path')}")
         customtkinter.set_appearance_mode("dark")
         app = customtkinter.CTk()
+        # Set window class to match desktop file StartupWMClass
+        if platform.system() == "Linux":
+            app.wm_class("OrpheusDL_GUI", "OrpheusDL_GUI")
+            
         # Use alpha to hide window instead of withdraw, as withdraw can cause issues on some systems
         app.attributes('-alpha', 0)
         app.title("OrpheusDL GUI")
