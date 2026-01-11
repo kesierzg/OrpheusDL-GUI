@@ -6557,8 +6557,13 @@ if __name__ == "__main__":
         customtkinter.set_appearance_mode("dark")
         app = customtkinter.CTk()
         # Set window class to match desktop file StartupWMClass
+        # Set window class to match desktop file StartupWMClass
         if platform.system() == "Linux":
-            app.wm_class("OrpheusDL_GUI", "OrpheusDL_GUI")
+            try:
+                # Use Tcl command directly as wm_class might not be exposed on CTk
+                app.tk.call('wm', 'class', app._w, "OrpheusDL_GUI")
+            except Exception as e:
+                print(f"[Init] Warning: Could not set WM_CLASS: {e}")
             
         # Use alpha to hide window instead of withdraw, as withdraw can cause issues on some systems
         app.attributes('-alpha', 0)
