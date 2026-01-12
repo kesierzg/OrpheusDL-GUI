@@ -6558,7 +6558,7 @@ if __name__ == "__main__":
         
         # Pass className directly to constructor to set WM_CLASS correctly on Linux
         if platform.system() == "Linux":
-            app = customtkinter.CTk(className="OrpheusDL_GUI")
+            app = customtkinter.CTk(className="orpheusdl_gui")
         else:
             app = customtkinter.CTk()
             
