@@ -12,35 +12,33 @@ if getattr(_sys, 'frozen', False) and _sys.platform == 'darwin':
     ssl._create_default_https_context = ssl._create_unverified_context
     print("[SSL Fix] Applied ssl._create_unverified_context for macOS bundled app")
     
-    # Method 2: Patch urllib.request.urlopen to always use unverified context
-    import urllib.request
-    _original_urlopen = urllib.request.urlopen
+    # Method 2: Patch ssl.SSLContext.wrap_socket to disable verification
+    # This is the LOWEST level - intercepts every SSL socket creation
+    _original_wrap_socket = ssl.SSLContext.wrap_socket
     
-    def _patched_urlopen(url, data=None, timeout=None, **kwargs):
-        """Patched urlopen that uses unverified SSL context."""
-        # If no context is provided, use unverified context
-        if 'context' not in kwargs:
-            kwargs['context'] = ssl._create_unverified_context()
-        if timeout is not None:
-            return _original_urlopen(url, data, timeout, **kwargs)
-        else:
-            return _original_urlopen(url, data, **kwargs)
+    def _patched_wrap_socket(self, sock, *args, **kwargs):
+        """Patched wrap_socket that disables SSL verification."""
+        # Force disable verification on this context
+        self.check_hostname = False
+        self.verify_mode = ssl.CERT_NONE
+        return _original_wrap_socket(self, sock, *args, **kwargs)
     
-    urllib.request.urlopen = _patched_urlopen
-    print("[SSL Fix] Patched urllib.request.urlopen to use unverified SSL")
+    ssl.SSLContext.wrap_socket = _patched_wrap_socket
+    print("[SSL Fix] Patched ssl.SSLContext.wrap_socket to disable verification")
     
-    # Method 3: Patch http.client.HTTPSConnection to not verify SSL
-    import http.client
-    _original_HTTPSConnection_init = http.client.HTTPSConnection.__init__
-    
-    def _patched_HTTPSConnection_init(self, *args, **kwargs):
-        """Patched HTTPSConnection that disables SSL verification."""
-        if 'context' not in kwargs or kwargs['context'] is None:
-            kwargs['context'] = ssl._create_unverified_context()
-        _original_HTTPSConnection_init(self, *args, **kwargs)
-    
-    http.client.HTTPSConnection.__init__ = _patched_HTTPSConnection_init
-    print("[SSL Fix] Patched http.client.HTTPSConnection to disable SSL verification")
+    # Method 3: Also patch the deprecated ssl.wrap_socket for older code
+    if hasattr(ssl, 'wrap_socket'):
+        _original_ssl_wrap_socket = ssl.wrap_socket
+        
+        def _patched_ssl_wrap_socket(sock, *args, **kwargs):
+            """Patched ssl.wrap_socket that uses unverified context."""
+            if 'ssl_context' not in kwargs:
+                ctx = ssl._create_unverified_context()
+                kwargs['ssl_context'] = ctx
+            return _original_ssl_wrap_socket(sock, *args, **kwargs)
+        
+        ssl.wrap_socket = _patched_ssl_wrap_socket
+        print("[SSL Fix] Patched ssl.wrap_socket (deprecated) to use unverified context")
 # ============================================================================
 
 import os
