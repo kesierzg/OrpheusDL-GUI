@@ -1,3 +1,35 @@
+# ============================================================================
+# SSL Certificate Fix - MUST BE AT VERY TOP BEFORE ANY IMPORTS
+# ============================================================================
+# On macOS, bundled Python apps can't verify SSL certificates.
+# This disables SSL verification for bundled apps BEFORE any library is imported.
+# ============================================================================
+import ssl
+import sys as _sys
+
+if getattr(_sys, 'frozen', False) and _sys.platform == 'darwin':
+    # Method 1: Patch the default HTTPS context factory
+    ssl._create_default_https_context = ssl._create_unverified_context
+    print("[SSL Fix] Applied ssl._create_unverified_context for macOS bundled app")
+    
+    # Method 2: Patch urllib.request.urlopen to always use unverified context
+    import urllib.request
+    _original_urlopen = urllib.request.urlopen
+    
+    def _patched_urlopen(url, data=None, timeout=None, **kwargs):
+        """Patched urlopen that uses unverified SSL context."""
+        # If no context is provided, use unverified context
+        if 'context' not in kwargs:
+            kwargs['context'] = ssl._create_unverified_context()
+        if timeout is not None:
+            return _original_urlopen(url, data, timeout, **kwargs)
+        else:
+            return _original_urlopen(url, data, **kwargs)
+    
+    urllib.request.urlopen = _patched_urlopen
+    print("[SSL Fix] Patched urllib.request.urlopen to use unverified SSL")
+# ============================================================================
+
 import os
 import sys
 
