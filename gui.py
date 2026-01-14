@@ -28,6 +28,19 @@ if getattr(_sys, 'frozen', False) and _sys.platform == 'darwin':
     
     urllib.request.urlopen = _patched_urlopen
     print("[SSL Fix] Patched urllib.request.urlopen to use unverified SSL")
+    
+    # Method 3: Patch http.client.HTTPSConnection to not verify SSL
+    import http.client
+    _original_HTTPSConnection_init = http.client.HTTPSConnection.__init__
+    
+    def _patched_HTTPSConnection_init(self, *args, **kwargs):
+        """Patched HTTPSConnection that disables SSL verification."""
+        if 'context' not in kwargs or kwargs['context'] is None:
+            kwargs['context'] = ssl._create_unverified_context()
+        _original_HTTPSConnection_init(self, *args, **kwargs)
+    
+    http.client.HTTPSConnection.__init__ = _patched_HTTPSConnection_init
+    print("[SSL Fix] Patched http.client.HTTPSConnection to disable SSL verification")
 # ============================================================================
 
 import os
