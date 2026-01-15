@@ -7,10 +7,10 @@
 
 1. Download the compiled installer from the [Releases page](https://github.com/bascurtiz/OrpheusDL-GUI/releases).
 2. Double-click the exe/app
-   - Windows - Demo how to install (1m4s): https://youtu.be/rMeBUanEK9Q
-   - macOS - Demo how to install (1m54s): https://youtu.be/j39ryXFAxzw
-   - macOS - For older macOS / if Homebrew isn't supported, see (1m30s): https://youtu.be/7pE6xgm1fsg
-   - Linux - Demo to install (1m8s): https://youtu.be/51eESmveCME
+   - Windows - Demo how to install: https://youtu.be/rMeBUanEK9Q (1m4s)
+   - macOS - Demo how to install: https://youtu.be/j39ryXFAxzw (1m54s)
+   - macOS - For older macOS / if Homebrew isn't supported: https://youtu.be/7pE6xgm1fsg (1m30s)
+   - Linux - Demo to install: https://youtu.be/51eESmveCME (1m8s)
 
 ### If you prefer running from source:
 1. Clone this repository (`git clone https://github.com/bascurtiz/OrpheusDL-GUI`) or download the ZIP file.
