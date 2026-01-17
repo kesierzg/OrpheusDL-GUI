@@ -7077,6 +7077,29 @@ Unnecessary Lossless-to-Lossless""",
                     else:
                          var = tkinter.StringVar(value=str(current_value)); settings_vars["globals"][full_key] = var
                          if section_key == "general" and field == "output_path":
+                            # Add trace to sync Global Settings output_path → Download tab path_var_main
+                            def _sync_global_settings_path_to_download_tab(*args, var_ref=var):
+                                """Callback to sync Global Settings output_path changes to Download tab."""
+                                global path_var_main, current_settings
+                                try:
+                                    new_path = var_ref.get()
+                                    if not new_path:
+                                        return
+                                    # Update path_var_main in Download tab if it exists and differs
+                                    if 'path_var_main' in globals() and path_var_main:
+                                        current_download_tab_path = path_var_main.get()
+                                        if new_path != current_download_tab_path:
+                                            path_var_main.set(new_path)
+                                    # Update in-memory settings
+                                    if "globals" not in current_settings: current_settings["globals"] = {}
+                                    if "general" not in current_settings["globals"]: current_settings["globals"]["general"] = {}
+                                    current_settings["globals"]["general"]["output_path"] = new_path
+                                    # Auto-save settings
+                                    save_settings(show_confirmation=False)
+                                except Exception as e:
+                                    print(f"[Sync Error] Failed to sync Global Settings path to Download tab: {e}")
+                            var.trace_add("write", _sync_global_settings_path_to_download_tab)
+                            
                             widget = customtkinter.CTkEntry(global_settings_frame, textvariable=var)
                             widget.grid(row=row, column=1, sticky="ew", padx=(5, 5))
                             widget.bind("<Button-3>", show_context_menu)
