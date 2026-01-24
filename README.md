@@ -43,5 +43,6 @@
 | Deezer       | ✅     | Genius       | \*     | Idagio       | \*     | JioSaavn     | ✅     |
 | KKBOX        | \*     | Musixmatch   | \*     | Napster      | \*     | Nugs.net     | \*     |
 | Qobuz        | ✅     | SoundCloud   | ✅     | Spotify      | ✅     | Tidal        | ✅     |
+| YouTube      | ✅     |              |        |              |        |              |        |
 
 \* *If this platform isn't working properly and you have a valid subscription you can share, please open an issue or contact me. I'm willing to debug!* 
