@@ -4722,10 +4722,11 @@ _search_context_menu = None
 _search_quality_menu = None
 _search_context_quality_var = None
 _search_quality_buttons = []  # List to store quality button references
+_search_copy_url_button = None # Reference to the copy URL button
 
 def _create_search_context_menu():
     """Create the search results right-click context menu."""
-    global _search_context_menu, _search_quality_menu, _search_context_quality_var, _search_quality_buttons, app, BUTTON_COLOR
+    global _search_context_menu, _search_quality_menu, _search_context_quality_var, _search_quality_buttons, _search_copy_url_button, app, BUTTON_COLOR
     
     if _search_context_menu is not None:
         return
@@ -4741,9 +4742,9 @@ def _create_search_context_menu():
         _search_context_menu = customtkinter.CTkFrame(app, border_width=1, border_color="#565B5E")
         
         # Copy URL button - same style as copy/paste buttons
-        copy_url_btn = customtkinter.CTkButton(
+        _search_copy_url_button = customtkinter.CTkButton(
             _search_context_menu, 
-            text="Copy URL", 
+            text="Copy link", 
             command=_copy_selected_url,
             width=80,
             height=24,
@@ -4751,9 +4752,10 @@ def _create_search_context_menu():
             fg_color=button_color,
             hover_color="#1F6AA5",
             text_color_disabled="gray",
-            border_width=0
+            border_width=0,
+            anchor="w"
         )
-        copy_url_btn.pack(pady=(2, 1), padx=2, fill="x")
+        _search_copy_url_button.pack(pady=(2, 1), padx=2, fill="x")
         
         # Separator line
         separator = customtkinter.CTkFrame(_search_context_menu, width=50, height=1, fg_color="#565B5E")
@@ -4782,7 +4784,8 @@ def _create_search_context_menu():
                 fg_color=button_color,
                 hover_color="#1F6AA5",
                 text_color_disabled="gray",
-                border_width=0
+                border_width=0,
+                anchor="w"
             )
             # Hide 4th button by default (will be shown for TIDAL)
             if i < 3:
@@ -4873,7 +4876,7 @@ def _download_with_quality(event=None):
 
 def show_search_context_menu(event):
     """Show the right-click context menu for search results."""
-    global _search_context_menu, _search_context_quality_var, _search_quality_buttons, tree, app, settings_vars
+    global _search_context_menu, _search_context_quality_var, _search_quality_buttons, _search_copy_url_button, tree, app, settings_vars
     
     _create_search_context_menu()
     
@@ -4905,42 +4908,71 @@ def show_search_context_menu(event):
         # Most platforms use 3 buttons, TIDAL uses 4
         platform_button_configs = {
             'qobuz': [
-                ("HiFi", "hifi"),
-                ("Lossless", "lossless"),
-                ("High Quality", "high")
+                ("Download HiFi", "hifi"),
+                ("Download FLAC", "lossless"),
+                ("Download MP3 320", "high")
             ],
             'tidal': [
-                ("HiFi", "hifi"),
-                ("Lossless", "lossless"),
-                ("High Quality", "high"),
-                ("Low Quality", "low")
+                ("Download HiFi", "hifi"),
+                ("Download FLAC", "lossless"),
+                ("Download AAC 320", "high"),
+                ("Download AAC 96", "low")
             ],
             'spotify': [
-                ("Lossless", "lossless"),      # Disabled - Spotify has no lossless
-                ("High Quality", "hifi"),       # 320kbps (maps to hifi internally)
-                ("Low Quality", "high")         # 160kbps (maps to high internally)
+                ("Download FLAC", "lossless"),
+                ("Download OGG 320", "hifi"),
+                ("Download OGG 160", "high")
             ],
             'youtube': [
-                ("Opus", "hifi"),
-                ("AAC", "high"),
-                ("MP3", "low")
+                ("Download OPUS", "hifi"),
+                ("Download AAC", "high"),
+                ("Download MP3", "low")
+            ],
+            'applemusic': [
+                ("Download ALAC", "lossless"),
+                ("Download AAC 256", "high"),
+                ("Download AAC 128", "low")
+            ],
+            'apple music': [
+                ("Download ALAC", "lossless"),
+                ("Download AAC 256", "high"),
+                ("Download AAC 128", "low")
+            ],
+            'soundcloud': [
+                ("Download FLAC", "lossless"),
+                ("Download AAC 256", "high"),
+                ("Download AAC 128", "low")
+            ],
+            'beatport': [
+                ("Download FLAC", "lossless"),
+                ("Download AAC 256", "high"),
+                ("Download AAC 128", "low")
+            ],
+            'beatsource': [
+                ("Download FLAC", "lossless"),
+                ("Download AAC 256", "high"),
+                ("Download AAC 128", "low")
             ],
             # Default configuration for most platforms
             'default': [
-                ("Lossless", "hifi"),
-                ("High Quality", "high"),
-                ("Low Quality", "low")
+                ("Download FLAC", "lossless"),
+                ("Download MP3 320", "high"),
+                ("Download MP3 128", "low")
             ]
         }
         
         # Define available qualities per platform
+        # Ensure all options in button configs are marked as available
         platform_available_qualities = {
-            'applemusic': ['high'],  # Apple Music only supports 256k AAC (High Quality)
+            'applemusic': ['high'],
             'apple music': ['high'],
-            'soundcloud': ['high'],  # SoundCloud only supports High Quality
-            'spotify': ['hifi', 'high'],  # Spotify: High=320kbps (hifi), Low=160kbps (high), no lossless
-            'qobuz': ['hifi', 'lossless', 'high'],  # Qobuz supports HiFi, Lossless, and High Quality
-            'tidal': ['hifi', 'lossless', 'high', 'low'],  # TIDAL supports all 4 quality tiers
+            'soundcloud': ['high'],
+            'spotify': ['hifi', 'high'],
+            'qobuz': ['hifi', 'lossless', 'high'],
+            'tidal': ['hifi', 'lossless', 'high', 'low'],
+            'youtube': ['hifi', 'high', 'low'],
+            'beatport': ['lossless', 'high', 'low'],
+            'beatsource': ['lossless', 'high', 'low'],
             # Other platforms support all default qualities
         }
         
@@ -4954,6 +4986,11 @@ def show_search_context_menu(event):
         # Determine if we need to show the 4th button (for TIDAL)
         needs_4_buttons = len(button_config) > 3
         
+        # Reset packing for all quality buttons to ensure correct order
+        for btn in _search_quality_buttons:
+            if btn and btn.winfo_exists():
+                btn.pack_forget()
+
         # Update button labels, commands, states, and visibility based on platform
         for i, btn in enumerate(_search_quality_buttons):
             if btn and btn.winfo_exists():
@@ -4961,21 +4998,20 @@ def show_search_context_menu(event):
                     label, quality_value = button_config[i]
                     is_available = quality_value in available_qualities
                     
-                    # Update button text and command
-                    btn.configure(
-                        text=label,
-                        command=lambda v=quality_value: _select_quality_and_download(v),
-                        state="normal" if is_available else "disabled"
-                    )
-                    
-                    # Show/hide 4th button based on platform
-                    if i == 3:
-                        if needs_4_buttons:
-                            btn.pack(pady=1, padx=2, fill="x")
-                        else:
-                            btn.pack_forget()
-                elif i == 3:
-                    # Hide 4th button if not needed
+                    if is_available:
+                        # Update button text and command
+                        btn.configure(
+                            text=label,
+                            command=lambda v=quality_value: _select_quality_and_download(v),
+                            state="normal"
+                        )
+                        # Ensure button is shown
+                        btn.pack(pady=1, padx=2, fill="x")
+                    else:
+                        # Hide unavailable option
+                        btn.pack_forget()
+                else:
+                    # Hide unused buttons (e.g. 4th button if config has fewer items)
                     btn.pack_forget()
         
         # Update quality radio button to match current setting
