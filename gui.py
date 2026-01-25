@@ -408,6 +408,22 @@ if platform.system() == "Windows":
         except Exception as e2:
             print(f"[DPI] Warning: Could not set DPI awareness ({e1} / {e2})")
 
+    # Create named mutex for installer detection
+    try:
+        from ctypes import windll
+        # Create a named mutex. The handle must be kept alive for the process lifetime.
+        # "Global\" prefix ensures it works across sessions (requires admin for creation in some cases, 
+        # but "Local\" might be safer if running as user. Inno Setup usually checks Global if not specified?)
+        # Actually Inno Setup AppMutex docs say: "If the mutex name does not include a backslash, it is created in the Local namespace... To create a mutex in the Global namespace, prefix the name with Global\"
+        # We'll use Global to be safe, or just the name. Let's stick to the plan: Global\OrpheusDL-GUI-Mutex
+        _app_mutex = windll.kernel32.CreateMutexW(None, False, "Global\\OrpheusDL-GUI-Mutex")
+        if windll.kernel32.GetLastError() == 183: # ERROR_ALREADY_EXISTS
+            print("[Mutex] AppMutex already exists (another instance is likely running)")
+        else:
+            print("[Mutex] Created AppMutex: Global\\OrpheusDL-GUI-Mutex")
+    except Exception as e:
+        print(f"[Mutex] Failed to create AppMutex: {e}")
+
 def get_script_directory():
     """Gets the directory containing the script/executable, handling bundled apps."""
     if getattr(sys, 'frozen', False):
