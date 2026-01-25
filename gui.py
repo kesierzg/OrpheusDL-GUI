@@ -388,6 +388,7 @@ def setup_logging(log_queue):
         root_logger.setLevel(logging.CRITICAL)
 __version__ = "1.0.8"
 from update_checker import run_check_in_thread
+_mutex_handle = None
 if platform.system() == "Windows":
     try:
         import winsound
@@ -414,7 +415,7 @@ if platform.system() == "Windows":
         # Create a named mutex. The handle must be kept alive for the process lifetime.
         # We use a Local mutex (no "Global\" prefix) to avoid permission issues.
         # This allows the installer (running in the same session) to detect the app.
-        _app_mutex = windll.kernel32.CreateMutexW(None, False, "OrpheusDL-GUI-Mutex")
+        _mutex_handle = windll.kernel32.CreateMutexW(None, False, "OrpheusDL-GUI-Mutex")
         if windll.kernel32.GetLastError() == 183: # ERROR_ALREADY_EXISTS
             print("[Mutex] AppMutex already exists (another instance is likely running)")
         else:
@@ -6956,6 +6957,7 @@ def _on_gui_exit():
     if 'app' in globals() and app and app.winfo_exists():
         app.destroy()
     print("[Exit] Application shutdown complete.")
+    sys.exit(0)
 
 def _setup_macos_window_management():
     """Sets up macOS-specific window management to handle minimize behavior."""
