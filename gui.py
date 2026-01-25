@@ -6957,7 +6957,7 @@ def _on_gui_exit():
     if 'app' in globals() and app and app.winfo_exists():
         app.destroy()
     print("[Exit] Application shutdown complete.")
-    sys.exit(0)
+    os._exit(0)
 
 def _setup_macos_window_management():
     """Sets up macOS-specific window management to handle minimize behavior."""
@@ -8749,4 +8749,4 @@ Unnecessary Lossless-to-Lossless""",
         app.mainloop()
     else:
         print(f"[Child Process {os.getpid()}] Detected, exiting.")
-        sys.exit()
+        os._exit(0)
