@@ -5810,7 +5810,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_text_frame, text="Open ", font=("Segoe UI", 12), text_color="#999999").pack(side="left")
             
-            dashboard_link = customtkinter.CTkLabel(step1_text_frame, text="Spotify Developer Dashboard", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
+            dashboard_link = customtkinter.CTkLabel(step1_text_frame, text="Spotify Developer Dashboard", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             dashboard_link.pack(side="left")
             dashboard_link.bind("<Button-1>", lambda e: webbrowser.open("https://developer.spotify.com/dashboard"))
             dashboard_link.bind("<Enter>", lambda e: dashboard_link.configure(text_color="#4A9EFF"))
@@ -5913,7 +5913,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_bullets_frame, text="• Chrome / Edge → ", font=("Segoe UI", 12), text_color="#999999").pack(side="left")
             
-            chrome_link = customtkinter.CTkLabel(step1_bullets_frame, text="Get cookies.txt", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
+            chrome_link = customtkinter.CTkLabel(step1_bullets_frame, text="Get cookies.txt", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             chrome_link.pack(side="left")
             chrome_link.bind("<Button-1>", lambda e: webbrowser.open("https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?pli=1"))
             chrome_link.bind("<Enter>", lambda e: chrome_link.configure(text_color="#4A9EFF"))
@@ -5921,7 +5921,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_bullets_frame, text=" or Firefox → ", font=("Segoe UI", 12), text_color="#999999").pack(side="left")
             
-            firefox_link = customtkinter.CTkLabel(step1_bullets_frame, text="cookies.txt", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
+            firefox_link = customtkinter.CTkLabel(step1_bullets_frame, text="cookies.txt", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             firefox_link.pack(side="left")
             firefox_link.bind("<Button-1>", lambda e: webbrowser.open("https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/"))
             firefox_link.bind("<Enter>", lambda e: firefox_link.configure(text_color="#4A9EFF"))
@@ -5938,7 +5938,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step2_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color="#999999").pack(side="left")
             
-            apple_link = customtkinter.CTkLabel(step2_text_frame, text="Apple Music", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
+            apple_link = customtkinter.CTkLabel(step2_text_frame, text="Apple Music", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             apple_link.pack(side="left")
             apple_link.bind("<Button-1>", lambda e: webbrowser.open("https://music.apple.com"))
             apple_link.bind("<Enter>", lambda e: apple_link.configure(text_color="#4A9EFF"))
@@ -6019,7 +6019,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_bullets_frame, text="• Chrome / Edge → ", font=("Segoe UI", 12), text_color="#999999").pack(side="left")
             
-            chrome_link = customtkinter.CTkLabel(step1_bullets_frame, text="Get cookies.txt", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
+            chrome_link = customtkinter.CTkLabel(step1_bullets_frame, text="Get cookies.txt", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             chrome_link.pack(side="left")
             chrome_link.bind("<Button-1>", lambda e: webbrowser.open("https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?pli=1"))
             chrome_link.bind("<Enter>", lambda e: chrome_link.configure(text_color="#4A9EFF"))
@@ -6027,7 +6027,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_bullets_frame, text=" or Firefox → ", font=("Segoe UI", 12), text_color="#999999").pack(side="left")
             
-            firefox_link = customtkinter.CTkLabel(step1_bullets_frame, text="cookies.txt", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
+            firefox_link = customtkinter.CTkLabel(step1_bullets_frame, text="cookies.txt", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             firefox_link.pack(side="left")
             firefox_link.bind("<Button-1>", lambda e: webbrowser.open("https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/"))
             firefox_link.bind("<Enter>", lambda e: firefox_link.configure(text_color="#4A9EFF"))
@@ -6077,7 +6077,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step3_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color="#999999").pack(side="left")
             
-            youtube_link = customtkinter.CTkLabel(step3_text_frame, text="YouTube", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
+            youtube_link = customtkinter.CTkLabel(step3_text_frame, text="YouTube", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             youtube_link.pack(side="left")
             youtube_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.youtube.com"))
             youtube_link.bind("<Enter>", lambda e: youtube_link.configure(text_color="#4A9EFF"))
@@ -6208,7 +6208,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to ", font=("Segoe UI", 12), text_color="#999999", justify="left", wraplength=350).pack(side="left")
             
-            deezer_link = customtkinter.CTkLabel(step1_text_frame, text="Deezer", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
+            deezer_link = customtkinter.CTkLabel(step1_text_frame, text="Deezer", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             deezer_link.pack(side="left")
             deezer_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.deezer.com"))
             deezer_link.bind("<Enter>", lambda e: deezer_link.configure(text_color="#4A9EFF"))
@@ -6328,7 +6328,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to ", font=("Segoe UI", 12), text_color="#999999", justify="left", wraplength=350).pack(side="left")
             
-            qobuz_link = customtkinter.CTkLabel(step1_text_frame, text="Qobuz", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
+            qobuz_link = customtkinter.CTkLabel(step1_text_frame, text="Qobuz", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             qobuz_link.pack(side="left")
             qobuz_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.qobuz.com"))
             qobuz_link.bind("<Enter>", lambda e: qobuz_link.configure(text_color="#4A9EFF"))
@@ -6429,7 +6429,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color="#999999").pack(side="left")
             
-            soundcloud_link = customtkinter.CTkLabel(step1_text_frame, text="SoundCloud", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
+            soundcloud_link = customtkinter.CTkLabel(step1_text_frame, text="SoundCloud", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             soundcloud_link.pack(side="left")
             soundcloud_link.bind("<Button-1>", lambda e: webbrowser.open("https://soundcloud.com"))
             soundcloud_link.bind("<Enter>", lambda e: soundcloud_link.configure(text_color="#4A9EFF"))
@@ -6542,7 +6542,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step2_line2.pack(anchor="w")
             customtkinter.CTkLabel(step2_line2, text="created, when signed up to ", font=("Segoe UI", 12), text_color="#999999").pack(side="left")
             
-            tidal_link = customtkinter.CTkLabel(step2_line2, text="Tidal", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
+            tidal_link = customtkinter.CTkLabel(step2_line2, text="Tidal", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             tidal_link.pack(side="left")
             tidal_link.bind("<Button-1>", lambda e: webbrowser.open("https://tidal.com"))
             tidal_link.bind("<Enter>", lambda e: tidal_link.configure(text_color="#4A9EFF"))
@@ -6645,7 +6645,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to ", font=("Segoe UI", 12), text_color="#999999", justify="left", wraplength=700).pack(side="left")
             
-            beatport_link = customtkinter.CTkLabel(step1_text_frame, text="Beatport", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
+            beatport_link = customtkinter.CTkLabel(step1_text_frame, text="Beatport", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             beatport_link.pack(side="left")
             beatport_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.beatport.com"))
             beatport_link.bind("<Enter>", lambda e: beatport_link.configure(text_color="#4A9EFF"))
@@ -6699,7 +6699,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to ", font=("Segoe UI", 12), text_color="#999999", justify="left", wraplength=700).pack(side="left")
             
-            beatsource_link = customtkinter.CTkLabel(step1_text_frame, text="Beatsource", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
+            beatsource_link = customtkinter.CTkLabel(step1_text_frame, text="Beatsource", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             beatsource_link.pack(side="left")
             beatsource_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.beatsource.com"))
             beatsource_link.bind("<Enter>", lambda e: beatsource_link.configure(text_color="#4A9EFF"))
