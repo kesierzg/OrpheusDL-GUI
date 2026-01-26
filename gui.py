@@ -5113,41 +5113,35 @@ def _create_copy_icon(size=(16, 16), color="#AAAAAA"):
     draw = ImageDraw.Draw(image)
     
     w, h = size
-    
-    # Dimensions
-    square_size = 9
+    square_size = 8
     stroke_width = 1
     
-    # Back square (top-right)
-    # x: 6 to 15 (inclusive 9px width)
-    # y: 1 to 10
-    back_x1 = w - square_size - 1
-    back_y1 = 1
-    back_x2 = w - 2
-    back_y2 = 1 + square_size
+    # Back square (top-left) - Fixed orientation
+    bx1, by1 = 2, 2
+    bx2, by2 = 2 + square_size, 2 + square_size
     
+    # Front square (bottom-right) - Fixed orientation
+    fx1, fy1 = 5, 5
+    fx2, fy2 = 5 + square_size, 5 + square_size
+    
+    # Draw back square partially to simulate overlap without solid fill
+    # Top side
+    draw.line([(bx1, by1), (bx2, by1)], fill=color, width=stroke_width)
+    # Left side
+    draw.line([(bx1, by1), (bx1, by2)], fill=color, width=stroke_width)
+    # Right side (only until it hits the front square)
+    draw.line([(bx2, by1), (bx2, fy1)], fill=color, width=stroke_width)
+    # Bottom side (only until it hits the front square)
+    draw.line([(bx1, by2), (fx1, by2)], fill=color, width=stroke_width)
+    
+    # Draw front square fully (outline only)
     draw.rectangle(
-        [back_x1, back_y1, back_x2, back_y2],
+        [fx1, fy1, fx2, fy2],
         outline=color,
         width=stroke_width
     )
     
-    # Front square (bottom-left)
-    # x: 1 to 10
-    # y: 6 to 15
-    front_x1 = 1
-    front_y1 = h - square_size - 2
-    front_x2 = 1 + square_size
-    front_y2 = h - 2
-    
-    # Clear area for front square to simulate overlap/transparency if needed, 
-    # but for outline style we usually just draw over or fill black.
-    # Here we just draw the outline.
-    
-    # To make it look like "⧉" (overlapping), we might want to fill the front square with background color 
-    # if we knew it, but transparent is safer. 
-    # However, standard icons often just overlap lines.
-    # Let's clear the background of the front square to hide the back square lines behind it.
+    return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
     # Assuming dark theme background approx #2B2B2B or similar, but transparent is tricky.
     # Actually, the user asked for "⧉" which is usually transparent.
     # Let's just draw the rectangle.
@@ -6003,7 +5997,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     width=100,
                     height=30,
                     command=open_cookies_folder,
-                    fg_color=widget._fg_color if hasattr(widget, '_fg_color') else None,
+                    fg_color=BUTTON_COLOR,
                     hover_color="#1F6AA5",
                     border_width=0,
                     border_color=None
@@ -6475,9 +6469,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 width=80,
                 height=24,
                 font=("Segoe UI", 11),
-                fg_color="#3B3B3B",
-                hover_color="#4A4A4A",
-                text_color="#DCE4EE",
+                fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
+                hover_color="#1F6AA5",
                 command=lambda: webbrowser.open("https://www.youtube.com")
             )
             # Use place for absolute positioning within the relative frame
@@ -7088,8 +7081,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 width=80,
                 height=24,
                 font=("Segoe UI", 11),
-                fg_color="#3B3B3B",
-                hover_color="#4A4A4A",
+                fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
+                hover_color="#1F6AA5",
                 text_color="#DCE4EE",
                 command=lambda: webbrowser.open("https://www.youtube.com")
             )
@@ -7736,7 +7729,7 @@ if __name__ == "__main__":
         patch_download_file_for_cancellation()
         print("[Patch] Enabled improved download cancellation")
         _hide_menu_binding_id = None
-        BUTTON_COLOR = ("#E0E0E0", "#303030")
+        BUTTON_COLOR = ("#E0E0E0", "#343638")
         BORDER = "#565B5E"
         current_settings = {}
         settings_vars = {"globals": {}, "credentials": {}}
@@ -8521,7 +8514,7 @@ Unnecessary Lossless-to-Lossless""",
         save_status_var = tkinter.StringVar(); save_status_label = customtkinter.CTkLabel(save_controls_frame, textvariable=save_status_var, text_color=("#00C851", "#00C851"))
         globals()['save_status_label'] = save_status_label
         save_status_label.pack(side="left", padx=(0, 10))
-        save_button = customtkinter.CTkButton(save_controls_frame, text="Save", width=100, height=30, command=handle_save_settings, fg_color="#343638", hover_color="#1F6AA5"); save_button.pack(side="left", padx=5, pady=(0, 0))
+        save_button = customtkinter.CTkButton(save_controls_frame, text="Save", width=100, height=30, command=handle_save_settings, fg_color=BUTTON_COLOR, hover_color="#1F6AA5"); save_button.pack(side="left", padx=5, pady=(0, 0))
         about_tab = tabview.add("About"); about_container = customtkinter.CTkFrame(about_tab, fg_color="transparent"); about_container.pack(fill="both", expand=True, padx=16, pady=(0, 0)); canvas = customtkinter.CTkFrame(about_container, fg_color="transparent"); canvas.pack(fill="both", expand=True); about_frame = customtkinter.CTkFrame(canvas, fg_color="transparent"); about_frame.pack(fill="x", expand=False, pady=10)
         icon_title_frame = customtkinter.CTkFrame(about_frame, fg_color="transparent")
         icon_title_frame.pack(pady=(0, 5))
