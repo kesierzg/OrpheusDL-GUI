@@ -1965,7 +1965,8 @@ def show_context_menu(event):
     if not _context_menu: print("Context menu: Failed to create menu frame."); return
     hide_context_menu()
     if 'app' not in globals() or not app: return
-    try: target_at_coords = app.winfo_containing(event.x_root, event.y_root);
+    x_root, y_root = app.winfo_pointerxy()
+    try: target_at_coords = app.winfo_containing(x_root, y_root);
     except Exception as e: print(f"Context menu: Error finding widget at coords: {e}"); return
     if not target_at_coords: return
     intended_ctk_widget = None; temp_widget = target_at_coords; max_levels = 10; current_level = 0
@@ -1996,7 +1997,8 @@ def show_context_menu(event):
             copy_btn = children[0]; paste_btn = children[1]
             copy_btn.configure(state="normal" if can_copy else "disabled"); paste_btn.configure(state="normal" if can_paste else "disabled")
         else: print("Context menu: Button widgets not found or invalid."); return
-        menu_x = event.x_root - app.winfo_rootx() + 2; menu_y = event.y_root - app.winfo_rooty() + 2
+        menu_x = (x_root - app.winfo_rootx()) / app._get_window_scaling() + 2
+        menu_y = (y_root - app.winfo_rooty()) / app._get_window_scaling() + 2
         _context_menu.place(x=menu_x, y=menu_y); _context_menu.lift()
         if _hide_menu_binding_id is None: _hide_menu_binding_id = app.bind("<Button-1>", hide_context_menu, add=True)
     except tkinter.TclError as e: print(f"Context menu: TclError configuring/placing menu: {e}")
@@ -2006,7 +2008,8 @@ def hide_context_menu(event=None):
     global _context_menu, _target_widget, _hide_menu_binding_id, app
     if 'app' not in globals() or not app: return
     if event and _context_menu and _context_menu.winfo_exists():
-         try: click_widget = app.winfo_containing(event.x_root, event.y_root);
+         x_root, y_root = app.winfo_pointerxy()
+         try: click_widget = app.winfo_containing(x_root, y_root);
          except tkinter.TclError: pass
          except Exception as e: print(f"Error checking click location in hide_context_menu: {e}")
          else:
@@ -5170,8 +5173,10 @@ def show_search_context_menu(event):
                 _search_context_quality_var.set(current_quality)
         
         # Position the menu at the cursor
-        menu_x = event.x_root - app.winfo_rootx() + 2
-        menu_y = event.y_root - app.winfo_rooty() + 2
+        x_root, y_root = app.winfo_pointerxy()
+        scaling = app._get_window_scaling()
+        menu_x = (x_root - app.winfo_rootx()) / scaling + 2
+        menu_y = (y_root - app.winfo_rooty()) / scaling + 2
         
         _search_context_menu.place(x=menu_x, y=menu_y)
         _search_context_menu.lift()
@@ -5199,13 +5204,14 @@ def _hide_search_context_menu_on_click(event):
     try:
         if _search_context_menu and _search_context_menu.winfo_exists():
             # Check if click is outside the menu
+            x_root, y_root = app.winfo_pointerxy()
             menu_x = _search_context_menu.winfo_rootx()
             menu_y = _search_context_menu.winfo_rooty()
             menu_width = _search_context_menu.winfo_width()
             menu_height = _search_context_menu.winfo_height()
             
-            if not (menu_x <= event.x_root <= menu_x + menu_width and 
-                    menu_y <= event.y_root <= menu_y + menu_height):
+            if not (menu_x <= x_root <= menu_x + menu_width and 
+                    menu_y <= y_root <= menu_y + menu_height):
                 _hide_search_context_menu()
                 # Unbind to avoid multiple bindings
                 try:
