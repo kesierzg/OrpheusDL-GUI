@@ -1955,8 +1955,82 @@ def _create_menu():
     if _context_menu and _context_menu.winfo_exists(): return
     if 'app' not in globals() or not app: return
     _context_menu = customtkinter.CTkFrame(app, border_width=1, border_color="#565B5E")
-    copy_button = customtkinter.CTkButton(_context_menu, text="Copy", command=copy_text, width=100, height=28, fg_color=BUTTON_COLOR, hover_color="#1F6AA5", text_color_disabled="gray", border_width=0); copy_button.pack(pady=(2, 1), padx=2, fill="x")
-    paste_button = customtkinter.CTkButton(_context_menu, text="Paste", command=paste_text, width=100, height=28, fg_color=BUTTON_COLOR, hover_color="#1F6AA5", text_color_disabled="gray", border_width=0); paste_button.pack(pady=(1, 2), padx=2, fill="x")
+    
+    button_color = BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030")
+    
+    # Undo button
+    undo_icon = _create_undo_icon()
+    undo_icon_white = _create_undo_icon(color="white")
+    undo_button = customtkinter.CTkButton(
+        _context_menu, 
+        text="Undo", 
+        image=undo_icon,
+        compound="left",
+        command=_undo_text, 
+        width=80, 
+        height=24, 
+        font=("Segoe UI", 11),
+        fg_color=button_color, 
+        hover_color="#1F6AA5", 
+        text_color_disabled="gray", 
+        border_width=0,
+        anchor="w"
+    )
+    undo_button.image = undo_icon
+    undo_button.hover_image = undo_icon_white
+    _setup_hover_icon(undo_button, undo_icon, undo_icon_white)
+    undo_button.pack(pady=(2, 1), padx=2, fill="x")
+    
+    # Separator
+    separator = customtkinter.CTkFrame(_context_menu, width=50, height=1, fg_color="#565B5E")
+    separator.pack(fill="x", padx=4, pady=2)
+    
+    # Copy button
+    copy_icon = _create_copy_icon()
+    copy_icon_white = _create_copy_icon(color="white")
+    copy_button = customtkinter.CTkButton(
+        _context_menu, 
+        text="Copy", 
+        image=copy_icon,
+        compound="left",
+        command=copy_text, 
+        width=80, 
+        height=24, 
+        font=("Segoe UI", 11),
+        fg_color=button_color, 
+        hover_color="#1F6AA5", 
+        text_color_disabled="gray", 
+        border_width=0,
+        anchor="w"
+    )
+    copy_button.image = copy_icon
+    copy_button.hover_image = copy_icon_white
+    _setup_hover_icon(copy_button, copy_icon, copy_icon_white)
+    copy_button.pack(pady=1, padx=2, fill="x")
+    
+    # Paste button
+    paste_icon = _create_paste_icon()
+    paste_icon_white = _create_paste_icon(color="white")
+    paste_button = customtkinter.CTkButton(
+        _context_menu, 
+        text="Paste", 
+        image=paste_icon,
+        compound="left",
+        command=paste_text, 
+        width=80, 
+        height=24, 
+        font=("Segoe UI", 11),
+        fg_color=button_color, 
+        hover_color="#1F6AA5", 
+        text_color_disabled="gray", 
+        border_width=0,
+        anchor="w"
+    )
+    paste_button.image = paste_icon
+    paste_button.hover_image = paste_icon_white
+    _setup_hover_icon(paste_button, paste_icon, paste_icon_white)
+    paste_button.pack(pady=(1, 2), padx=2, fill="x")
+    
     _context_menu.pack_forget()
 
 def show_context_menu(event):
@@ -1977,7 +2051,17 @@ def show_context_menu(event):
         current_level += 1
     if not intended_ctk_widget: return
     _target_widget = intended_ctk_widget
-    can_copy = False; can_paste = False; has_selection = False; clipboard_has_text = False
+    
+    # Initialize undo tracking for this widget if not already present
+    if _target_widget not in _undo_stacks:
+        _undo_stacks[_target_widget] = []
+        # Bind key events to track changes for undo
+        def on_key(event):
+            if event.keysym not in ("Control_L", "Control_R", "Shift_L", "Shift_R", "Alt_L", "Alt_R"):
+                _push_undo(_target_widget)
+        _target_widget.bind("<KeyRelease>", on_key, add=True)
+    
+    can_copy = False; can_paste = False; has_selection = False; clipboard_has_text = False; can_undo = False
     clipboard_content = ""
     try: clipboard_content = app.clipboard_get();
     except tkinter.TclError: pass
@@ -1990,12 +2074,23 @@ def show_context_menu(event):
         can_copy = has_selection or bool(_target_widget.get())
         state = _target_widget.cget("state") if hasattr(_target_widget, 'cget') else 'disabled'
         can_paste = state == "normal" and clipboard_has_text
+        
+        # Check if undo is possible
+        current_text = _target_widget.get()
+        can_undo = state == "normal" and _target_widget in _undo_stacks and (
+            len(_undo_stacks[_target_widget]) > 1 or 
+            (len(_undo_stacks[_target_widget]) == 1 and _undo_stacks[_target_widget][0] != current_text)
+        )
     except Exception as e: print(f"Context menu: Error checking widget state/content: {e}")
     try:
         children = _context_menu.winfo_children()
-        if len(children) >= 2 and isinstance(children[0], customtkinter.CTkButton) and isinstance(children[1], customtkinter.CTkButton):
-            copy_btn = children[0]; paste_btn = children[1]
-            copy_btn.configure(state="normal" if can_copy else "disabled"); paste_btn.configure(state="normal" if can_paste else "disabled")
+        # Find buttons among children (skip separator)
+        buttons = [c for c in children if isinstance(c, customtkinter.CTkButton)]
+        if len(buttons) >= 3:
+            undo_btn = buttons[0]; copy_btn = buttons[1]; paste_btn = buttons[2]
+            undo_btn.configure(state="normal" if can_undo else "disabled")
+            copy_btn.configure(state="normal" if can_copy else "disabled")
+            paste_btn.configure(state="normal" if can_paste else "disabled")
         else: print("Context menu: Button widgets not found or invalid."); return
         menu_x = (x_root - app.winfo_rootx()) / app._get_window_scaling() + 2
         menu_y = (y_root - app.winfo_rooty()) / app._get_window_scaling() + 2
@@ -2116,6 +2211,10 @@ def paste_text():
             if hasattr(_target_widget, 'cget') and callable(_target_widget.cget): state = _target_widget.cget("state")
         except Exception as e: print(f"Could not get widget state for paste check: {e}")
         if state != "normal": hide_context_menu(); return
+        
+        # Push current state to undo before pasting
+        _push_undo(_target_widget)
+        
         clipboard_text = app.clipboard_get(); tk_widget = _target_widget._entry
         try:
             if tk_widget.selection_present(): tk_widget.delete(tkinter.SEL_FIRST, tkinter.SEL_LAST)
@@ -4913,51 +5012,100 @@ def _download_with_quality(event=None):
     download_selected()
 
 def _create_download_icon(size=(16, 16), color="#AAAAAA"):
-    """Creates a minimal download icon (Arrow + Line) with thin strokes."""
+    """Creates a simple line download icon (Arrow + Line)."""
     image = Image.new("RGBA", size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     
     w, h = size
     cx = w // 2
     
-    # Dimensions
-    line_width = 10
-    line_height = 1 # Thinner line
-    line_y_bottom = h - 3 # Moved up slightly to center vertically better
+    # Bottom horizontal line
+    # x: 3 to 13, y: 13
+    draw.line([(3, 13), (13, 13)], fill=color, width=1)
     
-    arrow_head_height = 4
-    arrow_shaft_width = 1 # Thinner shaft
-    arrow_tip_y = line_y_bottom - line_height - 2 # Gap of 2px
+    # Arrow shaft
+    # x: 8, y: 2 to 10
+    draw.line([(cx, 2), (cx, 10)], fill=color, width=1)
     
-    # Draw Bottom Line
-    draw.rectangle(
-        [cx - line_width // 2, line_y_bottom - line_height, cx + line_width // 2, line_y_bottom],
-        fill=color
-    )
-    
-    # Draw Arrow Head
-    # Narrower head: +/- 3 pixels
-    draw.polygon(
-        [
-            (cx - 3, arrow_tip_y - arrow_head_height), # Left
-            (cx + 3, arrow_tip_y - arrow_head_height), # Right
-            (cx, arrow_tip_y)                          # Tip
-        ],
-        fill=color
-    )
-    
-    # Draw Arrow Shaft
-    shaft_bottom = arrow_tip_y - arrow_head_height
-    # For 1px width, we center it. cx is integer division, so it's the left-center pixel.
-    # To make it 1px wide centered, we can just draw a line or a 1px rect.
-    # Using rect: [cx, top, cx+1, bottom] makes it 1px wide at x=cx.
-    # Let's align it with the tip. The tip is at cx.
-    draw.rectangle(
-        [cx, 2, cx + 1, shaft_bottom],
-        fill=color
-    )
+    # Arrow head (simple lines)
+    # Tip at (8, 10), left at (5, 7), right at (11, 7)
+    draw.line([(cx - 3, 7), (cx, 10), (cx + 3, 7)], fill=color, width=1)
     
     return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+
+def _create_undo_icon(size=(16, 16), color="#AAAAAA"):
+    """Creates an undo icon (side-U curved arrow pointing left)."""
+    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    
+    # Arrow head (simple lines)
+    # Tip at (2, 6), top at (6, 3), bottom at (6, 9)
+    draw.line([(6, 3), (2, 6), (6, 9)], fill=color, width=1)
+    
+    # Top line from tip to curve start
+    draw.line([(2, 6), (10, 6)], fill=color, width=1)
+    
+    # Curve part (arc)
+    # Bounding box [7, 6, 13, 12] creates a semi-circle from (10, 6) to (10, 12)
+    # start=270 (top), end=90 (bottom) clockwise
+    draw.arc([7, 6, 13, 12], start=270, end=90, fill=color, width=1)
+    
+    # Bottom line from curve end to tail
+    draw.line([(10, 12), (3, 12)], fill=color, width=1)
+    
+    return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+
+_undo_stacks = {}
+
+def _push_undo(widget):
+    """Push current text to undo stack for the given widget."""
+    if not widget: return
+    if widget not in _undo_stacks:
+        _undo_stacks[widget] = []
+    
+    current_text = widget.get()
+    # Only push if different from last state
+    if not _undo_stacks[widget] or _undo_stacks[widget][-1] != current_text:
+        _undo_stacks[widget].append(current_text)
+        # Limit stack size
+        if len(_undo_stacks[widget]) > 20:
+            _undo_stacks[widget].pop(0)
+
+def _undo_text():
+    """Undo text in the target widget."""
+    global _target_widget
+    if not _target_widget or _target_widget not in _undo_stacks or not _undo_stacks[_target_widget]:
+        hide_context_menu()
+        return
+    
+    # The top of the stack is the CURRENT state, so we pop it and take the next one
+    # If we only have one item, it might be the current state.
+    current_text = _target_widget.get()
+    if _undo_stacks[_target_widget] and _undo_stacks[_target_widget][-1] == current_text:
+        _undo_stacks[_target_widget].pop()
+    
+    if _undo_stacks[_target_widget]:
+        previous_text = _undo_stacks[_target_widget].pop()
+        _target_widget.delete(0, tkinter.END)
+        _target_widget.insert(0, previous_text)
+    
+    hide_context_menu()
+
+def _create_paste_icon(size=(16, 16), color="#AAAAAA"):
+    """Creates a simple clipboard paste icon."""
+    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    
+    # Main clipboard body
+    # x: 3 to 13, y: 4 to 15
+    draw.rounded_rectangle([3, 4, 13, 15], radius=1, outline=color, width=1)
+    
+    # Handle on top
+    # x: 6 to 10, y: 1 to 4
+    draw.rounded_rectangle([6, 1, 10, 4], radius=1, outline=color, width=1)
+    
+    return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+
 
 def _create_copy_icon(size=(16, 16), color="#AAAAAA"):
     """Creates a copy icon (two overlapping squares)."""
