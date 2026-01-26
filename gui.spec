@@ -30,13 +30,16 @@ if os.path.isdir('modules'):
 additional_binaries = []
 
 # Include ffmpeg binary only on Windows
+# Include ffmpeg binary only on Windows
 if platform.system() == 'Windows':
-    if os.path.isfile('ffmpeg.exe'):
-        additional_binaries.append(('ffmpeg.exe', '.'))
-        print("[PyInstaller] Including Windows ffmpeg.exe binary")
-    if os.path.isfile('deno.exe'):
-        additional_binaries.append(('deno.exe', '.'))
-        print("[PyInstaller] Including Windows deno.exe binary")
+    # We do NOT bundle binaries in the EXE anymore, as the installer handles them
+    pass
+    # if os.path.isfile('ffmpeg.exe'):
+    #     additional_binaries.append(('ffmpeg.exe', '.'))
+    #     print("[PyInstaller] Including Windows ffmpeg.exe binary")
+    # if os.path.isfile('deno.exe'):
+    #     additional_binaries.append(('deno.exe', '.'))
+    #     print("[PyInstaller] Including Windows deno.exe binary")
 elif platform.system() == 'Darwin':
     print("[PyInstaller] macOS: NOT bundling ffmpeg (use Homebrew: brew install ffmpeg)")
 elif platform.system() == 'Linux':
