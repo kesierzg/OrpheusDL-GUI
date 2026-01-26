@@ -89,7 +89,7 @@ import tkinter.filedialog
 import tkinter.messagebox
 import shutil
 from CTkToolTip import CTkToolTip
-from PIL import Image
+from PIL import Image, ImageDraw
 from pathlib import Path
 from tkinter import ttk
 from tqdm import tqdm
@@ -4739,6 +4739,19 @@ _search_context_quality_var = None
 _search_quality_buttons = []  # List to store quality button references
 _search_copy_url_button = None # Reference to the copy URL button
 
+def _setup_hover_icon(button, normal_icon, hover_icon):
+    """Setup hover effect for a button to swap icons."""
+    def on_enter(event):
+        if button.cget("state") != "disabled":
+            button.configure(image=hover_icon)
+    
+    def on_leave(event):
+        if button.cget("state") != "disabled":
+            button.configure(image=normal_icon)
+            
+    button.bind("<Enter>", on_enter, add=True)
+    button.bind("<Leave>", on_leave, add=True)
+
 def _create_search_context_menu():
     """Create the search results right-click context menu."""
     global _search_context_menu, _search_quality_menu, _search_context_quality_var, _search_quality_buttons, _search_copy_url_button, app, BUTTON_COLOR
@@ -4757,9 +4770,13 @@ def _create_search_context_menu():
         _search_context_menu = customtkinter.CTkFrame(app, border_width=1, border_color="#565B5E")
         
         # Copy URL button - same style as copy/paste buttons
+        copy_icon = _create_copy_icon()
+        copy_icon_white = _create_copy_icon(color="white")
         _search_copy_url_button = customtkinter.CTkButton(
             _search_context_menu, 
-            text="Copy link", 
+            text="Link", 
+            image=copy_icon,
+            compound="left",
             command=_copy_selected_url,
             width=80,
             height=24,
@@ -4770,6 +4787,9 @@ def _create_search_context_menu():
             border_width=0,
             anchor="w"
         )
+        _search_copy_url_button.image = copy_icon # Keep reference
+        _search_copy_url_button.hover_image = copy_icon_white # Keep reference
+        _setup_hover_icon(_search_copy_url_button, copy_icon, copy_icon_white)
         _search_copy_url_button.pack(pady=(2, 1), padx=2, fill="x")
         
         # Separator line
@@ -4889,6 +4909,110 @@ def _download_with_quality(event=None):
     _hide_search_context_menu()
     download_selected()
 
+def _create_download_icon(size=(16, 16), color="#AAAAAA"):
+    """Creates a minimal download icon (Arrow + Line) with thin strokes."""
+    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    
+    w, h = size
+    cx = w // 2
+    
+    # Dimensions
+    line_width = 10
+    line_height = 1 # Thinner line
+    line_y_bottom = h - 3 # Moved up slightly to center vertically better
+    
+    arrow_head_height = 4
+    arrow_shaft_width = 1 # Thinner shaft
+    arrow_tip_y = line_y_bottom - line_height - 2 # Gap of 2px
+    
+    # Draw Bottom Line
+    draw.rectangle(
+        [cx - line_width // 2, line_y_bottom - line_height, cx + line_width // 2, line_y_bottom],
+        fill=color
+    )
+    
+    # Draw Arrow Head
+    # Narrower head: +/- 3 pixels
+    draw.polygon(
+        [
+            (cx - 3, arrow_tip_y - arrow_head_height), # Left
+            (cx + 3, arrow_tip_y - arrow_head_height), # Right
+            (cx, arrow_tip_y)                          # Tip
+        ],
+        fill=color
+    )
+    
+    # Draw Arrow Shaft
+    shaft_bottom = arrow_tip_y - arrow_head_height
+    # For 1px width, we center it. cx is integer division, so it's the left-center pixel.
+    # To make it 1px wide centered, we can just draw a line or a 1px rect.
+    # Using rect: [cx, top, cx+1, bottom] makes it 1px wide at x=cx.
+    # Let's align it with the tip. The tip is at cx.
+    draw.rectangle(
+        [cx, 2, cx + 1, shaft_bottom],
+        fill=color
+    )
+    
+    return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+
+def _create_copy_icon(size=(16, 16), color="#AAAAAA"):
+    """Creates a copy icon (two overlapping squares)."""
+    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    
+    w, h = size
+    
+    # Dimensions
+    square_size = 9
+    stroke_width = 1
+    
+    # Back square (top-right)
+    # x: 6 to 15 (inclusive 9px width)
+    # y: 1 to 10
+    back_x1 = w - square_size - 1
+    back_y1 = 1
+    back_x2 = w - 2
+    back_y2 = 1 + square_size
+    
+    draw.rectangle(
+        [back_x1, back_y1, back_x2, back_y2],
+        outline=color,
+        width=stroke_width
+    )
+    
+    # Front square (bottom-left)
+    # x: 1 to 10
+    # y: 6 to 15
+    front_x1 = 1
+    front_y1 = h - square_size - 2
+    front_x2 = 1 + square_size
+    front_y2 = h - 2
+    
+    # Clear area for front square to simulate overlap/transparency if needed, 
+    # but for outline style we usually just draw over or fill black.
+    # Here we just draw the outline.
+    
+    # To make it look like "⧉" (overlapping), we might want to fill the front square with background color 
+    # if we knew it, but transparent is safer. 
+    # However, standard icons often just overlap lines.
+    # Let's clear the background of the front square to hide the back square lines behind it.
+    # Assuming dark theme background approx #2B2B2B or similar, but transparent is tricky.
+    # Actually, the user asked for "⧉" which is usually transparent.
+    # Let's just draw the rectangle.
+    
+    # Fill the front square area with "clear" (0,0,0,0) to erase the back square lines?
+    # No, that would erase the button background too.
+    # We'll just draw it.
+    
+    draw.rectangle(
+        [front_x1, front_y1, front_x2, front_y2],
+        outline=color,
+        width=stroke_width
+    )
+    
+    return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+
 def show_search_context_menu(event):
     """Show the right-click context menu for search results."""
     global _search_context_menu, _search_context_quality_var, _search_quality_buttons, _search_copy_url_button, tree, app, settings_vars
@@ -4923,56 +5047,56 @@ def show_search_context_menu(event):
         # Most platforms use 3 buttons, TIDAL uses 4
         platform_button_configs = {
             'qobuz': [
-                ("Download HiFi", "hifi"),
-                ("Download FLAC", "lossless"),
-                ("Download MP3 320", "high")
+                ("HiFi", "hifi"),
+                ("FLAC", "lossless"),
+                ("MP3 320", "high")
             ],
             'tidal': [
-                ("Download HiFi", "hifi"),
-                ("Download FLAC", "lossless"),
-                ("Download AAC 320", "high"),
-                ("Download AAC 96", "low")
+                ("HiFi", "hifi"),
+                ("FLAC", "lossless"),
+                ("AAC 320", "high"),
+                ("AAC 96", "low")
             ],
             'spotify': [
-                ("Download FLAC", "lossless"),
-                ("Download OGG 320", "hifi"),
-                ("Download OGG 160", "high")
+                ("FLAC", "lossless"),
+                ("OGG 320", "hifi"),
+                ("OGG 160", "high")
             ],
             'youtube': [
-                ("Download OPUS", "hifi"),
-                ("Download AAC", "high"),
-                ("Download MP3", "low")
+                ("OPUS", "hifi"),
+                ("AAC", "high"),
+                ("MP3", "low")
             ],
             'applemusic': [
-                ("Download ALAC", "lossless"),
-                ("Download AAC 256", "high"),
-                ("Download AAC 128", "low")
+                ("ALAC", "lossless"),
+                ("AAC 256", "high"),
+                ("AAC 128", "low")
             ],
             'apple music': [
-                ("Download ALAC", "lossless"),
-                ("Download AAC 256", "high"),
-                ("Download AAC 128", "low")
+                ("ALAC", "lossless"),
+                ("AAC 256", "high"),
+                ("AAC 128", "low")
             ],
             'soundcloud': [
-                ("Download FLAC", "lossless"),
-                ("Download AAC 256", "high"),
-                ("Download AAC 128", "low")
+                ("FLAC", "lossless"),
+                ("AAC 256", "high"),
+                ("AAC 128", "low")
             ],
             'beatport': [
-                ("Download FLAC", "lossless"),
-                ("Download AAC 256", "high"),
-                ("Download AAC 128", "low")
+                ("FLAC", "lossless"),
+                ("AAC 256", "high"),
+                ("AAC 128", "low")
             ],
             'beatsource': [
-                ("Download FLAC", "lossless"),
-                ("Download AAC 256", "high"),
-                ("Download AAC 128", "low")
+                ("FLAC", "lossless"),
+                ("AAC 256", "high"),
+                ("AAC 128", "low")
             ],
             # Default configuration for most platforms
             'default': [
-                ("Download FLAC", "lossless"),
-                ("Download MP3 320", "high"),
-                ("Download MP3 128", "low")
+                ("FLAC", "lossless"),
+                ("MP3 320", "high"),
+                ("MP3 128", "low")
             ]
         }
         
@@ -5014,12 +5138,21 @@ def show_search_context_menu(event):
                     is_available = quality_value in available_qualities
                     
                     if is_available:
-                        # Update button text and command
+                        # Create and store icons
+                        icon = _create_download_icon()
+                        icon_white = _create_download_icon(color="white")
+                        btn.image = icon  # Keep reference
+                        btn.hover_image = icon_white # Keep reference
+                        
+                        # Update button text, icon and command
                         btn.configure(
                             text=label,
+                            image=icon,
+                            compound="left",
                             command=lambda v=quality_value: _select_quality_and_download(v),
                             state="normal"
                         )
+                        _setup_hover_icon(btn, icon, icon_white)
                         # Ensure button is shown
                         btn.pack(pady=1, padx=2, fill="x")
                     else:
@@ -6305,7 +6438,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 customtkinter.CTkLabel(row, text=value, font=("Consolas", 11), text_color="#1F6AA5").pack(side="left", padx=(0, 5))
                 
                 copy_btn = customtkinter.CTkButton(
-                    row, text="⧉", width=20, height=20, font=("Segoe UI", 12),
+                    row, text="⧉", width=24, height=24, font=("Segoe UI", 14),
                     fg_color="#2B2B2B", hover_color="#3B3B3B", text_color="#999999", corner_radius=3
                 )
                 copy_btn.configure(command=lambda b=copy_btn, v=value: _copy_deezer_value(v, b))
@@ -6425,7 +6558,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 customtkinter.CTkLabel(row, text=value, font=("Consolas", 11), text_color="#1F6AA5").pack(side="left", padx=(0, 5))
                 
                 copy_btn = customtkinter.CTkButton(
-                    row, text="⧉", width=20, height=20, font=("Segoe UI", 12),
+                    row, text="⧉", width=24, height=24, font=("Segoe UI", 14),
                     fg_color="#2B2B2B", hover_color="#3B3B3B", text_color="#999999", corner_radius=3
                 )
                 copy_btn.configure(command=lambda b=copy_btn, v=value: _copy_qobuz_value(v, b))
@@ -6640,7 +6773,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 customtkinter.CTkLabel(row, text=value, font=("Consolas", 11), text_color="#1F6AA5").pack(side="left", padx=(0, 5))
                 
                 copy_btn = customtkinter.CTkButton(
-                    row, text="⧉", width=20, height=20, font=("Segoe UI", 12),
+                    row, text="⧉", width=24, height=24, font=("Segoe UI", 14),
                     fg_color="#2B2B2B", hover_color="#3B3B3B", text_color="#999999", corner_radius=3
                 )
                 copy_btn.configure(command=lambda b=copy_btn, v=value: _copy_tidal_value(v, b))
