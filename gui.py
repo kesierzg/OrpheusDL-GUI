@@ -7617,13 +7617,31 @@ if __name__ == "__main__":
         app.title("OrpheusDL GUI")
         app.geometry("940x600")
         
+        # Set initial size
+        app.geometry("940x600")
+        app.update() # Force update to ensure window is created and resized
+        
+        scaling = app._get_window_scaling()
         screen_width = app.winfo_screenwidth()
         screen_height = app.winfo_screenheight()
-        window_width = 940
-        window_height = 600
-        x_pos = (screen_width // 2) - (window_width // 2)
-        y_pos = (screen_height // 2) - (window_height // 2)
-        app.geometry(f"{window_width}x{window_height}+{x_pos}+{y_pos}")
+        
+        # Get actual window dimensions (physical pixels)
+        actual_width = app.winfo_width()
+        actual_height = app.winfo_height()
+        
+        # Calculate center position in physical pixels
+        x_phys = (screen_width - actual_width) // 2
+        y_phys = (screen_height - actual_height) // 2
+        
+        # On Windows with Per-Monitor DPI awareness, geometry() position (+x+y) 
+        # is often interpreted as physical pixels, while size (WxH) is logical.
+        if platform.system() == "Windows":
+            app.geometry(f"+{x_phys}+{y_phys}")
+        else:
+            # On other platforms, convert physical position to logical points
+            x_logical = int(x_phys / scaling)
+            y_logical = int(y_phys / scaling)
+            app.geometry(f"+{x_logical}+{y_logical}")
         
         # Set icon after window geometry is established
         try:
