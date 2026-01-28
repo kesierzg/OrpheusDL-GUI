@@ -684,7 +684,7 @@ def setup_logging(log_queue):
         logging.info("Logging configured to use GUI queue (debug mode enabled).")
     else:
         root_logger.setLevel(logging.CRITICAL)
-__version__ = "1.0.8"
+__version__ = "v1.0.8"
 from update_checker import run_check_in_thread
 _mutex_handle = None
 if platform.system() == "Windows":
@@ -11482,7 +11482,7 @@ Unnecessary Lossless-to-Lossless""",
             ("Beatport", "https://github.com/bascurtiz/orpheusdl-beatport"),
             ("Beatsource", "https://github.com/bascurtiz/orpheusdl-beatsource"),
             ("Bugs", "https://github.com/Dniel97/orpheusdl-bugsmusic"),
-            ("Deezer", "https://github.com/uhwot/orpheusdl-deezer"),            
+            ("Deezer", "https://github.com/bascurtiz/OrpheusDL-deezer"),            
             ("Genius", "https://github.com/Dniel97/orpheusdl-genius"),
             ("Idagio", "https://github.com/Dniel97/orpheusdl-idagio"),
             ("KKBOX", "https://github.com/uhwot/orpheusdl-kkbox"),
