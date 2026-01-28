@@ -106,6 +106,12 @@ if sys.platform == "win32":
     except Exception as e:
         print(f"[Patch] WARNING: Failed to set asyncio.WindowsSelectorEventLoopPolicy(): {e}")
 
+# Native Audio Playback Imports
+if platform.system() == "Windows":
+    import ctypes
+    from ctypes import wintypes
+
+
 # Log capture system for debugging initialization errors
 class LogCapture:
     """Captures stdout/stderr for later display in GUI."""
@@ -222,6 +228,289 @@ def _simple_slugify(text):
     text = re.sub(r'--+', '-', text)
     text = text.strip('-')
     return text if text else None
+
+def _get_ffmpeg_path():
+    """Get the path to ffmpeg executable."""
+    # Check bundled ffmpeg first (for frozen apps)
+    if getattr(sys, 'frozen', False):
+        app_dir = os.path.dirname(sys.executable)
+        bundled = os.path.join(app_dir, 'ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg')
+        if os.path.exists(bundled):
+            return bundled
+    
+    # Check script directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    local_ffmpeg = os.path.join(script_dir, 'ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg')
+    if os.path.exists(local_ffmpeg):
+        return local_ffmpeg
+    
+    # Fall back to PATH
+    return 'ffmpeg'
+
+def _convert_to_wav(input_path, output_path):
+    """Convert audio file to WAV using ffmpeg (for better Windows MCI compatibility)."""
+    try:
+        ffmpeg = _get_ffmpeg_path()
+        cmd = [
+            ffmpeg, '-y', '-hide_banner', '-loglevel', 'error',
+            '-i', input_path,
+            '-acodec', 'pcm_s16le',  # Standard 16-bit PCM WAV
+            '-ar', '44100',           # 44.1kHz sample rate
+            '-ac', '2',               # Stereo
+            output_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=15)
+        if result.returncode == 0 and os.path.exists(output_path):
+            file_size = os.path.getsize(output_path)
+            print(f"[Audio] Converted to WAV: {file_size} bytes")
+            return True
+        else:
+            stderr = result.stderr.decode('utf-8', errors='ignore') if result.stderr else ''
+            print(f"[Audio] FFmpeg WAV conversion failed: {stderr[:200]}")
+            return False
+    except Exception as e:
+        print(f"[Audio] FFmpeg WAV conversion error: {e}")
+        return False
+
+def play_audio(source):
+    """
+    Plays audio from a URL or local file using native platform tools.
+    - Windows: Uses mciSendString (winmm.dll). Downloads URLs to temp file first.
+              Converts audio to WAV using ffmpeg for reliable MCI playback.
+    - macOS: Uses afplay (subprocess).
+    - Linux: Uses xdg-open (subprocess) with system default player.
+    """
+    global _audio_process, _current_volume
+    system = platform.system()
+    
+    print(f"[Audio] play_audio called with source: {source[:100]}..." if len(str(source)) > 100 else f"[Audio] play_audio called with source: {source}")
+    
+    # Stop any current playback FIRST
+    stop_audio()
+    
+    # Small delay to ensure file handles are released
+    import time
+    time.sleep(0.1)
+    
+    # Check if this is a stream (HLS/m3u8 or SoundCloud)
+    # Convert streams to WAV using ffmpeg, then play via winsound
+    source_lower = source.lower()
+    is_hls_stream = '.m3u8' in source_lower or 'hls' in source_lower
+    is_soundcloud_stream = 'sndcdn.com' in source_lower
+    is_stream = is_hls_stream or is_soundcloud_stream
+    
+    # For streams, convert to WAV using ffmpeg first (limited to 30 seconds)
+    if is_stream:
+        try:
+            import tempfile
+            ffmpeg_path = _get_ffmpeg_path()
+            temp_dir = tempfile.gettempdir()
+            wav_path = os.path.join(temp_dir, "orpheus_preview_stream.wav")
+            
+            try:
+                if os.path.exists(wav_path):
+                    os.remove(wav_path)
+            except:
+                import uuid
+                wav_path = os.path.join(temp_dir, f"orpheus_preview_stream_{uuid.uuid4().hex[:8]}.wav")
+            
+            print(f"[Audio] Converting stream to WAV with ffmpeg...")
+            
+            # Use ffmpeg to convert first 30 seconds to WAV
+            convert_cmd = [
+                ffmpeg_path, '-y', '-hide_banner', '-loglevel', 'error',
+                '-i', source,
+                '-t', '30',  # Limit to 30 seconds for preview
+                '-acodec', 'pcm_s16le',
+                '-ar', '44100',
+                '-ac', '2',
+                wav_path
+            ]
+            
+            # Run conversion synchronously (blocking)
+            result = subprocess.run(convert_cmd, capture_output=True, timeout=30)
+            
+            if result.returncode == 0 and os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
+                print(f"[Audio] Stream converted to WAV: {os.path.getsize(wav_path)} bytes")
+                # Return the path - caller should play on main thread
+                return ('play_file', wav_path)
+            else:
+                stderr = result.stderr.decode('utf-8', errors='ignore') if result.stderr else ''
+                print(f"[Audio] Failed to convert stream: {stderr[:200]}")
+                return False
+        except subprocess.TimeoutExpired:
+            print(f"[Audio] Stream conversion timed out")
+            return False
+        except Exception as e:
+            print(f"[Audio] Error converting stream: {e}")
+            return False
+    
+    # Handle online URLs by downloading to a temp file first (especially for Windows MCI)
+    if source.startswith(('http://', 'https://')):
+        try:
+            import tempfile
+            import requests
+            
+            # Create a temp file with the correct extension if possible, or .mp3 default
+            ext = '.mp3'
+            if '.' in source.split('/')[-1]:
+                possible_ext = '.' + source.split('/')[-1].split('.')[-1].split('?')[0]
+                if len(possible_ext) <= 5: # Sanity check
+                    ext = possible_ext
+            
+            # Use a consistent temp file for previews to avoid clutter
+            temp_dir = tempfile.gettempdir()
+            temp_path = os.path.join(temp_dir, f"orpheus_preview{ext}")
+            
+            # Try to remove existing temp file first (in case it's stale)
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except:
+                # If we can't remove it, use a unique name instead
+                import uuid
+                temp_path = os.path.join(temp_dir, f"orpheus_preview_{uuid.uuid4().hex[:8]}{ext}")
+            
+            # Download the file
+            print(f"[Audio] Downloading preview from: {source[:80]}...")
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            response = requests.get(source, stream=True, timeout=15, headers=headers)
+            if response.status_code == 200:
+                # Check content type to make sure it's audio
+                content_type = response.headers.get('content-type', '').lower()
+                if 'html' in content_type or 'text' in content_type:
+                    print(f"[Audio] Server returned HTML/text instead of audio (content-type: {content_type})")
+                    return False
+                
+                total_bytes = 0
+                with open(temp_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                        total_bytes += len(chunk)
+                
+                # Verify the file was actually written
+                if os.path.exists(temp_path):
+                    file_size = os.path.getsize(temp_path)
+                    print(f"[Audio] Downloaded {file_size} bytes to {temp_path}")
+                    if file_size > 1000:  # At least 1KB for valid audio
+                        # Quick sanity check - MP3 files start with ID3 or 0xFF
+                        with open(temp_path, 'rb') as f:
+                            header = f.read(4)
+                        if header[:3] == b'ID3' or header[:2] == b'\xff\xfb' or header[:2] == b'\xff\xfa':
+                            source = temp_path
+                        else:
+                            print(f"[Audio] Downloaded file doesn't look like MP3 (header: {header.hex()})")
+                            # Still try to play it - might be a different format
+                            source = temp_path
+                    elif file_size > 0:
+                        print(f"[Audio] Downloaded file is too small ({file_size} bytes) - likely not valid audio")
+                        source = temp_path  # Try anyway
+                    else:
+                        print(f"[Audio] Downloaded file is empty!")
+                        return False
+                else:
+                    print(f"[Audio] Temp file was not created!")
+                    return False
+            else:
+                print(f"[Audio] Failed to download preview: HTTP {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"[Audio] Error downloading preview: {e}")
+            import traceback
+            traceback.print_exc()
+            # Fallback to trying to play the URL directly
+            pass
+
+    try:
+        if system == "Windows":
+            import tempfile
+            temp_dir = tempfile.gettempdir()
+            source_lower = source.lower()
+            
+            # Convert all audio to WAV for reliable winsound playback
+            # winsound.PlaySound with SND_ASYNC can be properly stopped
+            wav_path = os.path.join(temp_dir, "orpheus_preview_play.wav")
+            
+            needs_conversion = not source_lower.endswith('.wav')
+            if needs_conversion:
+                try:
+                    if os.path.exists(wav_path):
+                        os.remove(wav_path)
+                except:
+                    import uuid
+                    wav_path = os.path.join(temp_dir, f"orpheus_preview_play_{uuid.uuid4().hex[:8]}.wav")
+                
+                print(f"[Audio] Converting to WAV for playback...")
+                if _convert_to_wav(source, wav_path):
+                    source = wav_path
+                else:
+                    print(f"[Audio] Failed to convert to WAV")
+                    return False
+            
+            # Use winsound for WAV playback - this can be reliably stopped
+            import winsound
+            
+            # Set volume before playing
+            wave_volume = int((_current_volume / 100) * 0xFFFF)
+            stereo_volume = (wave_volume << 16) | wave_volume
+            ctypes.windll.winmm.waveOutSetVolume(0, stereo_volume)
+            
+            # Play asynchronously (SND_ASYNC = 0x0001, SND_FILENAME = 0x00020000)
+            print(f"[Audio] Playing with winsound: {os.path.basename(source)}")
+            winsound.PlaySound(source, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            return True
+            
+        elif system == "Darwin":
+            # macOS - use afplay (supports M4A natively)
+            # We use Popen to not block the GUI and track process for stopping
+            _audio_process = subprocess.Popen(["afplay", source], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+            
+        elif system == "Linux":
+            # Linux - use xdg-open to play audio with default system player
+            _audio_process = subprocess.Popen(["xdg-open", source], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+            
+    except Exception as e:
+        print(f"[Audio] Error playing audio: {e}")
+        return False
+
+def stop_audio():
+    """Stops any currently playing audio."""
+    global _audio_process
+    system = platform.system()
+    print(f"[Audio] stop_audio() called")
+    try:
+        # Kill any tracked subprocess (afplay on macOS, xdg-open on Linux)
+        if _audio_process is not None:
+            print(f"[Audio] Stopping subprocess (pid: {_audio_process.pid})")
+            try:
+                _audio_process.terminate()
+                _audio_process.wait(timeout=1)
+            except:
+                try:
+                    _audio_process.kill()
+                except:
+                    pass
+            _audio_process = None
+        
+        # Stop audio playback
+        if system == "Windows":
+            # Stop winsound playback by playing None
+            import winsound
+            winsound.PlaySound(None, winsound.SND_PURGE)
+            print(f"[Audio] winsound stopped")
+            
+            # Also close any MCI devices as safety net
+            ctypes.windll.winmm.mciSendStringW("close all", None, 0, 0)
+        elif system == "Darwin":
+            # Kill any afplay processes
+            subprocess.run(["killall", "afplay"], capture_output=True)
+    except Exception as e:
+        print(f"[Audio] Error stopping audio: {e}")
+
 
 class DummyStderr:
     """A dummy file-like object that discards stderr output."""
@@ -406,6 +695,2327 @@ if platform.system() == "Windows":
         winsound = None
 else:
     winsound = None
+
+# ============================================================================
+# Cover Preview & Audio Preview System
+# ============================================================================
+# Global cache for PhotoImages to prevent garbage collection
+_cover_image_cache = {}
+_cover_hover_cache = {}  # Cache for hover (darkened) versions of covers
+_cover_hover_iid = None  # Track which cover is currently being hovered
+_placeholder_cover_image = None
+_currently_playing_preview_iid = None  # Track which row is currently playing
+_preview_hover_iid = None  # Track which row's preview button is being hovered
+_cover_load_requested = set()  # Track which covers have been requested (for lazy loading)
+_youtube_thumbnail_fetching = set()  # Track which YouTube items are currently fetching thumbnails (to avoid duplicates)
+_youtube_thumbnail_queue = []  # Queue for YouTube thumbnail fetches to limit concurrent requests
+_youtube_max_concurrent_fetches = 2  # Maximum number of concurrent YouTube thumbnail fetches
+_lazy_loading_preview_iid = None  # Track which item is currently fetching a preview URL
+_audio_process = None  # Track subprocess for afplay/xdg-open (for stopping)
+_pulse_after_id = None  # Track the after() ID for pulsing animation
+_pulse_state = False  # Track current pulse state (bright/dim)
+_loading_after_id = None  # Track the after() ID for loading dots animation
+_loading_dot_position = 0  # Track current position in walking dots animation (0-2)
+_loading_animation_iid = None  # Track which item is currently showing loading animation
+
+# Preview button styling
+# Note: ttk.Treeview doesn't support per-cell coloring, only per-row via tags
+# So we use distinct icon shapes instead of colors for visual feedback
+PREVIEW_PLAY_ICON = " ▶ "  # Play triangle with spacing for visibility
+PREVIEW_PLAY_HOVER = "[ ▶ ]"  # Enlarged appearance on hover
+PREVIEW_STOP_ICON = " ▶ "  # Stop square with spacing for visibility
+PREVIEW_STOP_ICON_PULSE = "   "  # Pulsing stop icon (hollow square for animation)
+PREVIEW_STOP_HOVER = "[ ■ ]"  # Enlarged appearance on hover
+PREVIEW_UNAVAILABLE = " · "  # Small dot for unavailable
+PREVIEW_LOADING_ICON = " ... "  # Placeholder for loading animation
+PREVIEW_LOADING_ICON = " … "  # Loading indicator for lazy-loaded previews (ellipsis) - base, will be animated
+LOADING_ANIMATION_FRAMES = [" . ", " .. ", " ... "]  # Animation frames for loading state
+
+# Volume control widgets (initialized later in GUI setup)
+_volume_frame = None
+_volume_slider = None
+_volume_label = None
+_current_volume = 75  # 0-100
+
+# Cover image size constant
+COVER_SIZE = 38
+COVER_CORNER_RADIUS = 0  # Radius for rounded corners
+
+def round_corners(image, radius):
+    """Add rounded corners to an image using a mask."""
+    from PIL import Image, ImageDraw
+    
+    # Ensure image has alpha channel
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
+    
+    # Create a mask with rounded corners
+    mask = Image.new('L', image.size, 0)
+    draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle([(0, 0), image.size], radius=radius, fill=255)
+    
+    # Apply the mask
+    output = Image.new('RGBA', image.size, (0, 0, 0, 0))
+    output.paste(image, (0, 0))
+    output.putalpha(mask)
+    
+    return output
+
+def create_placeholder_cover(size=COVER_SIZE):
+    """Loads placeholder cover image from URL and applies rounded corners."""
+    from PIL import Image, ImageDraw, ImageTk
+    import io
+    
+    placeholder_url = "https://i.imgur.com/H7R8hBA.png"
+    
+    try:
+        response = requests.get(placeholder_url, timeout=10, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        if response.status_code == 200:
+            img_data = io.BytesIO(response.content)
+            img = Image.open(img_data)
+            img = img.resize((size, size), Image.Resampling.LANCZOS)
+            img = round_corners(img, COVER_CORNER_RADIUS)
+            return ImageTk.PhotoImage(img)
+    except:
+        pass
+    
+    # Fallback: create a simple gray placeholder if download fails
+    img = Image.new('RGB', (size, size), color='#3d3d3d')
+    draw = ImageDraw.Draw(img)
+    note_color = '#666666'
+    cx, cy = size // 2, size * 2 // 3
+    r = size // 6
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=note_color)
+    stem_x = cx + r - 1
+    draw.line([(stem_x, cy - r + 2), (stem_x, size // 4)], fill=note_color, width=2)
+    img = round_corners(img, COVER_CORNER_RADIUS)
+    return ImageTk.PhotoImage(img)
+
+def _show_placeholder_cover(item_iid):
+    """Show placeholder cover for an item."""
+    global _cover_load_requested, _cover_image_cache, _cover_hover_cache, tree
+    _cover_load_requested.add(item_iid)
+    placeholder = get_placeholder_cover()
+    if placeholder and 'tree' in globals() and tree and tree.winfo_exists():
+        try:
+            if tree.exists(item_iid):
+                tree.item(item_iid, image=placeholder)
+                _cover_image_cache[item_iid] = placeholder  # Cache to prevent GC
+                
+                # Create hover version for placeholder
+                try:
+                    from PIL import Image, ImageTk
+                    # Get the PIL Image from the PhotoImage (we need to recreate it)
+                    # For placeholder, create a darkened version
+                    placeholder_img = Image.new('RGB', (COVER_SIZE, COVER_SIZE), color='#3d3d3d')
+                    placeholder_img = round_corners(placeholder_img, COVER_CORNER_RADIUS)
+                    darkened_placeholder = create_darkened_cover(placeholder_img, opacity=0.7)
+                    placeholder_hover = ImageTk.PhotoImage(darkened_placeholder)
+                    _cover_hover_cache[item_iid] = placeholder_hover
+                except:
+                    pass  # If hover version fails, just use normal placeholder
+        except:
+            pass
+
+def _try_lazy_load_artist_cover(item_iid, item_data, artist_id):
+    """Try to lazy-load artist cover image for Tidal artists."""
+    global orpheus_instance, _cover_load_requested, tree
+    
+    # Mark as requested to prevent duplicate requests
+    _cover_load_requested.add(item_iid)
+    
+    # Check if we have the necessary globals
+    if 'orpheus_instance' not in globals() or not orpheus_instance:
+        _show_placeholder_cover(item_iid)
+        return
+    
+    if not artist_id:
+        _show_placeholder_cover(item_iid)
+        return
+    
+    # Fetch artist image in background thread
+    def fetch_artist_image():
+        try:
+            module_instance = orpheus_instance.load_module('tidal')
+            if hasattr(module_instance, 'session') and hasattr(module_instance.session, 'get_artist'):
+                artist_data = module_instance.session.get_artist(artist_id)
+                
+                # First, check if we already have the picture ID from the search results
+                raw_result = item_data.get('raw_result')
+                artist_image_id = None
+                
+                # Default fallback image UUID (same as python-tidal library uses)
+                DEFAULT_ARTIST_IMG = "1e01cdb6-f15d-4d8b-8440-a047976c1cac"
+                
+                # Try to get picture from raw search result first (more reliable)
+                if isinstance(raw_result, dict):
+                    artist_image_id = raw_result.get('picture')
+                
+                # If not found in search result, try get_artist API response
+                if not artist_image_id and isinstance(artist_data, dict):
+                    # Check top-level fields first
+                    artist_image_id = (
+                        artist_data.get('picture') or
+                        artist_data.get('image') or
+                        artist_data.get('squareImage') or
+                        artist_data.get('cover') or
+                        artist_data.get('pictureId') or
+                        artist_data.get('imageId') or
+                        artist_data.get('selectedAlbumCoverFallback')  # Try this as fallback
+                    )
+                    
+                    # Check nested structures if not found at top level
+                    if not artist_image_id:
+                        # Check if there's an 'images' object
+                        images_obj = artist_data.get('images')
+                        if isinstance(images_obj, dict):
+                            artist_image_id = (
+                                images_obj.get('picture') or
+                                images_obj.get('cover') or
+                                images_obj.get('squareImage')
+                            )
+                        # Check if there's a 'media' object
+                        if not artist_image_id:
+                            media_obj = artist_data.get('media')
+                            if isinstance(media_obj, dict):
+                                artist_image_id = media_obj.get('picture') or media_obj.get('cover')
+                    
+                    # Fallback to default image if still not found
+                    if not artist_image_id:
+                        artist_image_id = DEFAULT_ARTIST_IMG
+                
+                if artist_image_id:
+                    from modules.tidal.interface import ModuleInterface
+                    cover_url = ModuleInterface._generate_artwork_url(artist_image_id, size=56)
+                    
+                    # Update the item_data with the cover URL
+                    item_data['cover_url'] = cover_url
+                    # Update raw_result for future use (if it's a dict)
+                    raw_result = item_data.get('raw_result')
+                    if isinstance(raw_result, dict):
+                        raw_result['picture'] = artist_image_id
+                    
+                    # Update UI on main thread - use default parameter to avoid closure issue
+                    if 'app' in globals() and app and app.winfo_exists():
+                        app.after(0, lambda url=cover_url: _on_artist_cover_fetched(item_iid, url))
+                else:
+                    # No image found - show placeholder
+                    if 'app' in globals() and app and app.winfo_exists():
+                        app.after(0, lambda: _show_placeholder_cover(item_iid))
+        except Exception as e:
+            # On error, show placeholder
+            if 'app' in globals() and app and app.winfo_exists():
+                app.after(0, lambda: _show_placeholder_cover(item_iid))
+    
+    # Start background thread
+    import threading
+    threading.Thread(target=fetch_artist_image, daemon=True).start()
+
+def _on_artist_cover_fetched(item_iid, cover_url):
+    """Called when an artist cover has been fetched."""
+    global _cover_load_requested, tree
+    
+    # Check if item still exists and hasn't been loaded yet
+    if 'tree' in globals() and tree and tree.winfo_exists():
+        try:
+            if tree.exists(item_iid) and item_iid not in _cover_image_cache:
+                # Remove from requested set so we can load it
+                if item_iid in _cover_load_requested:
+                    _cover_load_requested.remove(item_iid)
+                # Load the cover
+                load_cover_from_url(cover_url, size=COVER_SIZE, item_iid=item_iid)
+        except:
+            pass
+
+def get_placeholder_cover():
+    """Returns the cached placeholder cover image, creating it if needed."""
+    global _placeholder_cover_image
+    if _placeholder_cover_image is None:
+        _placeholder_cover_image = create_placeholder_cover(COVER_SIZE)
+    return _placeholder_cover_image
+
+def create_darkened_cover(img, opacity=0.7):
+    """Create a darkened/transparent version of the cover image for hover effect."""
+    from PIL import Image
+    
+    # Create a copy to avoid modifying the original
+    darkened = img.copy()
+    
+    # Convert to RGBA if not already
+    if darkened.mode != 'RGBA':
+        darkened = darkened.convert('RGBA')
+    
+    # Create a dark overlay
+    overlay = Image.new('RGBA', darkened.size, (0, 0, 0, int(255 * (1 - opacity))))
+    
+    # Composite the overlay onto the image
+    darkened = Image.alpha_composite(darkened, overlay)
+    
+    return darkened
+
+def load_cover_from_url(url, size=COVER_SIZE, item_iid=None):
+    """
+    Loads a cover image from URL asynchronously and updates the treeview.
+    Images are padded on the left to center them in the tree column.
+    Creates both normal and hover (darkened) versions.
+    """
+    def _load():
+        nonlocal url  # Allow modifying the outer scope url variable
+        global tree, app, _cover_image_cache, _cover_hover_cache, current_settings, search_results_data
+        try:
+            from PIL import Image, ImageTk
+            import io
+            
+            # Debug output
+            debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
+            
+            # Get platform name for logging
+            platform_name = "Unknown"
+            if item_iid and 'search_results_data' in globals():
+                item_data = next((item for item in search_results_data if str(item.get('tree_iid')) == str(item_iid)), None)
+                if item_data:
+                    platform_name = item_data.get('platform', 'Unknown')
+            
+            # Add headers to avoid 403 errors from Tidal
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://tidal.com/',
+                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Sec-Fetch-Dest': 'image',
+                'Sec-Fetch-Mode': 'no-cors',
+                'Sec-Fetch-Site': 'cross-site',
+            }
+            
+            if debug_mode:
+                print(f"[{platform_name} Cover Load] Loading: {url} for item {item_iid}")
+            
+            response = requests.get(url, headers=headers, timeout=5)
+            
+            if debug_mode:
+                print(f"[{platform_name} Cover Load] Response: HTTP {response.status_code} for item {item_iid}")
+            
+            # For YouTube, if maxresdefault.jpg returns 404, try fallback qualities
+            if response.status_code == 404 and platform_name.lower() == 'youtube' and 'maxresdefault.jpg' in url:
+                # Try fallback qualities in order: hqdefault.jpg -> mqdefault.jpg -> default.jpg
+                fallback_qualities = ['hqdefault.jpg', 'mqdefault.jpg', 'default.jpg']
+                for quality in fallback_qualities:
+                    fallback_url = url.replace('maxresdefault.jpg', quality)
+                    if debug_mode:
+                        print(f"[{platform_name} Cover Load] maxresdefault.jpg not available, trying {quality}")
+                    try:
+                        fallback_response = requests.get(fallback_url, headers=headers, timeout=5)
+                        if debug_mode:
+                            print(f"[{platform_name} Cover Load] Fallback ({quality}) response: HTTP {fallback_response.status_code}")
+                        if fallback_response.status_code == 200:
+                            response = fallback_response
+                            url = fallback_url  # Update URL for caching
+                            break
+                    except Exception as e:
+                        if debug_mode:
+                            print(f"[{platform_name} Cover Load] Fallback ({quality}) request failed: {e}")
+                        continue
+            
+            # Handle successful response (200)
+            if response.status_code == 200:
+                img_data = io.BytesIO(response.content)
+                img = Image.open(img_data)
+                img = img.resize((size, size), Image.Resampling.LANCZOS)
+                
+                # Apply rounded corners
+                img = round_corners(img, COVER_CORNER_RADIUS)
+                
+                # Create normal version
+                photo = ImageTk.PhotoImage(img)
+                
+                # Create hover (darkened) version
+                darkened_img = create_darkened_cover(img, opacity=0.7)
+                hover_photo = ImageTk.PhotoImage(darkened_img)
+                
+                # Cache both versions to prevent garbage collection
+                if item_iid:
+                    _cover_image_cache[item_iid] = photo
+                    _cover_hover_cache[item_iid] = hover_photo
+                
+                # Update treeview on main thread
+                def _update_tree():
+                    try:
+                        if 'tree' in globals() and tree and tree.winfo_exists():
+                            if tree.exists(item_iid):
+                                # Only update if not currently hovering this item
+                                global _cover_hover_iid
+                                if _cover_hover_iid != item_iid:
+                                    tree.item(item_iid, image=photo)
+                    except Exception as e:
+                        pass  # Silently fail
+                
+                if 'app' in globals() and app and app.winfo_exists():
+                    app.after(0, _update_tree)
+            elif response.status_code == 403:
+                # 403 Forbidden - Tidal is blocking the request
+                # Try retrying with 750x750.jpg as fallback (smaller sizes may not be available)
+                if 'resources.tidal.com/images' in url:
+                    # Check if URL already uses 750x750.jpg
+                    # Match patterns like 80x80.jpg, 160x160.jpg, etc.
+                    size_pattern = r'/(\d+x\d+)\.jpg'
+                    match = re.search(size_pattern, url)
+                    
+                    if match and match.group(1) != '750x750':
+                        # Retry with 750x750.jpg
+                        fallback_url = re.sub(size_pattern, '/750x750.jpg', url)
+                        if debug_mode:
+                            print(f"[{platform_name} Cover Load] 403 for {url}, retrying with {fallback_url}")
+                        
+                        try:
+                            fallback_response = requests.get(fallback_url, headers=headers, timeout=5)
+                            if debug_mode:
+                                print(f"[{platform_name} Cover Load] Fallback response: HTTP {fallback_response.status_code} for item {item_iid}")
+                            
+                            if fallback_response.status_code == 200:
+                                # Success! Use the fallback image
+                                img_data = io.BytesIO(fallback_response.content)
+                                img = Image.open(img_data)
+                                img = img.resize((size, size), Image.Resampling.LANCZOS)
+                                
+                                # Apply rounded corners
+                                img = round_corners(img, COVER_CORNER_RADIUS)
+                                
+                                # Create normal version
+                                photo = ImageTk.PhotoImage(img)
+                                
+                                # Create hover (darkened) version
+                                darkened_img = create_darkened_cover(img, opacity=0.7)
+                                hover_photo = ImageTk.PhotoImage(darkened_img)
+                                
+                                # Cache both versions to prevent garbage collection
+                                if item_iid:
+                                    _cover_image_cache[item_iid] = photo
+                                    _cover_hover_cache[item_iid] = hover_photo
+                                
+                                # Update treeview on main thread
+                                def _update_tree():
+                                    try:
+                                        if 'tree' in globals() and tree and tree.winfo_exists():
+                                            if tree.exists(item_iid):
+                                                # Only update if not currently hovering this item
+                                                global _cover_hover_iid
+                                                if _cover_hover_iid != item_iid:
+                                                    tree.item(item_iid, image=photo)
+                                    except Exception as e:
+                                        pass  # Silently fail
+                                
+                                if 'app' in globals() and app and app.winfo_exists():
+                                    app.after(0, _update_tree)
+                                return  # Success, exit early
+                        except Exception as e:
+                            if debug_mode:
+                                print(f"[{platform_name} Cover Load] Fallback request failed: {e}")
+                
+                # If we get here, both original and fallback failed - show placeholder
+                if debug_mode:
+                    print(f"[{platform_name} Cover Load] 403 Forbidden for item {item_iid}, showing placeholder")
+                if 'app' in globals() and app and app.winfo_exists():
+                    app.after(0, lambda: _show_placeholder_cover(item_iid))
+            elif response.status_code == 404:
+                # 404 Not Found - show placeholder
+                if debug_mode:
+                    print(f"[{platform_name} Cover Load] 404 Not Found for item {item_iid}, showing placeholder")
+                if 'app' in globals() and app and app.winfo_exists():
+                    app.after(0, lambda: _show_placeholder_cover(item_iid))
+        except Exception as e:
+            if debug_mode:
+                print(f"[{platform_name} Cover Load] Exception loading cover for item {item_iid}: {e}")
+            # Show placeholder on error
+            if 'app' in globals() and app and app.winfo_exists():
+                app.after(0, lambda: _show_placeholder_cover(item_iid))
+    
+    threading.Thread(target=_load, daemon=True).start()
+
+def get_visible_tree_items():
+    """Get the list of item IDs currently visible in the treeview."""
+    global tree
+    visible_items = []
+    try:
+        if 'tree' not in globals() or not tree or not tree.winfo_exists():
+            return visible_items
+        
+        # Get all children
+        all_items = tree.get_children()
+        if not all_items:
+            return visible_items
+        
+        # Get treeview dimensions
+        tree_height = tree.winfo_height()
+        
+        # Check each item's visibility by its bbox
+        for item_iid in all_items:
+            try:
+                bbox = tree.bbox(item_iid)
+                if bbox:  # bbox returns empty tuple if not visible
+                    # Item is at least partially visible
+                    visible_items.append(item_iid)
+            except:
+                pass
+    except:
+        pass
+    
+    return visible_items
+
+def lazy_load_visible_covers():
+    """Load covers only for currently visible items in the treeview."""
+    global search_results_data, _cover_load_requested, _cover_image_cache, _cover_hover_cache, tree
+    
+    try:
+        visible_items = get_visible_tree_items()
+        
+        # Limit the number of items to process at once to reduce CPU/memory usage
+        # Process only the first 10 visible items per call to avoid overwhelming the system
+        max_items_per_call = 10
+        items_to_process = visible_items[:max_items_per_call]
+        
+        for item_iid in items_to_process:
+            # Skip if already loaded or already requested
+            if item_iid in _cover_image_cache or item_iid in _cover_load_requested:
+                continue
+            
+            # Find the cover URL for this item
+            item_data = next((item for item in search_results_data if str(item.get('tree_iid')) == str(item_iid)), None)
+            if item_data:
+                if item_data.get('cover_url'):
+                    # Has cover URL - load it
+                    debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
+                    if debug_mode:
+                        platform_name = item_data.get('platform', 'Unknown')
+                        search_type = item_data.get('type', '').lower() if item_data.get('type') else ''
+                        title = item_data.get('title', 'Unknown')
+                        raw_result = item_data.get('raw_result')
+                        square_image_info = ""
+                        if isinstance(raw_result, dict):
+                            square_image_info = f", squareImage in raw_result: {raw_result.get('squareImage') is not None}"
+                        print(f"[{platform_name} Cover] {search_type.capitalize()} '{title}' (item {item_iid}): cover_url={item_data['cover_url']}{square_image_info}")
+                    _cover_load_requested.add(item_iid)
+                    load_cover_from_url(item_data['cover_url'], size=COVER_SIZE, item_iid=item_iid)
+                else:
+                    # No cover URL - try lazy-loading for Tidal artists and YouTube channels/playlists
+                    platform_name = item_data.get('platform', '').lower() if item_data.get('platform') else ''
+                    search_type = item_data.get('type', '').lower() if item_data.get('type') else ''
+                    raw_result = item_data.get('raw_result')
+                    
+                    # For YouTube channels, try to fetch the thumbnail lazily (only if not already requested)
+                    if platform_name == 'youtube' and search_type == 'artist' and item_data.get('id'):
+                        channel_id = item_data.get('id')
+                        # Check if we've already requested this thumbnail or are currently fetching it
+                        if item_iid not in _cover_load_requested and item_iid not in _youtube_thumbnail_fetching:
+                            # Limit concurrent fetches to avoid overwhelming the system
+                            if len(_youtube_thumbnail_fetching) >= _youtube_max_concurrent_fetches:
+                                # Queue this request for later
+                                _youtube_thumbnail_queue.append(('channel', item_iid, channel_id, item_data))
+                                _show_placeholder_cover(item_iid)
+                                continue
+                            
+                            _cover_load_requested.add(item_iid)
+                            _youtube_thumbnail_fetching.add(item_iid)
+                            debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
+                            if debug_mode:
+                                channel_name = item_data.get('title', 'Unknown')
+                                print(f"[YouTube Cover] Channel '{channel_name}' (item {item_iid}): No thumbnail in search results, fetching channel info")
+                            
+                            # Fetch channel thumbnail in background thread
+                            def fetch_channel_thumbnail():
+                                try:
+                                    if 'orpheus_instance' not in globals() or not orpheus_instance:
+                                        return
+                                    module_instance = orpheus_instance.load_module('youtube')
+                                    if hasattr(module_instance, 'api') and hasattr(module_instance.api, 'get_channel_thumbnail'):
+                                        thumbnail_url = module_instance.api.get_channel_thumbnail(channel_id)
+                                        if thumbnail_url:
+                                            # Upgrade to full-size if needed
+                                            thumbnail_url = _get_fullsize_cover_url(thumbnail_url, 'youtube', None)
+                                            # Update item_data and load cover
+                                            item_data['cover_url'] = thumbnail_url
+                                            if 'app' in globals() and app and app.winfo_exists():
+                                                app.after(0, lambda: load_cover_from_url(thumbnail_url, size=COVER_SIZE, item_iid=item_iid))
+                                except Exception as e:
+                                    if debug_mode:
+                                        print(f"[YouTube Cover] Error fetching channel thumbnail: {e}")
+                                finally:
+                                    # Remove from fetching set when done and process next in queue
+                                    if item_iid in _youtube_thumbnail_fetching:
+                                        _youtube_thumbnail_fetching.remove(item_iid)
+                                    # Process next item in queue if any
+                                    _process_youtube_thumbnail_queue()
+                            
+                            threading.Thread(target=fetch_channel_thumbnail, daemon=True).start()
+                        # Show placeholder while loading
+                        _show_placeholder_cover(item_iid)
+                        continue
+                    
+                    # For YouTube playlists, try to fetch the thumbnail lazily (only if not already requested)
+                    elif platform_name == 'youtube' and search_type == 'playlist' and item_data.get('id'):
+                        playlist_id = item_data.get('id')
+                        # Check if we've already requested this thumbnail or are currently fetching it
+                        if item_iid not in _cover_load_requested and item_iid not in _youtube_thumbnail_fetching:
+                            # Limit concurrent fetches to avoid overwhelming the system
+                            if len(_youtube_thumbnail_fetching) >= _youtube_max_concurrent_fetches:
+                                # Queue this request for later
+                                _youtube_thumbnail_queue.append(('playlist', item_iid, playlist_id, item_data))
+                                _show_placeholder_cover(item_iid)
+                                continue
+                            
+                            _cover_load_requested.add(item_iid)
+                            _youtube_thumbnail_fetching.add(item_iid)
+                            debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
+                            if debug_mode:
+                                playlist_name = item_data.get('title', 'Unknown')
+                                print(f"[YouTube Cover] Playlist '{playlist_name}' (item {item_iid}): No thumbnail in search results, fetching playlist info")
+                            
+                            # Fetch playlist thumbnail in background thread
+                            def fetch_playlist_thumbnail():
+                                try:
+                                    if 'orpheus_instance' not in globals() or not orpheus_instance:
+                                        return
+                                    module_instance = orpheus_instance.load_module('youtube')
+                                    if hasattr(module_instance, 'api') and hasattr(module_instance.api, 'get_playlist_info'):
+                                        playlist_info = module_instance.api.get_playlist_info(playlist_id)
+                                        if playlist_info:
+                                            thumbnail_url = playlist_info.get('thumbnail')
+                                            if thumbnail_url:
+                                                # Upgrade to full-size if needed
+                                                thumbnail_url = _get_fullsize_cover_url(thumbnail_url, 'youtube', playlist_info)
+                                                # Update item_data and load cover
+                                                item_data['cover_url'] = thumbnail_url
+                                                if 'app' in globals() and app and app.winfo_exists():
+                                                    app.after(0, lambda: load_cover_from_url(thumbnail_url, size=COVER_SIZE, item_iid=item_iid))
+                                except Exception as e:
+                                    if debug_mode:
+                                        print(f"[YouTube Cover] Error fetching playlist thumbnail: {e}")
+                                finally:
+                                    # Remove from fetching set when done and process next in queue
+                                    if item_iid in _youtube_thumbnail_fetching:
+                                        _youtube_thumbnail_fetching.remove(item_iid)
+                                    # Process next item in queue if any
+                                    _process_youtube_thumbnail_queue()
+                            
+                            threading.Thread(target=fetch_playlist_thumbnail, daemon=True).start()
+                        # Show placeholder while loading
+                        _show_placeholder_cover(item_iid)
+                        continue
+                    
+                    # For Tidal artists, try to fetch the image lazily
+                    # Check if it's a Tidal artist search result
+                    elif platform_name == 'tidal' and search_type == 'artist' and raw_result:
+                        # Check multiple possible field names for artist image ID (same as search function)
+                        # Default fallback image UUID (same as python-tidal library uses)
+                        DEFAULT_ARTIST_IMG = "1e01cdb6-f15d-4d8b-8440-a047976c1cac"
+                        
+                        picture_id = None
+                        if isinstance(raw_result, dict):
+                            # Check all possible fields (same as search function)
+                            picture_id = (
+                                raw_result.get('picture') or 
+                                raw_result.get('image') or 
+                                raw_result.get('squareImage') or 
+                                raw_result.get('cover') or
+                                raw_result.get('pictureId') or
+                                raw_result.get('imageId') or
+                                (raw_result.get('images', {}).get('picture') if isinstance(raw_result.get('images'), dict) else None) or
+                                (raw_result.get('images', {}).get('cover') if isinstance(raw_result.get('images'), dict) else None) or
+                                (raw_result.get('images', {}).get('squareImage') if isinstance(raw_result.get('images'), dict) else None)
+                            )
+                        
+                        # Fallback to default image if none found
+                        if not picture_id:
+                            picture_id = DEFAULT_ARTIST_IMG
+                        
+                        # Debug output
+                        debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
+                        if debug_mode:
+                            artist_name = item_data.get('title', 'Unknown')
+                            from_search = isinstance(raw_result, dict) and any([
+                                raw_result.get('picture'),
+                                raw_result.get('image'),
+                                raw_result.get('squareImage'),
+                                raw_result.get('cover'),
+                                raw_result.get('pictureId'),
+                                raw_result.get('imageId'),
+                            ])
+                            print(f"[{platform_name.capitalize()} Cover] Artist '{artist_name}' (item {item_iid}): picture_id={picture_id} (from_search={from_search})")
+                        
+                        # Generate cover URL and load it
+                        # Use 750x750.jpg for artists as it's more reliably available
+                        cover_url = f'https://resources.tidal.com/images/{picture_id.replace("-", "/")}/750x750.jpg'
+                        item_data['cover_url'] = cover_url
+                        _cover_load_requested.add(item_iid)
+                        load_cover_from_url(cover_url, size=COVER_SIZE, item_iid=item_iid)
+                    elif platform_name == 'tidal' and search_type == 'playlist' and raw_result:
+                        # For Tidal playlists, check if squareImage is in raw_result
+                        debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
+                        if isinstance(raw_result, dict):
+                            square_image = raw_result.get('squareImage') or raw_result.get('image') or raw_result.get('cover')
+                            if debug_mode:
+                                playlist_name = item_data.get('title', 'Unknown')
+                                print(f"[{platform_name.capitalize()} Cover] Playlist '{playlist_name}' (item {item_iid}): squareImage={square_image}, available_keys={list(raw_result.keys())}")
+                            if square_image:
+                                # Use 750x750.jpg for playlists as it's more reliably available
+                                cover_url = f'https://resources.tidal.com/images/{square_image.replace("-", "/")}/750x750.jpg'
+                                item_data['cover_url'] = cover_url
+                                _cover_load_requested.add(item_iid)
+                                load_cover_from_url(cover_url, size=COVER_SIZE, item_iid=item_iid)
+                            elif debug_mode:
+                                print(f"[{platform_name.capitalize()} Cover] Playlist '{playlist_name}' (item {item_iid}): No squareImage found, showing placeholder")
+                                _show_placeholder_cover(item_iid)
+                        else:
+                            if debug_mode:
+                                print(f"[{platform_name.capitalize()} Cover] Playlist (item {item_iid}): raw_result is not a dict, type={type(raw_result)}")
+                            _show_placeholder_cover(item_iid)
+                    else:
+                        # Not Tidal artist - show placeholder
+                        _show_placeholder_cover(item_iid)
+    except:
+        pass
+
+def on_tree_scroll(*args):
+    """Handle treeview scroll event to trigger lazy loading."""
+    # Schedule lazy loading after a delay to avoid excessive calls and reduce CPU usage
+    global app
+    try:
+        if 'app' in globals() and app and app.winfo_exists():
+            # Cancel previous scheduled call if exists
+            if hasattr(on_tree_scroll, '_scheduled_id') and on_tree_scroll._scheduled_id:
+                try:
+                    app.after_cancel(on_tree_scroll._scheduled_id)
+                except:
+                    pass
+            # Schedule new call with longer delay (debounce) to reduce CPU usage
+            # Increased from 50ms to 200ms to reduce load when scrolling quickly
+            on_tree_scroll._scheduled_id = app.after(200, lazy_load_visible_covers)
+    except:
+        pass
+
+def _process_youtube_thumbnail_queue():
+    """Process the next item in the YouTube thumbnail fetch queue."""
+    global _youtube_thumbnail_queue, _youtube_thumbnail_fetching, _cover_load_requested, _youtube_max_concurrent_fetches
+    
+    # Process items from queue if we have capacity
+    while len(_youtube_thumbnail_fetching) < _youtube_max_concurrent_fetches and _youtube_thumbnail_queue:
+        item_type, item_iid, item_id, item_data = _youtube_thumbnail_queue.pop(0)
+        
+        # Skip if already loaded or requested
+        if item_iid in _cover_image_cache or item_iid in _cover_load_requested or item_iid in _youtube_thumbnail_fetching:
+            continue
+        
+        _cover_load_requested.add(item_iid)
+        _youtube_thumbnail_fetching.add(item_iid)
+        
+        debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
+        
+        if item_type == 'channel':
+            if debug_mode:
+                channel_name = item_data.get('title', 'Unknown')
+                print(f"[YouTube Cover] Channel '{channel_name}' (item {item_iid}): Processing from queue")
+            
+            def fetch_channel_thumbnail():
+                try:
+                    if 'orpheus_instance' not in globals() or not orpheus_instance:
+                        return
+                    module_instance = orpheus_instance.load_module('youtube')
+                    if hasattr(module_instance, 'api') and hasattr(module_instance.api, 'get_channel_thumbnail'):
+                        thumbnail_url = module_instance.api.get_channel_thumbnail(item_id)
+                        if thumbnail_url:
+                            thumbnail_url = _get_fullsize_cover_url(thumbnail_url, 'youtube', None)
+                            item_data['cover_url'] = thumbnail_url
+                            if 'app' in globals() and app and app.winfo_exists():
+                                app.after(0, lambda: load_cover_from_url(thumbnail_url, size=COVER_SIZE, item_iid=item_iid))
+                except Exception as e:
+                    if debug_mode:
+                        print(f"[YouTube Cover] Error fetching channel thumbnail: {e}")
+                finally:
+                    if item_iid in _youtube_thumbnail_fetching:
+                        _youtube_thumbnail_fetching.remove(item_iid)
+                    _process_youtube_thumbnail_queue()
+            
+            threading.Thread(target=fetch_channel_thumbnail, daemon=True).start()
+        
+        elif item_type == 'playlist':
+            if debug_mode:
+                playlist_name = item_data.get('title', 'Unknown')
+                print(f"[YouTube Cover] Playlist '{playlist_name}' (item {item_iid}): Processing from queue")
+            
+            def fetch_playlist_thumbnail():
+                try:
+                    if 'orpheus_instance' not in globals() or not orpheus_instance:
+                        return
+                    module_instance = orpheus_instance.load_module('youtube')
+                    if hasattr(module_instance, 'api') and hasattr(module_instance.api, 'get_playlist_info'):
+                        playlist_info = module_instance.api.get_playlist_info(item_id)
+                        if playlist_info:
+                            thumbnail_url = playlist_info.get('thumbnail')
+                            if thumbnail_url:
+                                thumbnail_url = _get_fullsize_cover_url(thumbnail_url, 'youtube', playlist_info)
+                                item_data['cover_url'] = thumbnail_url
+                                if 'app' in globals() and app and app.winfo_exists():
+                                    app.after(0, lambda: load_cover_from_url(thumbnail_url, size=COVER_SIZE, item_iid=item_iid))
+                except Exception as e:
+                    if debug_mode:
+                        print(f"[YouTube Cover] Error fetching playlist thumbnail: {e}")
+                finally:
+                    if item_iid in _youtube_thumbnail_fetching:
+                        _youtube_thumbnail_fetching.remove(item_iid)
+                    _process_youtube_thumbnail_queue()
+            
+            threading.Thread(target=fetch_playlist_thumbnail, daemon=True).start()
+
+def clear_cover_load_state():
+    """Clear the cover loading state (called when clearing search results)."""
+    global _cover_load_requested, _youtube_thumbnail_fetching, _youtube_thumbnail_queue
+    _cover_load_requested.clear()
+    _youtube_thumbnail_fetching.clear()
+    _youtube_thumbnail_queue.clear()
+
+def setup_preview_tags(tree_widget):
+    """Setup tags for preview button styling."""
+    # Tag for playing items - red foreground for stop icon
+    tree_widget.tag_configure("playing", foreground="#1F6AA5")
+
+def _start_pulse_animation():
+    """Start the pulsing animation for the currently playing preview icon."""
+    global _pulse_after_id, _pulse_state, _currently_playing_preview_iid, tree, _preview_hover_iid
+    _stop_pulse_animation()  # Stop any existing pulse
+    
+    if _currently_playing_preview_iid is None:
+        return
+    
+    def pulse():
+        global _pulse_state, _pulse_after_id, _currently_playing_preview_iid, tree, _preview_hover_iid
+        if _currently_playing_preview_iid is None or ('tree' not in globals() or not tree or not tree.winfo_exists()):
+            _stop_pulse_animation()
+            return
+        
+        try:
+            # Toggle pulse state
+            _pulse_state = not _pulse_state
+            
+            # Get current values
+            current_values = list(tree.item(_currently_playing_preview_iid, 'values'))
+            if len(current_values) > 0:
+                # Only pulse if not hovering (hover has its own icon)
+                if _preview_hover_iid != _currently_playing_preview_iid:
+                    if _pulse_state:
+                        current_values[0] = PREVIEW_STOP_ICON_PULSE
+                    else:
+                        current_values[0] = PREVIEW_STOP_ICON
+                    tree.item(_currently_playing_preview_iid, values=tuple(current_values), tags=("playing",))
+            
+            # Schedule next pulse (500ms interval for smooth animation)
+            if 'app' in globals() and app and app.winfo_exists():
+                _pulse_after_id = app.after(500, pulse)
+        except:
+            _stop_pulse_animation()
+    
+    # Start first pulse
+    if 'app' in globals() and app and app.winfo_exists():
+        _pulse_after_id = app.after(500, pulse)
+
+def _stop_pulse_animation():
+    """Stop the pulsing animation."""
+    global _pulse_after_id, _pulse_state, _currently_playing_preview_iid, tree
+    if _pulse_after_id is not None and 'app' in globals() and app and app.winfo_exists():
+        try:
+            app.after_cancel(_pulse_after_id)
+        except:
+            pass
+        _pulse_after_id = None
+    _pulse_state = False
+
+def _start_loading_animation(item_iid):
+    """Start the walking dots animation for the loading icon."""
+    global _loading_after_id, _loading_dot_position, _loading_animation_iid, tree
+    _stop_loading_animation()  # Stop any existing loading animation
+    
+    if item_iid is None:
+        return
+    
+    _loading_animation_iid = item_iid
+    
+    def animate_dots():
+        global _loading_after_id, _loading_dot_position, _loading_animation_iid, tree
+        # Check if this item is still supposed to be animating
+        if _loading_animation_iid != item_iid or item_iid is None or ('tree' not in globals() or not tree or not tree.winfo_exists()):
+            _stop_loading_animation()
+            return
+        
+        try:
+            # Get current values
+            current_values = list(tree.item(item_iid, 'values'))
+            if len(current_values) > 0:
+                # Check if current icon is still a loading state (might have been changed by another function)
+                current_icon = current_values[0] if current_values else ""
+                # If icon was changed to something other than loading states, stop animation
+                if current_icon not in LOADING_ANIMATION_FRAMES and current_icon != PREVIEW_LOADING_ICON:
+                    _stop_loading_animation()
+                    return
+                
+                # Create walking dots pattern: " . ", " .. ", " ... ", then repeat
+                current_values[0] = LOADING_ANIMATION_FRAMES[_loading_dot_position]
+                
+                tree.item(item_iid, values=tuple(current_values))
+                
+                # Move to next position (0 -> 1 -> 2 -> 0)
+                _loading_dot_position = (_loading_dot_position + 1) % len(LOADING_ANIMATION_FRAMES)
+            
+            # Schedule next animation frame (300ms for smooth walking effect)
+            if 'app' in globals() and app and app.winfo_exists():
+                _loading_after_id = app.after(300, animate_dots)
+        except:
+            _stop_loading_animation()
+    
+    # Start first frame
+    _loading_dot_position = 0
+    if 'app' in globals() and app and app.winfo_exists():
+        _loading_after_id = app.after(300, animate_dots)
+
+def _stop_loading_animation():
+    """Stop the walking dots animation."""
+    global _loading_after_id, _loading_dot_position, _loading_animation_iid
+    if _loading_after_id is not None and 'app' in globals() and app and app.winfo_exists():
+        try:
+            app.after_cancel(_loading_after_id)
+        except:
+            pass
+        _loading_after_id = None
+    _loading_dot_position = 0
+    _loading_animation_iid = None
+    
+    # Restore normal stop icon if item is still playing
+    if _currently_playing_preview_iid is not None and ('tree' in globals() and tree and tree.winfo_exists()):
+        try:
+            current_values = list(tree.item(_currently_playing_preview_iid, 'values'))
+            if len(current_values) > 0 and _preview_hover_iid != _currently_playing_preview_iid:
+                current_values[0] = PREVIEW_STOP_ICON
+                tree.item(_currently_playing_preview_iid, values=tuple(current_values), tags=("playing",))
+        except:
+            pass
+
+def toggle_preview_playback(item_iid, preview_url=None):
+    """
+    Toggle audio preview playback for a tree item.
+    If the same item is playing, stop it. Otherwise, start playing.
+    """
+    global _currently_playing_preview_iid, _preview_hover_iid, tree, _current_volume, app, _lazy_loading_preview_iid
+    
+    try:
+        if _currently_playing_preview_iid == item_iid:
+            # Currently playing this item - stop it
+            stop_audio()
+            _currently_playing_preview_iid = None
+            _lazy_loading_preview_iid = None  # Cancel any pending lazy loads
+            _stop_pulse_animation()  # Stop pulsing animation
+            _stop_loading_animation()  # Stop loading animation
+            # Hide volume control
+            hide_volume_control()
+            # Update the icon back to play (enlarged if still hovering)
+            if 'tree' in globals() and tree and tree.winfo_exists():
+                if _preview_hover_iid == item_iid:
+                    _enlarge_preview_icon(item_iid)  # Show enlarged play icon
+                else:
+                    update_preview_icon(item_iid, playing=False)
+            return False
+        else:
+            # Stop any currently playing preview
+            if _currently_playing_preview_iid:
+                stop_audio()
+                old_iid = _currently_playing_preview_iid
+                _stop_pulse_animation()  # Stop pulsing animation
+                if 'tree' in globals() and tree and tree.winfo_exists():
+                    update_preview_icon(old_iid, playing=False)
+            
+            # Start playing the new preview
+            if preview_url:
+                _currently_playing_preview_iid = item_iid
+                
+                preview_url_lower = preview_url.lower()
+                
+                # Check if this needs background thread processing:
+                # - M4A files need conversion on Windows
+                # - SoundCloud/HLS streams need ffmpeg conversion to WAV
+                # - On Windows, ALL network playback should be backgrounded to avoid UI freezing
+                needs_conversion = (
+                    platform.system() == "Windows"
+                )
+                
+                # SoundCloud and HLS streams should also use background thread
+                # (ffmpeg conversion to WAV is used for MCI playback)
+                is_stream = 'sndcdn.com' in preview_url_lower or '.m3u8' in preview_url_lower or 'hls' in preview_url_lower
+                needs_background_playback = needs_conversion or is_stream
+                
+                if needs_background_playback:
+                    # Show loading icon while converting
+                    if 'tree' in globals() and tree and tree.winfo_exists():
+                        try:
+                            current_values = list(tree.item(item_iid, 'values'))
+                            if current_values:
+                                current_values[0] = PREVIEW_LOADING_ICON
+                                tree.item(item_iid, values=tuple(current_values))
+                                # Start walking dots animation
+                                _start_loading_animation(item_iid)
+                        except Exception:
+                            pass
+                    
+                    # Run conversion and playback in background thread
+                    # Capture the item_iid to check if it's still supposed to be playing
+                    target_iid = item_iid
+                    def play_with_conversion():
+                        global _currently_playing_preview_iid
+                        try:
+                            # Check if user has already pressed stop or switched to another preview
+                            if _currently_playing_preview_iid != target_iid:
+                                print(f"[Preview] Playback cancelled for {target_iid}")
+                                return
+                            
+                            result = play_audio(preview_url)
+                            
+                            # Check again after conversion/playback started
+                            if _currently_playing_preview_iid != target_iid:
+                                # User pressed stop during conversion - stop the audio we just started
+                                stop_audio()
+                                return
+                            
+                            # Handle special return type for deferred playback
+                            # (Playback must be called from main thread for proper stop functionality)
+                            if isinstance(result, tuple) and result[0] == 'play_file':
+                                file_path = result[1]
+                                # Schedule playback on main thread
+                                # _play_file_on_main_thread will call _on_preview_started after playback actually starts
+                                if 'app' in globals() and app and app.winfo_exists():
+                                    app.after(0, lambda: _play_file_on_main_thread(target_iid, file_path))
+                                return  # Don't call _on_preview_started here - wait for actual playback
+            
+                            # For non-stream playback, play_audio returns True/False immediately
+                            # Note: For streams, we already handled the tuple return above and returned early
+                            # This path is only for non-stream playback where play_audio returns True/False
+                            success = bool(result)
+                            
+                            # Update UI on main thread
+                            # Note: For streams, _on_preview_started is called from _play_file_on_main_thread
+                            # after playback actually starts (when "[Audio] Playing on main thread:" appears)
+                            if 'app' in globals() and app and app.winfo_exists():
+                                app.after(0, lambda: _on_preview_started(target_iid, success))
+                        except Exception as e:
+                            print(f"[Preview] Error during conversion/playback: {e}")
+                            if 'app' in globals() and app and app.winfo_exists():
+                                app.after(0, lambda: _on_preview_started(target_iid, False))
+                    
+                    threading.Thread(target=play_with_conversion, daemon=True).start()
+                    return True
+                else:
+                    # No conversion needed - play directly
+                    if 'tree' in globals() and tree and tree.winfo_exists():
+                        # Show enlarged stop icon if hovering, otherwise normal
+                        if _preview_hover_iid == item_iid:
+                            _enlarge_preview_icon(item_iid)
+                        else:
+                            update_preview_icon(item_iid, playing=True)
+                    play_audio(preview_url)
+                    # Show volume control and set initial volume
+                    show_volume_control()
+                    set_audio_volume(_current_volume)
+                    # Start pulsing animation
+                    _start_pulse_animation()
+                    return True
+            else:
+                print(f"[Preview] No preview URL for item {item_iid}")
+                _currently_playing_preview_iid = None
+                return False
+    except Exception as e:
+        print(f"[Preview] Error toggling playback: {e}")
+        _currently_playing_preview_iid = None
+        return False
+
+def _play_file_on_main_thread(item_iid, file_path):
+    """Play a file using winsound on the main thread (required for proper stop functionality)."""
+    global _currently_playing_preview_iid, _preview_hover_iid, _current_volume
+    
+    try:
+        # Check if we should still play (user might have stopped)
+        if _currently_playing_preview_iid != item_iid:
+            return
+        
+        system = platform.system()
+        if system == "Windows":
+            import winsound
+            
+            # Set volume before playing
+            wave_volume = int((_current_volume / 100) * 0xFFFF)
+            stereo_volume = (wave_volume << 16) | wave_volume
+            ctypes.windll.winmm.waveOutSetVolume(0, stereo_volume)
+            
+            # Play with winsound (async so it doesn't block)
+            print(f"[Audio] Playing on main thread: {os.path.basename(file_path)}")
+            winsound.PlaySound(file_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            # Call _on_preview_started after a tiny delay to ensure playback actually started
+            # This ensures the UI only updates after "[Audio] Playing on main thread:" appears
+            if 'app' in globals() and app and app.winfo_exists():
+                app.after(50, lambda: _on_preview_started(item_iid, True))
+            else:
+                _on_preview_started(item_iid, True)
+        else:
+            # On other systems, just call _on_preview_started with success
+            _on_preview_started(item_iid, True)
+    except Exception as e:
+        print(f"[Audio] Error playing file on main thread: {e}")
+        _on_preview_started(item_iid, False)
+
+def _on_preview_started(item_iid, success):
+    """Called when a preview with conversion has finished loading and started playing."""
+    global _currently_playing_preview_iid, _preview_hover_iid, tree, _current_volume
+    
+    try:
+        # Stop loading animation since we're done loading
+        _stop_loading_animation()
+        
+        # Check if this item is still supposed to be playing (user might have pressed stop)
+        if _currently_playing_preview_iid != item_iid:
+            # User pressed stop or switched to another preview - don't update UI
+            return
+        
+        if success:
+            # Update icon to stop icon (playing)
+            if 'tree' in globals() and tree and tree.winfo_exists():
+                if _preview_hover_iid == item_iid:
+                    _enlarge_preview_icon(item_iid)
+                else:
+                    update_preview_icon(item_iid, playing=True)
+            # Show volume control and set initial volume
+            show_volume_control()
+            set_audio_volume(_current_volume)
+            # Start pulsing animation
+            _start_pulse_animation()
+        else:
+            # Playback failed - restore play icon
+            _currently_playing_preview_iid = None
+            _stop_pulse_animation()
+            if 'tree' in globals() and tree and tree.winfo_exists():
+                update_preview_icon(item_iid, playing=False)
+    except Exception as e:
+        print(f"[Preview] Error in _on_preview_started: {e}")
+
+def update_preview_icon(item_iid, playing=False, has_preview=True):
+    """Update the preview icon in the treeview for a specific item."""
+    global tree, _loading_animation_iid
+    try:
+        # Don't update icon if this item is currently showing loading animation
+        if _loading_animation_iid == item_iid:
+            return
+        
+        if 'tree' in globals() and tree and tree.winfo_exists():
+            current_values = list(tree.item(item_iid, 'values'))
+            if len(current_values) > 0:  # Preview column is at index 0
+                # Also check if current value is a loading animation state
+                current_icon = current_values[0] if current_values else ""
+                # Also check if current value is a loading animation state
+                current_icon = current_values[0] if current_values else ""
+                if current_icon in LOADING_ANIMATION_FRAMES or current_icon == PREVIEW_LOADING_ICON:
+                    # Item is showing loading animation, don't overwrite it
+                    return
+                
+                if not has_preview:
+                    current_values[0] = PREVIEW_UNAVAILABLE
+                    tree.item(item_iid, values=tuple(current_values), tags=())
+                elif playing and _loading_animation_iid != item_iid:
+                    # Only show stop icon if we're actually playing (not loading)
+                    current_values[0] = PREVIEW_STOP_ICON
+                    tree.item(item_iid, values=tuple(current_values), tags=("playing",))
+                else:
+                    current_values[0] = PREVIEW_PLAY_ICON
+                    tree.item(item_iid, values=tuple(current_values), tags=())
+    except tkinter.TclError as e:
+        print(f"[Preview] TclError updating icon: {e}")
+    except Exception as e:
+        print(f"[Preview] Error updating icon: {e}")
+
+def on_tree_motion(event):
+    """Handle mouse motion over treeview for preview column and cover column hover effects."""
+    global tree, _preview_hover_iid, search_results_data, _currently_playing_preview_iid, platform_var, COVER_SIZE, _cover_hover_iid
+    
+    try:
+        if 'tree' not in globals() or not tree or not tree.winfo_exists():
+            return
+        
+        column = tree.identify_column(event.x)
+        item_iid = tree.identify_row(event.y)
+        region = tree.identify("region", event.x, event.y)
+        
+        # If we were hovering over a different item, restore its icon first
+        if _preview_hover_iid and _preview_hover_iid != item_iid:
+            _restore_preview_icon(_preview_hover_iid)
+            _preview_hover_iid = None
+        
+        # Check if we're over the Cover column (#0)
+        # Try multiple methods to detect cover column hover
+        is_over_cover_column = False
+        if column == "#0":
+            is_over_cover_column = True
+        else:
+            # Fallback: check x coordinate against cover column width
+            try:
+                cover_column_width = tree.column("#0", "width")
+                if cover_column_width and event.x >= 0 and event.x <= cover_column_width:
+                    is_over_cover_column = True
+            except:
+                # If column width check fails, use constant
+                cover_column_width = COVER_SIZE + 6
+                if event.x >= 0 and event.x <= cover_column_width:
+                    is_over_cover_column = True
+        
+        if is_over_cover_column and item_iid:
+            # Accept any region type for tree column (tree, cell, etc.)
+            item_data = next((item for item in search_results_data if str(item.get('tree_iid')) == str(item_iid)), None)
+            if item_data and item_data.get('cover_url'):
+                # Change cursor to hand for clickable covers
+                tree.configure(cursor="hand2")
+                
+                # Apply hover effect (darken cover)
+                if _cover_hover_iid != item_iid:
+                    # Restore previous hover if any
+                    if _cover_hover_iid:
+                        _restore_cover_hover(_cover_hover_iid)
+                    
+                    # Apply hover to current item
+                    _cover_hover_iid = item_iid
+                    _apply_cover_hover(item_iid)
+                return
+        
+        # Check if we're over the Preview column (#1) and on a cell
+        if column == "#1" and region == "cell" and item_iid:
+            # Check if this item has a preview URL
+            item_data = next((item for item in search_results_data if str(item.get('tree_iid')) == str(item_iid)), None)
+            if item_data:
+                has_preview = item_data.get('preview_url')
+                
+                # For Qobuz/SoundCloud/Spotify/Tidal, also allow hover effect for lazy-loadable previews
+                # YouTube: hover effect enabled for tracks (opens in browser)
+                # But only for tracks - albums/playlists/artists can't be previewed
+                can_lazy_load = False
+                is_youtube_track = False
+                if not has_preview and 'platform_var' in globals() and platform_var and 'type_var' in globals() and type_var:
+                    current_platform = platform_var.get().lower()
+                    current_type = type_var.get().lower()
+                    if current_platform in ('qobuz', 'soundcloud', 'spotify', 'tidal') and current_type == 'track':
+                        can_lazy_load = True
+                    elif current_platform == 'youtube' and current_type == 'track':
+                        is_youtube_track = True
+                
+                if has_preview or can_lazy_load or is_youtube_track:
+                    # Change cursor to hand
+                    tree.configure(cursor="hand2")
+                    
+                    # Enlarge the icon if not already hovering this item
+                    if _preview_hover_iid != item_iid:
+                        _preview_hover_iid = item_iid
+                        _enlarge_preview_icon(item_iid)
+                    return
+        
+        # Reset cursor and restore icon if not over preview/cover column or no preview/cover available
+        tree.configure(cursor="")
+        
+        # Restore cover hover if we were hovering over a cover
+        if _cover_hover_iid:
+            _restore_cover_hover(_cover_hover_iid)
+            _cover_hover_iid = None
+        
+        if _preview_hover_iid:
+            _restore_preview_icon(_preview_hover_iid)
+            _preview_hover_iid = None
+            
+    except Exception as e:
+        pass  # Silently ignore motion errors
+
+def _enlarge_preview_icon(item_iid):
+    """Enlarge the preview icon for hover effect."""
+    global tree, _currently_playing_preview_iid, _loading_animation_iid
+    try:
+        # Don't enlarge icon if this item is currently showing loading animation
+        if _loading_animation_iid == item_iid:
+            return
+        
+        if 'tree' in globals() and tree and tree.winfo_exists():
+            current_values = list(tree.item(item_iid, 'values'))
+            if len(current_values) > 0:
+                # Check if current value is a loading animation state
+                current_icon = current_values[0] if current_values else ""
+                # Check if current value is a loading animation state
+                current_icon = current_values[0] if current_values else ""
+                if current_icon in LOADING_ANIMATION_FRAMES or current_icon == PREVIEW_LOADING_ICON:
+                    # Item is showing loading animation, don't overwrite it
+                    return
+                
+                # Determine which hover icon to show based on play state
+                # IMPORTANT: Don't show stop hover icon if we're still loading (even if _currently_playing_preview_iid is set)
+                # The loading animation should continue until playback actually starts
+                if _currently_playing_preview_iid == item_iid and _loading_animation_iid != item_iid:
+                    # Only show stop hover icon if we're actually playing (not loading)
+                    current_values[0] = PREVIEW_STOP_HOVER
+                    tree.item(item_iid, values=tuple(current_values), tags=("playing",))
+                else:
+                    current_values[0] = PREVIEW_PLAY_HOVER
+                    tree.item(item_iid, values=tuple(current_values), tags=())
+    except:
+        pass
+
+def _apply_cover_hover(item_iid):
+    """Apply hover effect (darkened) to cover image."""
+    global tree, _cover_hover_cache
+    try:
+        if 'tree' in globals() and tree and tree.winfo_exists():
+            if tree.exists(item_iid):
+                hover_image = _cover_hover_cache.get(item_iid)
+                if hover_image:
+                    tree.item(item_iid, image=hover_image)
+    except Exception as e:
+        pass
+
+def _restore_cover_hover(item_iid):
+    """Restore cover image to normal (non-hover) state."""
+    global tree, _cover_image_cache
+    try:
+        if 'tree' in globals() and tree and tree.winfo_exists():
+            if tree.exists(item_iid):
+                normal_image = _cover_image_cache.get(item_iid)
+                if normal_image:
+                    tree.item(item_iid, image=normal_image)
+    except Exception as e:
+        pass
+
+def _restore_preview_icon(item_iid):
+    """Restore the preview icon to normal size."""
+    global tree, _currently_playing_preview_iid, search_results_data, platform_var, type_var, _loading_animation_iid
+    try:
+        # Don't restore icon if this item is currently showing loading animation
+        if _loading_animation_iid == item_iid:
+            return
+        
+        if 'tree' in globals() and tree and tree.winfo_exists():
+            current_values = list(tree.item(item_iid, 'values'))
+            if len(current_values) > 0:
+                # Check if current value is a loading animation state
+                current_icon = current_values[0] if current_values else ""
+                # Check if current value is a loading animation state
+                current_icon = current_values[0] if current_values else ""
+                if current_icon in LOADING_ANIMATION_FRAMES or current_icon == PREVIEW_LOADING_ICON:
+                    # Item is showing loading animation, don't overwrite it
+                    return
+                
+                # Find if this item has a preview URL
+                item_data = next((item for item in search_results_data if str(item.get('tree_iid')) == str(item_iid)), None)
+                has_preview = item_data and item_data.get('preview_url')
+                
+                # Check if we can lazy-load preview for Qobuz/SoundCloud/Spotify/Tidal (tracks only)
+                # YouTube: tracks show play icon (opens in browser)
+                can_lazy_load = False
+                is_youtube_track = False
+                if not has_preview and 'platform_var' in globals() and platform_var and 'type_var' in globals() and type_var:
+                    current_platform = platform_var.get().lower()
+                    current_type = type_var.get().lower()
+                    if current_platform in ('qobuz', 'soundcloud', 'spotify', 'tidal') and current_type == 'track':
+                        can_lazy_load = True
+                    elif current_platform == 'youtube' and current_type == 'track':
+                        is_youtube_track = True
+                
+                # Restore to normal icon
+                # IMPORTANT: Don't show stop icon if we're still loading (even if _currently_playing_preview_iid is set)
+                # The loading animation should continue until playback actually starts
+                if not has_preview and not can_lazy_load and not is_youtube_track:
+                    current_values[0] = PREVIEW_UNAVAILABLE
+                    tree.item(item_iid, values=tuple(current_values), tags=())
+                elif _currently_playing_preview_iid == item_iid and _loading_animation_iid != item_iid:
+                    # Only show stop icon if we're actually playing (not loading)
+                    current_values[0] = PREVIEW_STOP_ICON
+                    tree.item(item_iid, values=tuple(current_values), tags=("playing",))
+                else:
+                    current_values[0] = PREVIEW_PLAY_ICON
+                    tree.item(item_iid, values=tuple(current_values), tags=())
+    except:
+        pass
+
+def on_tree_leave(event):
+    """Handle mouse leaving the treeview."""
+    global tree, _preview_hover_iid
+    
+    try:
+        if 'tree' in globals() and tree and tree.winfo_exists():
+            tree.configure(cursor="")
+        # Restore the icon of the previously hovered item
+        if _preview_hover_iid:
+            _restore_preview_icon(_preview_hover_iid)
+            _preview_hover_iid = None
+    except:
+        pass
+
+def _get_fullsize_cover_url(thumbnail_url, platform_name, raw_result=None):
+    """Convert thumbnail cover URL to full-size URL based on platform."""
+    if not thumbnail_url:
+        return None
+    
+    platform_lower = platform_name.lower() if platform_name else ""
+    
+    try:
+        # Beatport/Beatsource: URLs use {w}x{h} format, replace with larger size
+        if platform_lower in ('beatport', 'beatsource'):
+            # Try to get original image_uri from raw_result first (most reliable)
+            if raw_result:
+                try:
+                    if isinstance(raw_result, dict):
+                        image_uri = None
+                        # Try multiple paths to find image_uri
+                        # For releases/albums
+                        if 'release' in raw_result:
+                            release_data = raw_result.get('release', {})
+                            if isinstance(release_data, dict):
+                                image_data = release_data.get('image', {})
+                                if isinstance(image_data, dict):
+                                    image_uri = image_data.get('uri') or image_data.get('dynamic_uri')
+                        # For tracks
+                        if not image_uri and 'image' in raw_result:
+                            image_data = raw_result.get('image', {})
+                            if isinstance(image_data, dict):
+                                image_uri = image_data.get('uri') or image_data.get('dynamic_uri')
+                        # Direct image_uri field
+                        if not image_uri:
+                            image_uri = raw_result.get('image_uri') or raw_result.get('cover_uri')
+                        
+                        if image_uri:
+                            # Import the method from the appropriate module
+                            try:
+                                if platform_lower == 'beatport':
+                                    from modules.beatport.interface import ModuleInterface
+                                else:  # beatsource
+                                    from modules.beatsource.interface import ModuleInterface
+                                return ModuleInterface._generate_artwork_url(image_uri, 1400)
+                            except Exception as e:
+                                print(f"Error generating {platform_lower} artwork URL: {e}")
+                except Exception as e:
+                    print(f"Error processing {platform_lower} raw_result: {e}")
+            
+            # Fallback: try to modify the existing URL
+            import re
+            # Beatport URLs are like: https://geo-media.beatport.com/image_size/56x56/{image_id}.jpg
+            # We need to replace the size part (can be 1-4 digits x 1-4 digits)
+            # More flexible pattern to match any size like 56x56, 500x500, 1400x1400, etc.
+            res_pattern = re.compile(r'/\d{1,4}x\d{1,4}/')
+            match = re.search(res_pattern, thumbnail_url)
+            if match:
+                # Replace with larger size (1400x1400)
+                return re.sub(res_pattern, '/1400x1400/', thumbnail_url)
+            # Also check for pattern without leading slash (in case URL format differs)
+            res_pattern2 = re.compile(r'\d{1,4}x\d{1,4}')
+            match2 = re.search(res_pattern2, thumbnail_url)
+            if match2:
+                # Replace with larger size (1400x1400)
+                return re.sub(res_pattern2, '1400x1400', thumbnail_url)
+            # If it has {w}x{h} format, replace with 1400
+            if "{w}" in thumbnail_url and "{h}" in thumbnail_url:
+                return thumbnail_url.format(w=1400, h=1400)
+        
+        # SoundCloud: Replace thumbnail suffix with -original
+        elif platform_lower == 'soundcloud':
+            if '-t200x200' in thumbnail_url:
+                return thumbnail_url.replace('-t200x200', '-original')
+            elif '-large' in thumbnail_url:
+                return thumbnail_url.replace('-large', '-original')
+            # If it's already original or doesn't have size suffix, return as-is
+        
+        # Apple Music: Replace size placeholders with larger size
+        elif platform_lower in ('applemusic', 'apple music'):
+            # Apple Music uses {w}x{h}bb.jpg format, replace with 1400x1400bb.jpg
+            if '{w}x{h}bb.jpg' in thumbnail_url:
+                return thumbnail_url.replace('{w}x{h}bb.jpg', '1400x1400bb.jpg')
+            # If it has hardcoded size like 56x56bb.jpg, replace with 1400x1400bb.jpg
+            import re
+            size_pattern = re.compile(r'\d+x\d+bb\.jpg')
+            if re.search(size_pattern, thumbnail_url):
+                return re.sub(size_pattern, '1400x1400bb.jpg', thumbnail_url)
+            # Fallback: try to replace any size pattern
+            size_pattern2 = re.compile(r'(\d+)x(\d+)')
+            if re.search(size_pattern2, thumbnail_url):
+                return re.sub(size_pattern2, '1400x1400', thumbnail_url)
+        
+        # Tidal: URLs use size parameter, try to get original from raw_result
+        elif platform_lower == 'tidal':
+            if raw_result:
+                try:
+                    from modules.tidal.interface import ModuleInterface
+                    # Try to extract cover ID from raw_result
+                    cover_id = None
+                    if isinstance(raw_result, dict):
+                        # For tracks: check album cover
+                        if 'album' in raw_result and 'cover' in raw_result['album']:
+                            cover_id = raw_result['album']['cover']
+                        # For albums: check cover field
+                        elif 'cover' in raw_result:
+                            cover_id = raw_result['cover']
+                        # For playlists: check squareImage and other possible fields
+                        elif 'squareImage' in raw_result:
+                            cover_id = raw_result['squareImage']
+                        # For artists: check multiple possible field names
+                        elif 'picture' in raw_result:
+                            cover_id = raw_result['picture']
+                        elif 'image' in raw_result:
+                            cover_id = raw_result['image']
+                        elif 'cover' in raw_result:
+                            cover_id = raw_result['cover']
+                        # Check nested images structure
+                        elif 'images' in raw_result and isinstance(raw_result['images'], dict):
+                            cover_id = (
+                                raw_result['images'].get('picture') or
+                                raw_result['images'].get('cover') or
+                                raw_result['images'].get('squareImage')
+                            )
+                        # Check if this is an artist (no 'title' field suggests artist)
+                        is_artist = 'title' not in raw_result and 'name' in raw_result
+                        
+                        # Fallback: if we have an artist ID but no image, try fetching artist details
+                        # This is slower but ensures we get the image if it exists
+                        if not cover_id and 'id' in raw_result:
+                            try:
+                                if is_artist:
+                                    artist_id = raw_result.get('id')
+                                    if artist_id:
+                                        # Fetch full artist details to get image
+                                        # We need access to the module instance, but we can't easily get it here
+                                        # So we'll just try to use the thumbnail URL if available
+                                        pass
+                            except:
+                                pass
+                    if cover_id:
+                        # For artists, use 750x750.jpg as it's more reliably available
+                        if is_artist:
+                            return f'https://resources.tidal.com/images/{cover_id.replace("-", "/")}/750x750.jpg'
+                        else:
+                            # Use 750x750.jpg as it's more reliably available
+                            return f'https://resources.tidal.com/images/{cover_id.replace("-", "/")}/750x750.jpg'
+                except:
+                    pass
+            # Fallback: try to replace size in URL if present
+            import re
+            size_pattern = re.compile(r'/\d+x\d+')
+            match = re.search(size_pattern, thumbnail_url)
+            if match:
+                # Check if this is an artist by examining the URL or raw_result
+                is_artist = False
+                if raw_result and isinstance(raw_result, dict):
+                    is_artist = 'title' not in raw_result and 'name' in raw_result
+                
+                # Use 750x750.jpg as it's more reliably available for all Tidal content
+                return re.sub(size_pattern, '/750x750', thumbnail_url)
+        
+        # Qobuz: URLs often have size parameters, use _org.jpg for full-size
+        elif platform_lower == 'qobuz':
+            import re
+            # Qobuz URLs have size like _230.jpg or _300.jpg, replace with _org.jpg for full-size
+            # Pattern: anything ending with _number.jpg or _number.png
+            size_pattern = re.compile(r'_(\d+)\.(jpg|png)$')
+            if re.search(size_pattern, thumbnail_url):
+                # Replace size suffix with _org.jpg for full-size
+                return re.sub(r'_(\d+)\.(jpg|png)$', r'_org.jpg', thumbnail_url)
+            # If no size pattern found, try appending _org.jpg (remove extension first)
+            if '.' in thumbnail_url:
+                base_url = thumbnail_url.rsplit('.', 1)[0]
+                return base_url + '_org.jpg'
+        
+        # Deezer: URLs have size parameters
+        elif platform_lower == 'deezer':
+            import re
+            # Deezer URLs like .../cover/56x56-000000-80-0-0.jpg
+            size_pattern = re.compile(r'/\d+x\d+-')
+            match = re.search(size_pattern, thumbnail_url)
+            if match:
+                # Replace with larger size (1000x1000)
+                return re.sub(size_pattern, '/1000x1000-', thumbnail_url)
+        
+        # Spotify: URLs have size parameters
+        elif platform_lower == 'spotify':
+            import re
+            # Spotify URLs like .../image/ab67616d0000b273...?size=64
+            if '?size=' in thumbnail_url:
+                return thumbnail_url.split('?size=')[0] + '?size=640'
+            # Or .../640x640 format
+            size_pattern = re.compile(r'/\d+x\d+')
+            match = re.search(size_pattern, thumbnail_url)
+            if match:
+                return re.sub(size_pattern, '/640x640', thumbnail_url)
+        
+        # YouTube: URLs use quality suffixes, upgrade to maxresdefault.jpg for best quality
+        elif platform_lower == 'youtube':
+            import re
+            # YouTube thumbnail URLs: https://i.ytimg.com/vi/VIDEO_ID/quality.jpg
+            # Quality options: default.jpg, mqdefault.jpg, hqdefault.jpg, maxresdefault.jpg
+            # Try to upgrade to maxresdefault.jpg (highest quality)
+            yt_pattern = re.compile(r'(https?://i\.ytimg\.com/vi/[^/]+/)(?:default|mqdefault|hqdefault|sddefault)\.jpg')
+            match = re.search(yt_pattern, thumbnail_url)
+            if match:
+                return match.group(1) + 'maxresdefault.jpg'
+            # If pattern doesn't match but it's a YouTube thumbnail URL, try to replace anyway
+            if 'i.ytimg.com/vi/' in thumbnail_url and '/default.jpg' in thumbnail_url:
+                return thumbnail_url.replace('/default.jpg', '/maxresdefault.jpg')
+            elif 'i.ytimg.com/vi/' in thumbnail_url and '/mqdefault.jpg' in thumbnail_url:
+                return thumbnail_url.replace('/mqdefault.jpg', '/maxresdefault.jpg')
+            elif 'i.ytimg.com/vi/' in thumbnail_url and '/hqdefault.jpg' in thumbnail_url:
+                return thumbnail_url.replace('/hqdefault.jpg', '/maxresdefault.jpg')
+        
+        # Default: return original URL (might already be full-size or we can't determine)
+        return thumbnail_url
+        
+    except Exception as e:
+        print(f"Error converting cover URL to full-size: {e}")
+        # Fallback to original URL
+        return thumbnail_url
+
+def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_result=None):
+    """Show a pop-up window with the full-size album cover image."""
+    global app, orpheus_instance
+    
+    # For Tidal artists, if we don't have a cover URL, try to fetch it lazily
+    if not cover_url and platform_name and platform_name.lower() == 'tidal' and raw_result:
+        if isinstance(raw_result, dict) and 'id' in raw_result and 'name' in raw_result:
+            # This looks like an artist - try to fetch the artist image
+            try:
+                if 'orpheus_instance' in globals() and orpheus_instance:
+                    artist_id = raw_result.get('id')
+                    if artist_id:
+                        # Fetch artist details to get the image
+                        module_instance = orpheus_instance.load_module('tidal')
+                        if hasattr(module_instance, 'session') and hasattr(module_instance.session, 'get_artist'):
+                            artist_data = module_instance.session.get_artist(artist_id)
+                            
+                            # Check for image fields in the artist data - check multiple possible locations
+                            # Default fallback image UUID (same as python-tidal library uses)
+                            DEFAULT_ARTIST_IMG = "1e01cdb6-f15d-4d8b-8440-a047976c1cac"
+                            artist_image_id = None
+                            if isinstance(artist_data, dict):
+                                # Check top-level fields first
+                                artist_image_id = (
+                                    artist_data.get('picture') or
+                                    artist_data.get('image') or
+                                    artist_data.get('squareImage') or
+                                    artist_data.get('cover') or
+                                    artist_data.get('pictureId') or
+                                    artist_data.get('imageId')
+                                )
+                                
+                                # Check nested structures if not found at top level
+                                if not artist_image_id:
+                                    # Check if there's an 'images' object
+                                    images_obj = artist_data.get('images')
+                                    if isinstance(images_obj, dict):
+                                        artist_image_id = (
+                                            images_obj.get('picture') or
+                                            images_obj.get('cover') or
+                                            images_obj.get('squareImage')
+                                        )
+                                    # Check if there's a 'media' object
+                                    if not artist_image_id:
+                                        media_obj = artist_data.get('media')
+                                        if isinstance(media_obj, dict):
+                                            artist_image_id = media_obj.get('picture') or media_obj.get('cover')
+                            
+                            # Fallback to default image if still not found
+                            if not artist_image_id:
+                                artist_image_id = DEFAULT_ARTIST_IMG
+                            
+                            if artist_image_id:
+                                from modules.tidal.interface import ModuleInterface
+                                cover_url = ModuleInterface._generate_artwork_url(artist_image_id, size=56)
+                                # Update the raw_result with the image for future use
+                                raw_result['picture'] = artist_image_id
+            except Exception as e:
+                # Silently fail - if we can't fetch it, just show without image
+                pass
+    
+    if not cover_url:
+        return
+    
+    # Convert thumbnail URL to full-size URL
+    fullsize_url = _get_fullsize_cover_url(cover_url, platform_name, raw_result)
+    # Fallback to original URL if conversion failed
+    if not fullsize_url:
+        fullsize_url = cover_url
+    
+    try:
+        # Create pop-up window
+        popup = customtkinter.CTkToplevel(app)
+        popup.title(f"Artwork - {title}" if title else "Artwork")
+        popup.attributes("-topmost", True)
+        popup.transient(app)
+        popup.resizable(True, True)
+        
+        # Calculate center position immediately
+        initial_width = 500
+        initial_height = 500
+        screen_width = popup.winfo_screenwidth()
+        screen_height = popup.winfo_screenheight()
+        x = (screen_width // 2) - (initial_width // 2)
+        y = (screen_height // 2) - (initial_height // 2)
+        
+        # Set initial size and center position (will be adjusted based on image)
+        popup.geometry(f"{initial_width}x{initial_height}+{x}+{y}")
+        
+        # Create a frame to hold the image
+        image_frame = customtkinter.CTkFrame(popup, fg_color="#1D1E1E")
+        image_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Create a label to show loading message
+        loading_label = customtkinter.CTkLabel(
+            image_frame,
+            text="Loading cover...",
+            font=("Segoe UI", 12)
+        )
+        loading_label.pack(expand=True)
+        
+        # Create info label at bottom
+        info_text = f"{title}" if title else ""
+        if artist:
+            info_text += f" - {artist}" if info_text else artist
+        info_label = customtkinter.CTkLabel(
+            popup,
+            text=info_text,
+            font=("Segoe UI", 11),
+            text_color="#AAAAAA"
+        )
+        info_label.pack(pady=(0, 10))
+        
+        # Store PIL Image for copy/save operations
+        pil_image_ref = {'image': None, 'original_image': None}
+        # Store context menu reference for closing
+        context_menu_ref = {'menu': None}
+        
+        # Copy image to clipboard function
+        def _copy_image_to_clipboard(menu=None):
+            try:
+                if menu:
+                    try:
+                        menu.destroy()
+                    except:
+                        pass
+                
+                if not pil_image_ref['image']:
+                    return
+                
+                # Copy to clipboard (Windows-specific method)
+                if platform.system() == "Windows":
+                    try:
+                        import win32clipboard
+                        from io import BytesIO
+                        
+                        output = BytesIO()
+                        pil_image_ref['image'].save(output, 'BMP')
+                        data = output.getvalue()[14:]  # Remove BMP header
+                        output.close()
+                        
+                        win32clipboard.OpenClipboard()
+                        win32clipboard.EmptyClipboard()
+                        win32clipboard.SetClipboardData(win32clipboard.CF_DIB, data)
+                        win32clipboard.CloseClipboard()
+                        
+                        print("Image copied to clipboard.")
+                    except ImportError:
+                        # Fallback: save to temp file and inform user
+                        import tempfile
+                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+                        pil_image_ref['image'].save(temp_file.name, 'PNG')
+                        temp_file.close()
+                        print(f"Image saved to temporary file: {temp_file.name}")
+                        print("Note: Install pywin32 for direct clipboard copy on Windows.")
+                else:
+                    # macOS/Linux: use different method
+                    print("Image copy to clipboard not fully supported on this platform.")
+                    
+            except Exception as e:
+                print(f"Error copying image to clipboard: {e}")
+        
+        # Save image to file function
+        def _save_image_to_file(menu=None):
+            try:
+                if menu:
+                    try:
+                        menu.destroy()
+                    except:
+                        pass
+                
+                if not pil_image_ref['original_image']:
+                    return
+                
+                # Generate filename from artist and title
+                filename = "artwork.jpg"
+                if artist and title:
+                    # Sanitize filename (remove invalid characters)
+                    safe_artist = re.sub(r'[<>:"/\\|?*]', '_', artist)
+                    safe_title = re.sub(r'[<>:"/\\|?*]', '_', title)
+                    filename = f"{safe_artist} - {safe_title} - artwork.jpg"
+                elif title:
+                    safe_title = re.sub(r'[<>:"/\\|?*]', '_', title)
+                    filename = f"{safe_title} - artwork.jpg"
+                elif artist:
+                    safe_artist = re.sub(r'[<>:"/\\|?*]', '_', artist)
+                    filename = f"{safe_artist} - artwork.jpg"
+                
+                # Open file dialog
+                file_path = tkinter.filedialog.asksaveasfilename(
+                    parent=popup,
+                    title="Save Artwork As...",
+                    defaultextension=".jpg",
+                    filetypes=[
+                        ("JPEG files", "*.jpg *.jpeg"),
+                        ("PNG files", "*.png"),
+                        ("All files", "*.*")
+                    ],
+                    initialfile=filename
+                )
+                
+                if file_path:
+                    # Determine format from extension
+                    ext = os.path.splitext(file_path)[1].lower()
+                    format_map = {'.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG'}
+                    save_format = format_map.get(ext, 'JPEG')
+                    
+                    # Save the original (full-size) image
+                    pil_image_ref['original_image'].save(file_path, save_format, quality=95)
+                    print(f"Artwork saved to: {file_path}")
+                    
+            except Exception as e:
+                print(f"Error saving image: {e}")
+                tkinter.messagebox.showerror("Error", f"Failed to save image: {e}", parent=popup)
+        
+        # Load image asynchronously
+        def _load_fullsize_image():
+            nonlocal fullsize_url  # Allow modification of outer scope variable
+            try:
+                from PIL import Image, ImageTk
+                import io
+                
+                # Debug output
+                global current_settings
+                debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
+                
+                # Use full-size URL instead of thumbnail
+                # Add headers to avoid 403 errors from Tidal and other services
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Referer': 'https://tidal.com/',
+                    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Sec-Fetch-Dest': 'image',
+                    'Sec-Fetch-Mode': 'no-cors',
+                    'Sec-Fetch-Site': 'cross-site',
+                }
+                
+                # Get platform name for logging (capitalize for display)
+                platform_display = platform_name.capitalize() if platform_name else "Unknown"
+                
+                if debug_mode:
+                    print(f"[{platform_display} Cover Popup] Loading: {fullsize_url}")
+                
+                response = requests.get(fullsize_url, timeout=10, headers=headers)
+                
+                if debug_mode:
+                    print(f"[{platform_display} Cover Popup] Response: HTTP {response.status_code}")
+                
+                # If non-200 status and Tidal URL, try retrying with 750x750.jpg as fallback
+                # (smaller sizes like 80x80 or larger like 1280x1280 may not be available)
+                if response.status_code != 200 and 'resources.tidal.com/images' in fullsize_url:
+                    # Check if URL already uses 750x750.jpg
+                    size_pattern = r'/(\d+x\d+)\.jpg'
+                    match = re.search(size_pattern, fullsize_url)
+                    
+                    if match and match.group(1) != '750x750':
+                        # Retry with 750x750.jpg
+                        fallback_url = re.sub(size_pattern, '/750x750.jpg', fullsize_url)
+                        if debug_mode:
+                            print(f"[{platform_display} Cover Popup] {response.status_code} for {fullsize_url}, retrying with {fallback_url}")
+                        try:
+                            fallback_response = requests.get(fallback_url, timeout=10, headers=headers)
+                            if debug_mode:
+                                print(f"[{platform_display} Cover Popup] Fallback response: HTTP {fallback_response.status_code}")
+                            if fallback_response.status_code == 200:
+                                # Use the fallback URL
+                                fullsize_url = fallback_url
+                                response = fallback_response
+                        except Exception as e:
+                            if debug_mode:
+                                print(f"[{platform_display} Cover Popup] Fallback request failed: {e}")
+                            pass  # Continue with original response if fallback fails
+                
+                if response.status_code == 200:
+                    img_data = io.BytesIO(response.content)
+                    original_img = Image.open(img_data)
+                    pil_image_ref['original_image'] = original_img.copy()  # Store original for saving
+                    
+                    # Get original dimensions
+                    orig_width, orig_height = original_img.size
+                    
+                    # Limit maximum size to fit screen (max 800px on longest side)
+                    max_size = 800
+                    if orig_width > max_size or orig_height > max_size:
+                        if orig_width > orig_height:
+                            new_width = max_size
+                            new_height = int(orig_height * (max_size / orig_width))
+                        else:
+                            new_height = max_size
+                            new_width = int(orig_width * (max_size / orig_height))
+                        img = original_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    else:
+                        img = original_img
+                    
+                    pil_image_ref['image'] = img  # Store display image for copying
+                    
+                    # Convert to PhotoImage
+                    photo = ImageTk.PhotoImage(img)
+                    
+                    # Update UI on main thread
+                    def _update_ui():
+                        try:
+                            if popup.winfo_exists():
+                                loading_label.destroy()
+                                
+                                # Create image label
+                                img_label = customtkinter.CTkLabel(
+                                    image_frame,
+                                    image=photo,
+                                    text=""
+                                )
+                                img_label.image = photo  # Keep reference
+                                img_label.pack(expand=True)
+                                
+                                # Add right-click context menu to image label
+                                def _show_image_context_menu(event):
+                                    if not pil_image_ref['image']:
+                                        return
+                                    
+                                    # Close existing menu if open
+                                    if context_menu_ref['menu']:
+                                        try:
+                                            context_menu_ref['menu'].destroy()
+                                        except:
+                                            pass
+                                    
+                                    # Create context menu
+                                    context_menu = customtkinter.CTkToplevel(popup)
+                                    context_menu.overrideredirect(True)
+                                    context_menu.attributes("-topmost", True)
+                                    context_menu_ref['menu'] = context_menu
+                                    
+                                    # Position menu near cursor
+                                    x = event.x_root
+                                    y = event.y_root
+                                    context_menu.geometry(f"+{x}+{y}")
+                                    
+                                    menu_frame = customtkinter.CTkFrame(context_menu, fg_color="#2B2B2B", corner_radius=5)
+                                    menu_frame.pack(fill="both", expand=True, padx=1, pady=1)
+                                    
+                                    # Copy Image button
+                                    copy_icon = _create_copy_icon(size=(14, 14), color="#AAAAAA")
+                                    copy_btn = customtkinter.CTkButton(
+                                        menu_frame,
+                                        text="Copy Image",
+                                        image=copy_icon,
+                                        compound="left",
+                                        anchor="w",
+                                        fg_color="transparent",
+                                        hover_color="#3A3A3A",
+                                        command=lambda: _copy_image_to_clipboard(context_menu),
+                                        width=150,
+                                        height=28
+                                    )
+                                    copy_btn.pack(fill="x", padx=2, pady=1)
+                                    
+                                    # Save as... button
+                                    save_icon = _create_save_icon(size=(14, 14), color="#AAAAAA")
+                                    save_btn = customtkinter.CTkButton(
+                                        menu_frame,
+                                        text="Save as...",
+                                        image=save_icon,
+                                        compound="left",
+                                        anchor="w",
+                                        fg_color="transparent",
+                                        hover_color="#3A3A3A",
+                                        command=lambda: _save_image_to_file(context_menu),
+                                        width=150,
+                                        height=28
+                                    )
+                                    save_btn.pack(fill="x", padx=2, pady=1)
+                                    
+                                    # Close menu when clicking outside
+                                    def _close_menu(event=None):
+                                        if context_menu_ref['menu']:
+                                            try:
+                                                context_menu_ref['menu'].destroy()
+                                                context_menu_ref['menu'] = None
+                                            except:
+                                                pass
+                                    
+                                    # Bind close events
+                                    context_menu.bind("<FocusOut>", lambda e: _close_menu())
+                                    popup.bind("<Button-1>", lambda e: _close_menu(), add="+")
+                                    img_label.bind("<Button-1>", lambda e: _close_menu(), add="+")
+                                
+                                # Bind right-click (Button-3 on Windows/Linux, Button-2 on macOS)
+                                img_label.bind("<Button-3>", _show_image_context_menu)  # Right-click
+                                if platform.system() == "Darwin":
+                                    img_label.bind("<Button-2>", _show_image_context_menu)  # macOS right-click
+                                
+                                # Update window size to fit image and keep it centered
+                                img_width = photo.width()
+                                img_height = photo.height()
+                                new_width = img_width + 40
+                                new_height = img_height + 100
+                                
+                                # Calculate center position with new size
+                                popup.update_idletasks()
+                                screen_width = popup.winfo_screenwidth()
+                                screen_height = popup.winfo_screenheight()
+                                x = (screen_width // 2) - (new_width // 2)
+                                y = (screen_height // 2) - (new_height // 2)
+                                
+                                # Set size and position in one call to avoid repositioning
+                                popup.geometry(f"{new_width}x{new_height}+{x}+{y}")
+                        except Exception as e:
+                            print(f"Error updating cover popup UI: {e}")
+                    
+                    if 'app' in globals() and app and app.winfo_exists():
+                        app.after(0, _update_ui)
+                else:
+                    def _show_error():
+                        if popup.winfo_exists():
+                            loading_label.configure(text="Failed to load cover image")
+                    if 'app' in globals() and app and app.winfo_exists():
+                        app.after(0, _show_error)
+            except Exception as e:
+                print(f"Error loading full-size cover: {e}")
+                def _show_error():
+                    if popup.winfo_exists():
+                        loading_label.configure(text="Error loading cover image")
+                if 'app' in globals() and app and app.winfo_exists():
+                    app.after(0, _show_error)
+        
+        # Start loading in background thread
+        import threading
+        thread = threading.Thread(target=_load_fullsize_image, daemon=True)
+        thread.start()
+        
+    except Exception as e:
+        print(f"Error creating cover popup: {e}")
+
+def on_tree_click(event):
+    """Handle clicks on the treeview, specifically for the Preview column and Cover column."""
+    global tree, search_results_data
+    
+    try:
+        if 'tree' not in globals() or not tree or not tree.winfo_exists():
+            return
+        
+        # Identify the clicked region
+        region = tree.identify("region", event.x, event.y)
+        
+        # Identify the column
+        column = tree.identify_column(event.x)
+        item_iid = tree.identify_row(event.y)
+        
+        if not item_iid:
+            return
+        
+        # Find item data
+        item_data = next((item for item in search_results_data if str(item.get('tree_iid')) == str(item_iid)), None)
+        if not item_data:
+            return
+        
+        # Column #0 is the Cover column (tree column)
+        # Try multiple methods to detect cover column click
+        is_over_cover_column = False
+        if column == "#0":
+            is_over_cover_column = True
+        else:
+            # Fallback: check x coordinate against cover column width
+            try:
+                cover_column_width = tree.column("#0", "width")
+                if cover_column_width and event.x >= 0 and event.x <= cover_column_width:
+                    is_over_cover_column = True
+            except:
+                # If column width check fails, use constant
+                cover_column_width = COVER_SIZE + 6
+                if event.x >= 0 and event.x <= cover_column_width:
+                    is_over_cover_column = True
+        
+        if is_over_cover_column:  # Cover column
+            # Allow clicks on tree column region (tree, cell, etc.)
+            cover_url = item_data.get('cover_url')
+            if cover_url:
+                title = item_data.get('title', '')
+                artist = item_data.get('artist', '')
+                platform_name = item_data.get('platform', '')
+                raw_result = item_data.get('raw_result')
+                show_cover_popup(cover_url, title, artist, platform_name, raw_result)
+            return
+        
+        # For other columns, require "cell" region
+        if region != "cell":
+            return
+        
+        # Column #1 is the Preview column (#0 is tree column for covers, #1 is first data column)
+        # With our columns: Preview, #, Title, ... Preview is index 0 in values, column #1 in identify_column
+        if column == "#1":  # Preview column
+            # Special handling for YouTube: open video in browser instead of playing preview
+            current_platform = item_data.get('platform', '').lower() if item_data.get('platform') else ''
+            if current_platform == 'youtube':
+                # Get video ID from item data
+                video_id = item_data.get('id')
+                if video_id:
+                    # Construct YouTube URL and open in browser
+                    youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+                    try:
+                        webbrowser.open(youtube_url)
+                        print(f"[YouTube] Opened video in browser: {youtube_url}")
+                    except Exception as e:
+                        print(f"[YouTube] Error opening browser: {e}")
+                return
+            
+            preview_url = item_data.get('preview_url')
+            if preview_url:
+                toggle_preview_playback(item_iid, preview_url)
+            else:
+                # Try lazy-loading preview URL for services that don't include them in search results
+                _try_lazy_load_preview(item_iid, item_data)
+    except Exception as e:
+        print(f"[Preview] Error handling tree click: {e}")
+
+def _try_lazy_load_preview(item_iid, item_data):
+    """Try to lazy-load a preview URL for services that don't include them in search results (e.g., Qobuz, SoundCloud, Spotify)."""
+    global platform_var, orpheus_instance, tree, search_results_data, app, _lazy_loading_preview_iid, _currently_playing_preview_iid
+    
+    try:
+        # Check if we have the necessary globals
+        if 'platform_var' not in globals() or not platform_var:
+            return
+        if 'orpheus_instance' not in globals() or not orpheus_instance:
+            return
+        
+        current_platform = platform_var.get().lower()
+        
+        # Services that support lazy-loading of preview URLs
+        # Spotify added because preview_url is deprecated in API, must scrape from embed page
+        # Tidal added because preview URLs are not included in search results
+        # YouTube is handled separately - opens video in browser instead of playing preview
+        lazy_load_services = ['qobuz', 'soundcloud', 'spotify', 'tidal']
+        if current_platform not in lazy_load_services:
+            return
+        
+        # Get the track ID from the item data
+        track_id = item_data.get('id')
+        if not track_id:
+            return
+        
+        # Stop any currently playing preview BEFORE starting lazy load
+        if _currently_playing_preview_iid:
+            stop_audio()
+            old_iid = _currently_playing_preview_iid
+            _currently_playing_preview_iid = None
+            if 'tree' in globals() and tree and tree.winfo_exists():
+                update_preview_icon(old_iid, playing=False)
+            # Hide volume control
+            hide_volume_control()
+        
+        # Track which item is being loaded
+        _lazy_loading_preview_iid = item_iid
+        
+        # Show loading indicator
+        if 'tree' in globals() and tree and tree.winfo_exists():
+            try:
+                current_values = list(tree.item(item_iid, 'values'))
+                if current_values:
+                    current_values[0] = PREVIEW_LOADING_ICON
+                    tree.item(item_iid, values=tuple(current_values))
+                    # Start walking dots animation
+                    _start_loading_animation(item_iid)
+            except Exception:
+                pass
+        
+        # Capture target_iid to check later
+        target_iid = item_iid
+        
+        # Fetch preview URL in background thread
+        def fetch_preview_url():
+            global _lazy_loading_preview_iid
+            preview_url = None
+            try:
+                # Check if user clicked on another item while we were loading
+                if _lazy_loading_preview_iid != target_iid:
+                    print(f"[Preview] Lazy load cancelled for {target_iid}")
+                    return
+                
+                module_instance = orpheus_instance.load_module(current_platform)
+                
+                if current_platform == 'qobuz':
+                    # Qobuz: use get_sample_url method
+                    if hasattr(module_instance, 'session') and hasattr(module_instance.session, 'get_sample_url'):
+                        preview_url = module_instance.session.get_sample_url(track_id)
+                
+                elif current_platform == 'soundcloud':
+                    # SoundCloud: use get_preview_stream_url method
+                    if hasattr(module_instance, 'websession') and hasattr(module_instance.websession, 'get_preview_stream_url'):
+                        preview_url = module_instance.websession.get_preview_stream_url(track_id)
+                
+                elif current_platform == 'spotify':
+                    # Spotify: preview_url is deprecated in API, scrape from embed page
+                    # See: https://community.spotify.com/t5/Spotify-for-Developers/Preview-URLs-Deprecated/td-p/6791368
+                    if hasattr(module_instance, 'spotify_api') and hasattr(module_instance.spotify_api, 'get_preview_url_from_embed'):
+                        preview_url = module_instance.spotify_api.get_preview_url_from_embed(track_id)
+                        if preview_url:
+                            print(f"[Preview] Spotify preview URL found: {preview_url[:80]}...")
+                        else:
+                            print(f"[Preview] No Spotify preview found for track {track_id}")
+                
+                elif current_platform == 'tidal':
+                    # Tidal: preview URLs are not included in search results, fetch using LOW quality stream
+                    if hasattr(module_instance, 'get_preview_stream_url'):
+                        preview_url = module_instance.get_preview_stream_url(track_id)
+                        if preview_url:
+                            print(f"[Preview] Tidal preview URL found: {preview_url[:80]}...")
+                        else:
+                            print(f"[Preview] No Tidal preview found for track {track_id}")
+                
+                # Check again before updating UI
+                if _lazy_loading_preview_iid != target_iid:
+                    print(f"[Preview] Lazy load cancelled for {target_iid}")
+                    return
+                
+                # Update UI on main thread
+                if 'app' in globals() and app and app.winfo_exists():
+                    app.after(0, lambda: _on_preview_url_fetched(target_iid, item_data, preview_url))
+                    
+            except Exception as e:
+                print(f"[Preview] Error fetching preview URL for {current_platform} track {track_id}: {e}")
+                # Restore unavailable icon on error
+                if 'app' in globals() and app and app.winfo_exists():
+                    app.after(0, lambda: _on_preview_url_fetched(target_iid, item_data, None))
+        
+        # Start background thread
+        threading.Thread(target=fetch_preview_url, daemon=True).start()
+        
+    except Exception as e:
+        print(f"[Preview] Error in lazy load: {e}")
+
+def _on_preview_url_fetched(item_iid, item_data, preview_url):
+    """Called when a lazy-loaded preview URL has been fetched."""
+    global tree, search_results_data, _lazy_loading_preview_iid
+    
+    try:
+        # Stop loading animation
+        _stop_loading_animation()
+        
+        # Check if this item is still the one being loaded (user might have clicked elsewhere)
+        if _lazy_loading_preview_iid != item_iid:
+            # User clicked on another item or stopped - just update the data but don't play
+            if preview_url:
+                item_data['preview_url'] = preview_url
+            return
+        
+        # Clear the loading state
+        _lazy_loading_preview_iid = None
+        
+        if preview_url:
+            # Update the cached preview URL in search_results_data
+            item_data['preview_url'] = preview_url
+            
+            # Update the icon to play icon
+            if 'tree' in globals() and tree and tree.winfo_exists():
+                try:
+                    current_values = list(tree.item(item_iid, 'values'))
+                    if current_values:
+                        current_values[0] = PREVIEW_PLAY_ICON
+                        tree.item(item_iid, values=tuple(current_values))
+                except Exception:
+                    pass
+            
+            # Start playing the preview
+            toggle_preview_playback(item_iid, preview_url)
+        else:
+            # No preview URL available, restore unavailable icon
+            print(f"[Preview] No preview available for this track (Spotify embed page had no preview)")
+            if 'tree' in globals() and tree and tree.winfo_exists():
+                try:
+                    current_values = list(tree.item(item_iid, 'values'))
+                    if current_values:
+                        current_values[0] = PREVIEW_UNAVAILABLE
+                        tree.item(item_iid, values=tuple(current_values))
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"[Preview] Error updating preview URL: {e}")
+
+def clear_preview_state():
+    """Clear the preview playback state when search results are cleared."""
+    global _currently_playing_preview_iid, _cover_image_cache, _cover_hover_cache, _cover_hover_iid, _preview_hover_iid, _cover_load_requested, _lazy_loading_preview_iid
+    
+    try:
+        stop_audio()
+    except:
+        pass
+    
+    _stop_pulse_animation()  # Stop pulsing animation
+    _stop_loading_animation()  # Stop loading animation
+    _currently_playing_preview_iid = None
+    _preview_hover_iid = None
+    _lazy_loading_preview_iid = None  # Cancel any pending lazy loads
+    _cover_image_cache.clear()
+    _cover_hover_cache.clear()
+    global _cover_hover_iid
+    _cover_hover_iid = None
+    _cover_load_requested.clear()  # Clear lazy loading state
+    # Hide volume control
+    hide_volume_control()
+
+def show_volume_control():
+    """Show the volume control slider when audio is playing."""
+    global _volume_frame
+    try:
+        if _volume_frame and _volume_frame.winfo_exists():
+            _volume_frame.pack(side="right", padx=(10, 12))
+    except:
+        pass
+
+def hide_volume_control():
+    """Hide the volume control slider when audio stops."""
+    global _volume_frame
+    try:
+        if _volume_frame and _volume_frame.winfo_exists():
+            _volume_frame.pack_forget()
+    except:
+        pass
+
+def on_volume_change(value):
+    """Handle volume slider changes."""
+    global _current_volume
+    _current_volume = int(float(value))
+    set_audio_volume(_current_volume)
+
+def set_audio_volume(volume):
+    """Set the audio playback volume (0-100)."""
+    system = platform.system()
+    try:
+        if system == "Windows":
+            # Use waveOutSetVolume - controls wave output mixer, works with winsound
+            # Volume is 0xFFFF for max, packed as (right << 16) | left for stereo
+            wave_volume = int((volume / 100) * 0xFFFF)
+            stereo_volume = (wave_volume << 16) | wave_volume  # Same volume for left and right
+            ctypes.windll.winmm.waveOutSetVolume(0, stereo_volume)
+            
+        # Note: macOS afplay doesn't support runtime volume change easily
+        # Linux xdg-open also doesn't support it
+    except Exception as e:
+        print(f"[Audio] Error setting volume: {e}")
+# ============================================================================
 if platform.system() == "Windows":
     try:
         from ctypes import windll
@@ -4485,6 +7095,8 @@ def clear_treeview():
 def clear_search_results_data():
      global search_results_data, selection_var, search_download_button
      search_results_data = []
+     # Clear any playing preview audio
+     clear_preview_state()
      try:
         if 'selection_var' in globals() and selection_var:
             if selection_var.get() != "": selection_var.set("")
@@ -4532,13 +7144,24 @@ def display_results(results):
         additional_str = result.get('quality', 'N/A')
         unique_tree_iid = f"item_{item_number}"
         
+        # Get preview URL and cover URL from the result if available
+        preview_url = result.get('preview_url', None)
+        cover_url = result.get('cover_url', None)
+        
+        # For YouTube, upgrade thumbnail URL to full-size if available
+        if current_platform_str.lower() == 'youtube' and cover_url:
+            raw_result = result.get('raw_result')
+            cover_url = _get_fullsize_cover_url(cover_url, current_platform_str, raw_result)
+        
         result_entry = {
             "id": res_id, "number": str(item_number), "title": name,
             "artist": artist_str, "duration": duration_str, "year": year,
             "additional": additional_str, "explicit": explicit,
             "platform": current_platform_str, "type": current_search_type_str,
             "raw_result": result.get('raw_result'),
-            "tree_iid": unique_tree_iid
+            "tree_iid": unique_tree_iid,
+            "preview_url": preview_url,
+            "cover_url": cover_url
         }
         if current_search_type_str == "artist":
             result_entry["title"] = ""
@@ -4548,9 +7171,23 @@ def display_results(results):
 
         try:
             if 'tree' in globals() and tree and tree.winfo_exists():
+                # Preview icon with distinct shapes for visual feedback
+                # ▶ for play, · for unavailable (no color - ttk.Treeview colors whole rows)
+                # For Qobuz/SoundCloud/Spotify/Tidal tracks, show play icon even without preview_url (supports lazy-loading)
+                # Spotify's API deprecated preview_url, so we lazy-load from embed page when clicked
+                # Tidal doesn't include preview URLs in search results, so we lazy-load using LOW quality stream
+                # YouTube: clicking play icon opens video in browser instead of playing preview
+                # Only tracks can be previewed, not albums/playlists/artists
+                is_track_search = current_search_type_str.lower() == "track"
+                can_lazy_load_preview = (current_platform_str.lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal')) and is_track_search
+                # YouTube tracks always show play icon (opens in browser)
+                is_youtube_track = (current_platform_str.lower() == 'youtube') and is_track_search
+                preview_icon = PREVIEW_PLAY_ICON if (preview_url or can_lazy_load_preview or is_youtube_track) else PREVIEW_UNAVAILABLE
+                
                 if current_search_type_str == "artist":
                     values = (
-                        str(item_number),
+                        preview_icon,  # Preview column (first)
+                        str(item_number),  # # column
                         "",
                         name,
                         "",
@@ -4561,7 +7198,8 @@ def display_results(results):
                     )
                 else:
                     values = (
-                        str(item_number),
+                        preview_icon,  # Preview column (first)
+                        str(item_number),  # # column
                         name,
                         artist_str,
                         duration_str,
@@ -4570,9 +7208,20 @@ def display_results(results):
                         explicit,
                         res_id
                     )
-                tree.insert("", "end", iid=unique_tree_iid, values=values)
+                
+                # Insert item without image - cover will be lazy loaded when visible
+                # No playing tag needed for new items
+                tree.insert("", "end", iid=unique_tree_iid, values=values, tags=())
+                
                 item_number += 1
                 seen_ids.add(res_id)
+                
+                # Keep UI responsive during result display (update every 5 items)
+                if item_number % 5 == 0 and 'app' in globals() and app and app.winfo_exists():
+                    try:
+                        app.update_idletasks()
+                    except:
+                        pass
             else:
                 break
         except NameError: break
@@ -4592,7 +7241,13 @@ def display_results(results):
     except Exception as e: 
         if not getattr(sys, 'frozen', False):
             print(f"Error scheduling scrollbar check after display: {e}")
-    except Exception as e: print(f"Error scheduling scrollbar check after display: {e}")
+    
+    # Trigger lazy loading for visible covers after a short delay
+    try:
+        if 'app' in globals() and app and app.winfo_exists():
+            app.after(100, lazy_load_visible_covers)
+    except:
+        pass
 
 def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui_settings):
     """Runs the search using the provided global Orpheus instance."""
@@ -4640,7 +7295,32 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
         search_results = module_instance.search(query_type, query, limit=search_limit)
         formatted_results = []
         for result in search_results:
-            formatted_result = { 'id': str(getattr(result, 'result_id', '')), 'title': str(getattr(result, 'name', 'N/A')), 'artist': ', '.join([str(a) for a in getattr(result, 'artists', [])]) if getattr(result, 'artists', []) else '-', 'duration': beauty_format_seconds(getattr(result, 'duration', None)) if getattr(result, 'duration', None) else '-', 'year': str(getattr(result, 'year', '-')), 'quality': ', '.join([str(q) for q in getattr(result, 'additional', [])]) if getattr(result, 'additional', []) else 'N/A', 'explicit': 'Y' if getattr(result, 'explicit', False) else '', 'raw_result': result }
+            # Extract raw_result from extra_kwargs if available (for full-size cover URL generation)
+            raw_result = None
+            extra_kwargs = getattr(result, 'extra_kwargs', {})
+            if isinstance(extra_kwargs, dict):
+                raw_result = extra_kwargs.get('raw_result')
+            # Fallback to the SearchResult object itself if no raw_result in extra_kwargs
+            if raw_result is None:
+                raw_result = result
+            
+            cover_url = getattr(result, 'image_url', None)
+            # For YouTube, upgrade thumbnail URL to full-size if available
+            if platform_name.lower() == 'youtube' and cover_url:
+                cover_url = _get_fullsize_cover_url(cover_url, platform_name, raw_result)
+            
+            formatted_result = { 
+                'id': str(getattr(result, 'result_id', '')), 
+                'title': str(getattr(result, 'name', 'N/A')), 
+                'artist': ', '.join([str(a) for a in getattr(result, 'artists', [])]) if getattr(result, 'artists', []) else '-', 
+                'duration': beauty_format_seconds(getattr(result, 'duration', None)) if getattr(result, 'duration', None) else '-', 
+                'year': str(getattr(result, 'year', '-')), 
+                'quality': ', '.join([str(q) for q in getattr(result, 'additional', [])]) if getattr(result, 'additional', []) else 'N/A', 
+                'explicit': 'Y' if getattr(result, 'explicit', False) else '', 
+                'preview_url': getattr(result, 'preview_url', None),
+                'cover_url': cover_url,
+                'raw_result': raw_result 
+            }
             formatted_results.append(formatted_result)
         results = formatted_results
     except TypeError as e:
@@ -4664,10 +7344,15 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
 
         def _update_ui():
             global search_process_active
-            set_ui_state_searching(False)
-            if error_message: show_centered_messagebox("Search Error", error_message, dialog_type="error"); clear_treeview(); clear_search_results_data()
-            elif not results: show_centered_messagebox("No Results", "The search completed successfully, but found no results matching your query.", dialog_type="info"); display_results([])
-            else: display_results(results)
+            if error_message: 
+                set_ui_state_searching(False)
+                show_centered_messagebox("Search Error", error_message, dialog_type="error"); clear_treeview(); clear_search_results_data()
+            elif not results: 
+                set_ui_state_searching(False)
+                show_centered_messagebox("No Results", "The search completed successfully, but found no results matching your query.", dialog_type="info"); display_results([])
+            else: 
+                display_results(results)
+                set_ui_state_searching(False)  # Stop progress bar AFTER results are displayed
             search_process_active = False
         try:
             if 'app' in globals() and app and app.winfo_exists():
@@ -4847,7 +7532,7 @@ _search_context_menu = None
 _search_quality_menu = None
 _search_context_quality_var = None
 _search_quality_buttons = []  # List to store quality button references
-_search_copy_url_button = None # Reference to the copy URL button
+_search_copy_url_button = None # Reference to the open URL button (opens link in external browser)
 
 def _setup_hover_icon(button, normal_icon, hover_icon):
     """Setup hover effect for a button to swap icons."""
@@ -4877,15 +7562,15 @@ def _create_search_context_menu():
         _search_context_menu = customtkinter.CTkFrame(app, border_width=2, border_color="#343638", fg_color="#343638")        
         button_color = "#343638"
         
-        # Copy URL button - same style as copy/paste buttons
-        copy_icon = _create_copy_icon()
-        copy_icon_white = _create_copy_icon(color="white")
+        # Open URL button - same style as copy/paste buttons
+        external_link_icon = _create_external_link_icon()
+        external_link_icon_white = _create_external_link_icon(color="white")
         _search_copy_url_button = customtkinter.CTkButton(
             _search_context_menu, 
             text="Link", 
-            image=copy_icon,
+            image=external_link_icon,
             compound="left",
-            command=_copy_selected_url,
+            command=_open_selected_url,
             width=80,
             height=24,
             font=("Segoe UI", 11),
@@ -4895,9 +7580,9 @@ def _create_search_context_menu():
             border_width=0,
             anchor="w"
         )
-        _search_copy_url_button.image = copy_icon # Keep reference
-        _search_copy_url_button.hover_image = copy_icon_white # Keep reference
-        _setup_hover_icon(_search_copy_url_button, copy_icon, copy_icon_white)
+        _search_copy_url_button.image = external_link_icon # Keep reference
+        _search_copy_url_button.hover_image = external_link_icon_white # Keep reference
+        _setup_hover_icon(_search_copy_url_button, external_link_icon, external_link_icon_white)
         _search_copy_url_button.pack(pady=(2, 1), padx=2, fill="x")
         
         # Separator line
@@ -4962,8 +7647,8 @@ def _select_quality_and_download(quality_value):
     except Exception as e:
         print(f"Error in quality download: {e}")
 
-def _copy_selected_url(event=None):
-    """Copy the URL of the selected item to clipboard."""
+def _open_selected_url(event=None):
+    """Open the URL of the selected item in external browser."""
     global app, _search_context_menu
     
     _hide_search_context_menu()
@@ -4971,28 +7656,27 @@ def _copy_selected_url(event=None):
     try:
         selected_items = get_selected_items_data()
         if not selected_items:
-            print("No items selected to copy URL.")
+            print("No items selected to open URL.")
             return
         
-        # Build URLs for all selected items
-        urls = []
+        # Build URLs for all selected items and open them
+        urls_opened = 0
         for item_data in selected_items:
             url = build_url_from_result(item_data)
             if url:
-                urls.append(url)
+                try:
+                    webbrowser.open(url)
+                    urls_opened += 1
+                except Exception as e:
+                    print(f"Error opening URL {url}: {e}")
         
-        if urls:
-            # Join multiple URLs with newlines
-            url_text = "\n".join(urls)
-            if 'app' in globals() and app:
-                app.clipboard_clear()
-                app.clipboard_append(url_text)
-                print(f"Copied {len(urls)} URL(s) to clipboard.")
+        if urls_opened > 0:
+            print(f"Opened {urls_opened} URL(s) in external browser.")
         else:
             print("Could not build URL(s) for selected item(s).")
             
     except Exception as e:
-        print(f"Error copying URL: {e}")
+        print(f"Error opening URL: {e}")
 
 def _set_search_quality(quality_value):
     """Set the quality for search result downloads."""
@@ -5148,13 +7832,85 @@ def _create_copy_icon(size=(16, 16), color="#AAAAAA"):
     )
     
     return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
-    # Assuming dark theme background approx #2B2B2B or similar, but transparent is tricky.
+
+def _create_save_icon(size=(16, 16), color="#AAAAAA"):
+    """Creates a save icon (floppy disk)."""
+    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
     
-    draw.rectangle(
-        [front_x1, front_y1, front_x2, front_y2],
-        outline=color,
-        width=stroke_width
-    )
+    w, h = size
+    stroke_width = 1
+    
+    # Floppy disk shape
+    # Top rectangle (label area)
+    top_x1, top_y1 = 3, 2
+    top_x2, top_y2 = 13, 5
+    
+    # Main body
+    body_x1, body_y1 = 2, 5
+    body_x2, body_y2 = 14, 13
+    
+    # Draw main body
+    draw.rectangle([body_x1, body_y1, body_x2, body_y2], outline=color, width=stroke_width)
+    
+    # Draw top label area
+    draw.rectangle([top_x1, top_y1, top_x2, top_y2], outline=color, width=stroke_width)
+    
+    # Draw metal slider (bottom center)
+    slider_x1, slider_y1 = 6, 11
+    slider_x2, slider_y2 = 10, 12
+    draw.rectangle([slider_x1, slider_y1, slider_x2, slider_y2], outline=color, width=stroke_width)
+    
+    # Draw center hole
+    hole_x1, hole_y1 = 7, 7
+    hole_x2, hole_y2 = 9, 9
+    draw.rectangle([hole_x1, hole_y1, hole_x2, hole_y2], fill=color, outline=color)
+    
+    return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+
+def _create_external_link_icon(size=(16, 16), color="#AAAAAA"):
+    """Creates an external link icon (square with open corner and arrow pointing out)."""
+    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    
+    w, h = size
+    square_size = 9
+    stroke_width = 1.5
+    
+    # Square position (lower-left portion of icon)
+    sq_x1, sq_y1 = 2, 5
+    sq_x2, sq_y2 = 2 + square_size, 5 + square_size
+    
+    # Draw square outline with open top-right corner
+    # Left side (full height)
+    draw.line([(sq_x1, sq_y1), (sq_x1, sq_y2)], fill=color, width=int(stroke_width))
+    # Bottom side (full width)
+    draw.line([(sq_x1, sq_y2), (sq_x2, sq_y2)], fill=color, width=int(stroke_width))
+    # Top side (only left portion, leaving corner open)
+    draw.line([(sq_x1, sq_y1), (sq_x2 - 3, sq_y1)], fill=color, width=int(stroke_width))
+    # Right side (only bottom portion, leaving corner open)
+    draw.line([(sq_x2, sq_y1 + 3), (sq_x2, sq_y2)], fill=color, width=int(stroke_width))
+    
+    # Arrow pointing diagonally up-right from center of square
+    # Arrow starts from approximately center of square
+    arrow_start_x = sq_x1 + square_size // 2
+    arrow_start_y = sq_y1 + square_size // 2
+    # Arrow end point (extending beyond the open corner)
+    arrow_end_x = sq_x2 + 4
+    arrow_end_y = sq_y1 - 3
+    
+    # Draw arrow shaft
+    draw.line([(arrow_start_x, arrow_start_y), (arrow_end_x, arrow_end_y)], fill=color, width=int(stroke_width))
+    
+    # Draw arrowhead (triangle pointing up-right)
+    arrowhead_size = 3
+    # Arrowhead points: tip (at end), left point, bottom point
+    tip_x, tip_y = arrow_end_x, arrow_end_y
+    left_x, left_y = tip_x - arrowhead_size, tip_y
+    bottom_x, bottom_y = tip_x, tip_y + arrowhead_size
+    
+    # Draw arrowhead as filled triangle
+    draw.polygon([(tip_x, tip_y), (left_x, left_y), (bottom_x, bottom_y)], fill=color)
     
     return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
 
@@ -5510,6 +8266,61 @@ def build_url_from_result(result_data):
         print(f"[URL Build - Apple Music] Constructed URL: {apple_music_url}")
         return apple_music_url
     
+    elif p_lower == "beatsource":
+        # Beatsource requires slug in URL for artists (like Beatport)
+        slug = None
+        
+        if raw_result_obj:
+            permalink = getattr(raw_result_obj, 'permalink_url', None)
+            if not permalink:
+                permalink = getattr(raw_result_obj, 'url', None)
+            
+            if permalink:
+                print(f"[URL Build - Beatsource] Using attribute permalink/url: {permalink}")
+                return permalink
+
+            slug = getattr(raw_result_obj, 'slug', None)
+            if not slug:
+                # Check extra_kwargs for artist_slug (stored during search)
+                extra_kwargs = getattr(raw_result_obj, 'extra_kwargs', {})
+                if isinstance(extra_kwargs, dict):
+                    slug = extra_kwargs.get('artist_slug')
+            if not slug:
+                name_for_slug = getattr(raw_result_obj, 'name', None)
+                if name_for_slug:
+                    derived_slug = _simple_slugify(name_for_slug)
+                    if derived_slug:
+                        print(f"[URL Build - Beatsource] Derived slug '{derived_slug}' from name '{name_for_slug}'.")
+                        slug = derived_slug
+        
+        # Fallback: try to derive slug from result_data artist name (for artist searches)
+        if not slug and t_lower == 'artist':
+            artist_name = result_data.get('artist') or result_data.get('title')
+            if artist_name:
+                derived_slug = _simple_slugify(artist_name)
+                if derived_slug:
+                    print(f"[URL Build - Beatsource] Derived slug '{derived_slug}' from result_data artist/title '{artist_name}'.")
+                    slug = derived_slug
+
+        if slug and item_id and t_lower in type_paths.get(p_lower, {}):
+            url_path_segment = type_paths[p_lower][t_lower]
+            slug_str = str(slug).strip()
+            if slug_str: 
+                url = f"{base_urls[p_lower]}/{url_path_segment}/{slug_str}/{item_id}"
+                print(f"[URL Build - Beatsource] Constructed with slug '{slug_str}': {url}")
+                return url
+
+        # Fallback without slug (works for tracks/albums but not artists)
+        print(f"[URL Build - Beatsource] Attempting fallback URL construction.")
+        if p_lower in base_urls and p_lower in type_paths and t_lower in type_paths[p_lower]:
+            url_path_segment = type_paths[p_lower][t_lower]
+            url = f"{base_urls[p_lower]}/{url_path_segment}/{item_id}"
+            print(f"[URL Build - Beatsource] Fallback (no slug): {url}")
+            return url
+        else:
+            print(f"[URL Build - Beatsource] Fallback failed for type '{t_lower}'.")
+            return None
+    
     else:
         if p_lower in base_urls and p_lower in type_paths and t_lower in type_paths[p_lower]:
             url_path_segment = type_paths[p_lower][t_lower]; url = f"{base_urls[p_lower]}/{url_path_segment}/{item_id}"
@@ -5599,7 +8410,7 @@ def download_selected():
     except Exception as e: print(f"Unexpected error in download_selected: {e}")
 
 def sort_results(column):
-    global sort_states, search_results_data, tree
+    global sort_states, search_results_data, tree, _currently_playing_preview_iid, _cover_hover_cache, _cover_hover_iid
     try:
         if 'tree' not in globals() or not tree or not tree.winfo_exists(): return
         is_numeric = column in ["#", "Year"]; is_reverse = sort_states.get(column, False)
@@ -5616,14 +8427,43 @@ def sort_results(column):
         for item_data in search_results_data:
             try:
                 if 'tree' in globals() and tree and tree.winfo_exists():
-                    values = ( item_data.get('number', ''), item_data.get('title', ''), item_data.get('artist', ''), item_data.get('duration', ''), item_data.get('year', ''), item_data.get('additional', ''), item_data.get('explicit', ''), item_data.get('id', '') )
+                    # Determine preview icon based on playback state and preview availability
+                    preview_url = item_data.get('preview_url')
                     tree_iid = item_data.get('tree_iid', item_data.get('id', ''))
-                    tree.insert("", "end", iid=tree_iid, values=values)
+                    is_playing = _currently_playing_preview_iid == tree_iid
+                    
+                    # Logic matched from display_results for lazy loading support
+                    platform_str = item_data.get('platform', 'Unknown')
+                    search_type_str = item_data.get('type', 'track')
+                    is_track_search = search_type_str.lower() == "track"
+                    can_lazy_load_preview = (platform_str.lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal')) and is_track_search
+                    is_youtube_track = (platform_str.lower() == 'youtube') and is_track_search
+                    
+                    if preview_url or can_lazy_load_preview or is_youtube_track:
+                        preview_icon = PREVIEW_STOP_ICON if is_playing else PREVIEW_PLAY_ICON
+                    else:
+                        preview_icon = PREVIEW_UNAVAILABLE
+                    values = ( preview_icon, item_data.get('number', ''), item_data.get('title', ''), item_data.get('artist', ''), item_data.get('duration', ''), item_data.get('year', ''), item_data.get('additional', ''), item_data.get('explicit', ''), item_data.get('id', '') )
+                    # Determine tags - red for playing items
+                    tags = ("playing",) if is_playing and preview_url else ()
+                    # Use cached cover image if available
+                    # Check if we should use hover version (if currently hovering this item)
+                    global _cover_hover_iid
+                    cover_image = None
+                    if _cover_hover_iid == tree_iid:
+                        cover_image = _cover_hover_cache.get(tree_iid)
+                    if not cover_image:
+                        cover_image = _cover_image_cache.get(tree_iid)
+                    
+                    if cover_image:
+                        tree.insert("", "end", iid=tree_iid, values=values, image=cover_image, tags=tags)
+                    else:
+                        tree.insert("", "end", iid=tree_iid, values=values, tags=tags)
                 else: break
             except NameError: break
             except tkinter.TclError as e: print(f"TclError repopulating sorted treeview (widget destroyed?): {e}"); break
             except Exception as e: print(f"Error repopulating sorted treeview: {e}")
-        defined_columns = ("#", "Title", "Artist", "Duration", "Year", "Additional", "Explicit", "ID")
+        defined_columns = ("Preview", "#", "Title", "Artist", "Duration", "Year", "Additional", "Explicit", "ID")
         for col in defined_columns:
             if 'tree' in globals() and tree and tree.winfo_exists():
                 try:
@@ -7909,7 +10749,8 @@ if __name__ == "__main__":
         clear_output_button = customtkinter.CTkButton(bottom_frame, text="Clear Output", width=100, height=30, command=clear_output_log, fg_color="#343638", hover_color="#1F6AA5"); clear_output_button.grid(row=0, column=1, sticky="e", padx=(5, 10))
         stop_button = customtkinter.CTkButton(bottom_frame, text="Stop", width=100, height=30, command=stop_download, fg_color="#343638", hover_color="#1F6AA5", state=tkinter.DISABLED); stop_button.grid(row=0, column=2, sticky="e", padx=(0, 5))
         search_tab = tabview.add("Search"); search_main_frame = customtkinter.CTkFrame(search_tab, fg_color="transparent"); search_main_frame.pack(fill="both", expand=True, padx=9, pady=(10,0))
-        controls_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); controls_frame.pack(fill="x", pady=(5, 10)); controls_frame.grid_columnconfigure(4, weight=1)
+        # Add extra top padding to align with download tab (which has 2 input rows)
+        controls_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); controls_frame.pack(fill="x", pady=(5, 20)); controls_frame.grid_columnconfigure(4, weight=1)
         customtkinter.CTkLabel(controls_frame, text="Platform").grid(row=0, column=0, padx=(5,1), sticky="w")
         search_tab_initial_platforms = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
         platform_var = tkinter.StringVar(value=search_tab_initial_platforms[0] if search_tab_initial_platforms else ""); 
@@ -7928,8 +10769,25 @@ if __name__ == "__main__":
         button_search_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent"); button_search_frame.grid(row=0, column=5, padx=(5,0))
         search_button = customtkinter.CTkButton(button_search_frame, text="Search", command=start_search, width=100, height=30, fg_color="#343638", hover_color="#1F6AA5", state="disabled"); search_button.pack(side="left", padx=(0, 6))
         update_search_types(platform_var.get())
-        results_outer_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); results_outer_frame.pack(fill="both", expand=True, pady=(8,8))
-        results_label = customtkinter.CTkLabel(results_outer_frame, text="RESULTS", text_color="#898c8d", font=("Segoe UI", 11)); results_label.pack(anchor="w", padx=6, pady=0)
+        # Pack selection frame FIRST (at bottom) so it reserves space before the expanding results frame
+        selection_label_var = tkinter.StringVar(value="Selection: None")
+        selection_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); selection_frame.pack(fill="x", pady=(5, 10), side="bottom")
+        search_progress_bar = customtkinter.CTkProgressBar(selection_frame); search_progress_bar.pack(side="left", fill="x", expand=True, padx=(6, 5)); search_progress_bar.set(0)
+        selection_controls_frame = customtkinter.CTkFrame(selection_frame, fg_color="transparent"); selection_controls_frame.pack(side="right")
+        customtkinter.CTkLabel(selection_controls_frame, text="Selection").pack(side="left", padx=(8, 6)); selection_var = tkinter.StringVar(); selection_entry = customtkinter.CTkEntry(selection_controls_frame, textvariable=selection_var, width=35, height=30); selection_entry.pack(side="left", padx=4); selection_var.trace_add("write", on_selection_change)
+        selection_entry.bind("<FocusIn>", lambda e, w=selection_entry: handle_focus_in(w))
+        selection_entry.bind("<FocusOut>", lambda e, w=selection_entry: handle_focus_out(w))
+        search_download_button = customtkinter.CTkButton(selection_controls_frame, text="Download", command=download_selected, width=100, height=30, state="disabled", fg_color="#343638", hover_color="#1F6AA5"); search_download_button.pack(side="left", padx=(5, 6))
+        # Now pack the results frame which will expand to fill remaining space
+        results_outer_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); results_outer_frame.pack(fill="both", expand=True, pady=(8,15))
+        # Results header with RESULTS label and volume control
+        results_header_frame = customtkinter.CTkFrame(results_outer_frame, fg_color="transparent"); results_header_frame.pack(fill="x", padx=0, pady=0)
+        results_label = customtkinter.CTkLabel(results_header_frame, text="RESULTS", text_color="#898c8d", font=("Segoe UI", 11)); results_label.pack(side="left", anchor="w", padx=6, pady=0)
+        # Volume control frame (hidden by default, shown when audio plays)
+        _volume_frame = customtkinter.CTkFrame(results_header_frame, fg_color="transparent")
+        # Don't pack it yet - it will be shown when audio plays
+        _volume_label = customtkinter.CTkLabel(_volume_frame, text="VOLUME", text_color="#898c8d", font=("Segoe UI", 10)); _volume_label.pack(side="left", padx=(0, 8))
+        _volume_slider = customtkinter.CTkSlider(_volume_frame, from_=0, to=100, number_of_steps=100, width=120, height=16, command=on_volume_change); _volume_slider.set(_current_volume); _volume_slider.pack(side="left", padx=(0, 0))
         treeview_container = customtkinter.CTkFrame(results_outer_frame, fg_color="#1D1E1E"); treeview_container.pack(fill="both", expand=True, padx=6, pady=(3,0)); treeview_container.grid_columnconfigure(0, weight=1); treeview_container.grid_rowconfigure(0, weight=1); treeview_container.grid_columnconfigure(1, weight=0)
         style = ttk.Style();
         try: style.theme_use('clam')
@@ -7955,7 +10813,7 @@ if __name__ == "__main__":
             else:
                 row_height_multiplier = 2.9
 
-            scaled_row_height = max(20, round(scaled_font_size * row_height_multiplier))
+            scaled_row_height = max(COVER_SIZE + 4, round(scaled_font_size * row_height_multiplier))  # Ensure row fits cover image
             tree_font_family = "Segoe UI"
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print(f"[Style Windows] Using font: {tree_font_family} {scaled_font_size}pt (Scaled from {base_font_size}pt), Row height: {scaled_row_height}px")
@@ -7963,7 +10821,7 @@ if __name__ == "__main__":
 
         else:
             scaled_font_size = 13
-            scaled_row_height = max(20, round(scaled_font_size * 2.2))
+            scaled_row_height = max(COVER_SIZE + 4, round(scaled_font_size * 2.2))  # Ensure row fits cover image
             tree_font_family = None
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print(f"[Style Non-Windows] Using system default font, Row height: {scaled_row_height}px")
@@ -7987,15 +10845,43 @@ if __name__ == "__main__":
         if heading_font_config:
             style.configure("Custom.Treeview.Heading", font=heading_font_config)
 
+        # Custom layout to minimize all padding
         style.layout("Custom.Treeview", [('Treeview.treearea', {'sticky': 'nswe'})])
+        style.layout("Custom.Treeview.Item", [
+            ('Treeitem.padding', {'sticky': 'nswe', 'children': [
+                ('Treeitem.image', {'side': 'left', 'sticky': ''}),
+                ('Treeitem.text', {'side': 'left', 'sticky': ''})
+            ]})
+        ])
+        # Minimize indent/padding for cover column
+        style.configure("Custom.Treeview", indent=0, padding=0)
+        style.configure("Custom.Treeview.Item", padding=0)
         style.map("Custom.Treeview", background=[('selected', tree_selected_bg)], foreground=[('selected', tree_selected_fg)])
         style.map("Custom.Treeview.Heading", background=[('active', "#1F6AA5"), ('!active', tree_header_bg)], foreground=[('active', tree_selected_fg), ('!active', tree_header_fg)])
-        columns = ("#", "Title", "Artist", "Duration", "Year", "Additional", "Explicit", "ID"); tree = ttk.Treeview(treeview_container, columns=columns, show="headings", selectmode="extended", style="Custom.Treeview"); tree.grid(row=0, column=0, sticky="nsew", padx=(5,0), pady=3)
-        col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Title": {"text": "Title", "width": 300, "anchor": "w"}, "Artist": {"text": "Artist", "width": 200, "anchor": "w"}, "Duration": {"text": "Duration", "width": 80, "anchor": "center"}, "Year": {"text": "Year", "width": 60, "anchor": "center"}, "Additional": {"text": "Additional", "width": 120, "anchor": "w"}, "Explicit": {"text": "E", "width": 30, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
-        for col in columns: cfg = col_configs[col]; tree.heading(col, text=cfg["text"], anchor=cfg["anchor"], command=lambda c=col: sort_results(c)); tree.column(col, width=cfg["width"], anchor=cfg["anchor"], stretch=False)
+        columns = ("Preview", "#", "Title", "Artist", "Duration", "Year", "Additional", "Explicit", "ID"); tree = ttk.Treeview(treeview_container, columns=columns, show="tree headings", selectmode="extended", style="Custom.Treeview"); tree.grid(row=0, column=0, sticky="nsew", padx=(4,0), pady=3)
+        # Configure tree column (#0) for cover images (tight fit, left-aligned)
+        tree.column("#0", width=COVER_SIZE + 6, minwidth=COVER_SIZE + 6, stretch=False, anchor="w")
+        tree.heading("#0", text="", anchor="center")
+        col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Preview": {"text": "▶", "width": 50, "anchor": "center"}, "Title": {"text": "Title", "width": 300, "anchor": "w"}, "Artist": {"text": "Artist", "width": 200, "anchor": "w"}, "Duration": {"text": "Duration", "width": 80, "anchor": "center"}, "Year": {"text": "Year", "width": 60, "anchor": "center"}, "Additional": {"text": "Additional", "width": 120, "anchor": "w"}, "Explicit": {"text": "E", "width": 30, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
+        for col in columns: cfg = col_configs[col]; tree.heading(col, text=cfg["text"], anchor=cfg["anchor"], command=lambda c=col: sort_results(c) if c not in ("Preview",) else None); tree.column(col, width=cfg["width"], anchor=cfg["anchor"], stretch=False)
         tree.column("Title", stretch=True); tree.column("Artist", stretch=True)
-        scrollbar = customtkinter.CTkScrollbar(treeview_container, command=tree.yview); tree.configure(yscrollcommand=scrollbar.set)
+        # Custom scroll handler to trigger lazy loading
+        def tree_scroll_handler(*args):
+            tree.yview(*args)
+            on_tree_scroll()  # Trigger lazy loading
+        scrollbar = customtkinter.CTkScrollbar(treeview_container, command=tree_scroll_handler); tree.configure(yscrollcommand=scrollbar.set)
         tree.bind("<<TreeviewSelect>>", on_tree_select); tree.bind("<Configure>", lambda event: _check_and_toggle_scrollbar(tree, scrollbar) if 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists() else None)
+        # Bind mousewheel for lazy loading on scroll
+        tree.bind("<MouseWheel>", lambda e: on_tree_scroll())  # Windows
+        tree.bind("<Button-4>", lambda e: on_tree_scroll())    # Linux scroll up
+        tree.bind("<Button-5>", lambda e: on_tree_scroll())    # Linux scroll down
+        # Setup preview button tags for colored icons
+        setup_preview_tags(tree)
+        # Preview column click handler for audio playback
+        tree.bind("<Button-1>", lambda event: on_tree_click(event), add="+")
+        # Preview column hover handlers for cursor change
+        tree.bind("<Motion>", on_tree_motion)
+        tree.bind("<Leave>", on_tree_leave)
         # Right-click context menu bindings for search results
         tree.bind("<Button-3>", show_search_context_menu)  # Windows/Linux right-click
         tree.bind("<Button-2>", show_search_context_menu)  # macOS right-click (some configs)
@@ -8004,6 +10890,12 @@ if __name__ == "__main__":
         if platform.system() == "Darwin":
             def handle_macos_click(event):
                 """Handle macOS-specific multi-selection with Command/Shift keys."""
+                # First, check if this is a click on the Preview column or Cover column
+                column = tree.identify_column(event.x)
+                if column == "#1" or column == "#0":  # Preview column or Cover column
+                    on_tree_click(event)
+                    return "break"
+                
                 item = tree.identify_row(event.y)
                 if not item:
                     return
@@ -8032,14 +10924,6 @@ if __name__ == "__main__":
                 tree.selection_set(item)
                 return "break"
             tree.bind("<Button-1>", handle_macos_click)
-        selection_label_var = tkinter.StringVar(value="Selection: None")
-        selection_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); selection_frame.pack(fill="x", pady=(12, 10), side="bottom")
-        search_progress_bar = customtkinter.CTkProgressBar(selection_frame); search_progress_bar.pack(side="left", fill="x", expand=True, padx=(6, 5)); search_progress_bar.set(0)
-        selection_controls_frame = customtkinter.CTkFrame(selection_frame, fg_color="transparent"); selection_controls_frame.pack(side="right")
-        customtkinter.CTkLabel(selection_controls_frame, text="Selection").pack(side="left", padx=(8, 6)); selection_var = tkinter.StringVar(); selection_entry = customtkinter.CTkEntry(selection_controls_frame, textvariable=selection_var, width=35, height=30); selection_entry.pack(side="left", padx=4); selection_var.trace_add("write", on_selection_change)
-        selection_entry.bind("<FocusIn>", lambda e, w=selection_entry: handle_focus_in(w))
-        selection_entry.bind("<FocusOut>", lambda e, w=selection_entry: handle_focus_out(w))
-        search_download_button = customtkinter.CTkButton(selection_controls_frame, text="Download", command=download_selected, width=100, height=30, state="disabled", fg_color="#343638", hover_color="#1F6AA5"); search_download_button.pack(side="left", padx=(5, 6))
         settings_tab = tabview.add("Settings")
         settings_tabview = customtkinter.CTkTabview(master=settings_tab, command=_handle_settings_tab_change)
         settings_tabview.pack(expand=True, fill="both", padx=5, pady=5)
