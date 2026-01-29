@@ -6967,11 +6967,7 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
         client_id = (spotify_creds.get("client_id") or "").strip()
         client_secret = (spotify_creds.get("client_secret") or "").strip()
         if not username or not client_id or not client_secret:
-            missing = []
-            if not username: missing.append("username")
-            if not client_id: missing.append("client ID")
-            if not client_secret: missing.append("client secret")
-            show_centered_messagebox("Spotify credentials required", "Spotify requires your username, client ID, and client secret to be filled in before searching or downloading.\n\nMissing: " + ", ".join(missing) + ".\n\nPlease set them in Settings.", dialog_type="warning")
+            show_centered_messagebox("Spotify credentials required", "Spotify credentials are required. Please enter username, client ID and secret in the settings.", dialog_type="warning")
             return False
 
     try:
@@ -7425,11 +7421,7 @@ def start_search():
             client_id = (spotify_creds.get("client_id") or "").strip()
             client_secret = (spotify_creds.get("client_secret") or "").strip()
             if not username or not client_id or not client_secret:
-                missing = []
-                if not username: missing.append("username")
-                if not client_id: missing.append("client ID")
-                if not client_secret: missing.append("client secret")
-                show_centered_messagebox("Spotify credentials required", "Spotify requires your username, client ID, and client secret to be filled in before searching or downloading.\n\nMissing: " + ", ".join(missing) + ".\n\nPlease set them in Settings.", dialog_type="warning")
+                show_centered_messagebox("Spotify credentials required", "Spotify credentials are required. Please enter username, client ID and secret in the settings.", dialog_type="warning")
                 return
 
         clear_search_ui()
