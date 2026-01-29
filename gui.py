@@ -9165,7 +9165,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
             subtitle_label = customtkinter.CTkLabel(
                 header_text_frame, 
-                text="(Optional: for age-restricted content)", 
+                text="(Recommended: to prevent 403 errors / for age-restricted content)", 
                 font=("Segoe UI", 12), 
                 text_color=WHITE_TEXT_COLOR
             )
