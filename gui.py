@@ -8966,7 +8966,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 left_header, 
                 text="How to set up", 
                 font=("Segoe UI", 16, "bold"), 
-                text_color=WHITE_TEXT_COLOR
+                text_color="#DCE4EE"
             )
             title_label.pack(side="left")
             
@@ -9066,7 +9066,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 left_header, 
                 text="How to set up", 
                 font=("Segoe UI", 16, "bold"), 
-                text_color=WHITE_TEXT_COLOR
+                text_color="#DCE4EE"
             )
             title_label.pack(side="left")
             
@@ -9159,7 +9159,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 header_text_frame, 
                 text="How to set up", 
                 font=("Segoe UI", 16, "bold"), 
-                text_color=WHITE_TEXT_COLOR
+                text_color="#DCE4EE"
             )
             title_label.pack(anchor="w")
 
@@ -9167,7 +9167,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 header_text_frame, 
                 text="(Recommended: to prevent 403 errors / for age-restricted content)", 
                 font=("Segoe UI", 12), 
-                text_color=WHITE_TEXT_COLOR
+                text_color="#DCE4EE"
             )
             subtitle_label.pack(anchor="w")
 
@@ -9363,7 +9363,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 left_header, 
                 text="How to set up", 
                 font=("Segoe UI", 16, "bold"), 
-                text_color=WHITE_TEXT_COLOR
+                text_color="#DCE4EE"
             )
             title_label.pack(side="left")
             
@@ -9483,7 +9483,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 left_header, 
                 text="How to set up", 
                 font=("Segoe UI", 16, "bold"), 
-                text_color=WHITE_TEXT_COLOR
+                text_color="#DCE4EE"
             )
             title_label.pack(side="left")
             
@@ -9584,7 +9584,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 left_header, 
                 text="How to set up", 
                 font=("Segoe UI", 16, "bold"), 
-                text_color=WHITE_TEXT_COLOR
+                text_color="#DCE4EE"
             )
             title_label.pack(side="left")
             
@@ -9686,7 +9686,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 left_header, 
                 text="How to set up", 
                 font=("Segoe UI", 16, "bold"), 
-                text_color="#FFFFFF"
+                text_color="#DCE4EE"
             )
             title_label.pack(side="left")
             
@@ -9854,7 +9854,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 left_header, 
                 text="How to set up", 
                 font=("Segoe UI", 16, "bold"), 
-                text_color="#FFFFFF"
+                text_color="#DCE4EE"
             )
             title_label.pack(side="left")
             
