@@ -2502,7 +2502,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
         def _load_fullsize_image():
             nonlocal fullsize_url  # Allow modification of outer scope variable
             try:
-                from PIL import Image, ImageTk
+                from PIL import Image
                 import io
                 
                 # Debug output
@@ -2581,22 +2581,27 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                     
                     pil_image_ref['image'] = img  # Store display image for copying
                     
-                    # Convert to PhotoImage
-                    photo = ImageTk.PhotoImage(img)
-                    
-                    # Update UI on main thread
+                    # Update UI on main thread (CTkImage must be created on main thread)
                     def _update_ui():
                         try:
                             if popup.winfo_exists():
                                 loading_label.destroy()
                                 
-                                # Create image label
+                                disp = pil_image_ref.get('image')
+                                if not disp:
+                                    return
+                                # CTkImage requires PIL Image objects (not path); created on main thread for HighDPI
+                                ctk_img = customtkinter.CTkImage(
+                                    light_image=disp,
+                                    dark_image=disp,
+                                    size=(disp.width, disp.height)
+                                )
                                 img_label = customtkinter.CTkLabel(
                                     image_frame,
-                                    image=photo,
+                                    image=ctk_img,
                                     text=""
                                 )
-                                img_label.image = photo  # Keep reference
+                                img_label.image = ctk_img  # Keep reference
                                 img_label.pack(expand=True)
                                 
                                 # Add right-click context menu to image label
@@ -2677,8 +2682,9 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     img_label.bind("<Button-2>", _show_image_context_menu)  # macOS right-click
                                 
                                 # Update window size to fit image and keep it centered (same DPI logic as main window)
-                                img_width = photo.width()
-                                img_height = photo.height()
+                                disp = pil_image_ref.get('image')
+                                img_width = disp.width if disp else 500
+                                img_height = disp.height if disp else 500
                                 new_width = img_width + 40
                                 new_height = img_height + 100
                                 popup.geometry(f"{new_width}x{new_height}")
