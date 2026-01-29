@@ -2647,7 +2647,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     copy_btn.pack(fill="x", padx=2, pady=1)
                                     
                                     # Save as... button
-                                    save_icon = _create_save_icon(size=(14, 14), color="#AAAAAA")
+                                    save_icon = _create_save_as_icon(size=(14, 14), color="#AAAAAA")
                                     save_btn = customtkinter.CTkButton(
                                         menu_frame,
                                         text="Save as...",
@@ -7907,6 +7907,31 @@ def _create_save_icon(size=(16, 16), color="#AAAAAA"):
     draw.rectangle([hole_x1, hole_y1, hole_x2, hole_y2], fill=color, outline=color)
     
     return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+
+
+def _create_save_as_icon(size=(16, 16), color="#AAAAAA"):
+    """Creates a save-as icon (floppy disk with pencil overlay)."""
+    buf = (16, 16)
+    image = Image.new("RGBA", buf, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    stroke_width = 1
+
+    # Floppy disk
+    draw.rectangle([2, 5, 14, 13], outline=color, width=stroke_width)
+    draw.rectangle([3, 2, 13, 5], outline=color, width=stroke_width)
+    draw.rectangle([6, 11, 10, 12], outline=color, width=stroke_width)
+    draw.rectangle([7, 7, 9, 9], fill=color, outline=color)
+
+    # Pencil overlay (diagonal, lower-left to upper-right, tip at top-right)
+    draw.line([(5, 12), (12, 5)], fill=color, width=stroke_width)
+    draw.line([(6, 11), (13, 4)], fill=color, width=stroke_width)
+    draw.line([(5, 12), (6, 11)], fill=color, width=stroke_width)
+    draw.line([(12, 5), (13, 4)], fill=color, width=stroke_width)
+
+    if size != buf:
+        image = image.resize(size, Image.Resampling.NEAREST)
+    return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+
 
 def _create_external_link_icon(size=(16, 16), color="#AAAAAA"):
     """Creates an external link icon (square with open corner and arrow pointing out)."""
