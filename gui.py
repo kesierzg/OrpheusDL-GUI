@@ -6967,7 +6967,7 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
         client_id = (spotify_creds.get("client_id") or "").strip()
         client_secret = (spotify_creds.get("client_secret") or "").strip()
         if not username or not client_id or not client_secret:
-            show_centered_messagebox("Spotify credentials required", "Spotify credentials are required. Please enter username, client ID and secret in the settings.", dialog_type="warning")
+            show_centered_messagebox("Search Error", "Error during search: spotify -> Spotify credentials are required. Please fill in your username, client ID and secret in the settings.", dialog_type="warning")
             return False
 
     try:
@@ -7421,7 +7421,7 @@ def start_search():
             client_id = (spotify_creds.get("client_id") or "").strip()
             client_secret = (spotify_creds.get("client_secret") or "").strip()
             if not username or not client_id or not client_secret:
-                show_centered_messagebox("Spotify credentials required", "Spotify credentials are required. Please enter username, client ID and secret in the settings.", dialog_type="warning")
+                show_centered_messagebox("Search Error", "Error during search: spotify -> Spotify credentials are required. Please fill in your username, client ID and secret in the settings.", dialog_type="warning")
                 return
 
         clear_search_ui()
