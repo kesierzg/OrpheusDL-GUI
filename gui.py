@@ -2351,16 +2351,10 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
         popup.transient(app)
         popup.resizable(True, True)
         
-        # Calculate center position immediately
+        # Set initial size; center after UI is built and laid out
         initial_width = 500
         initial_height = 500
-        screen_width = popup.winfo_screenwidth()
-        screen_height = popup.winfo_screenheight()
-        x = (screen_width // 2) - (initial_width // 2)
-        y = (screen_height // 2) - (initial_height // 2)
-        
-        # Set initial size and center position (will be adjusted based on image)
-        popup.geometry(f"{initial_width}x{initial_height}+{x}+{y}")
+        popup.geometry(f"{initial_width}x{initial_height}")
         
         # Create a frame to hold the image
         image_frame = customtkinter.CTkFrame(popup, fg_color="#1D1E1E")
@@ -2385,6 +2379,22 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
             text_color="#AAAAAA"
         )
         info_label.pack(pady=(0, 10))
+        
+        # Center on screen (same logic as main window for scaled Windows / DPI)
+        popup.update()
+        scaling = popup._get_window_scaling()
+        screen_width = popup.winfo_screenwidth()
+        screen_height = popup.winfo_screenheight()
+        actual_width = popup.winfo_width()
+        actual_height = popup.winfo_height()
+        x_phys = (screen_width - actual_width) // 2
+        y_phys = (screen_height - actual_height) // 2
+        if platform.system() == "Windows":
+            popup.geometry(f"+{x_phys}+{y_phys}")
+        else:
+            x_logical = int(x_phys / scaling)
+            y_logical = int(y_phys / scaling)
+            popup.geometry(f"+{x_logical}+{y_logical}")
         
         # Store PIL Image for copy/save operations
         pil_image_ref = {'image': None, 'original_image': None}
@@ -2666,21 +2676,26 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                 if platform.system() == "Darwin":
                                     img_label.bind("<Button-2>", _show_image_context_menu)  # macOS right-click
                                 
-                                # Update window size to fit image and keep it centered
+                                # Update window size to fit image and keep it centered (same DPI logic as main window)
                                 img_width = photo.width()
                                 img_height = photo.height()
                                 new_width = img_width + 40
                                 new_height = img_height + 100
-                                
-                                # Calculate center position with new size
+                                popup.geometry(f"{new_width}x{new_height}")
                                 popup.update_idletasks()
+                                scaling = popup._get_window_scaling()
                                 screen_width = popup.winfo_screenwidth()
                                 screen_height = popup.winfo_screenheight()
-                                x = (screen_width // 2) - (new_width // 2)
-                                y = (screen_height // 2) - (new_height // 2)
-                                
-                                # Set size and position in one call to avoid repositioning
-                                popup.geometry(f"{new_width}x{new_height}+{x}+{y}")
+                                actual_width = popup.winfo_width()
+                                actual_height = popup.winfo_height()
+                                x_phys = (screen_width - actual_width) // 2
+                                y_phys = (screen_height - actual_height) // 2
+                                if platform.system() == "Windows":
+                                    popup.geometry(f"+{x_phys}+{y_phys}")
+                                else:
+                                    x_logical = int(x_phys / scaling)
+                                    y_logical = int(y_phys / scaling)
+                                    popup.geometry(f"+{x_logical}+{y_logical}")
                         except Exception as e:
                             print(f"Error updating cover popup UI: {e}")
                     
