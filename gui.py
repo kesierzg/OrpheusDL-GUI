@@ -6959,7 +6959,21 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
     except Exception as parse_e:
         show_centered_messagebox("Input Error", f"Could not process input: {url_to_download}\nError: {parse_e}\nPlease enter a valid web URL or .txt file path.", dialog_type="error")
         return False
-    
+
+    # Spotify: require username, client ID, and client secret before download
+    if 'spotify.com' in url_to_download:
+        spotify_creds = (current_settings.get("credentials") or {}).get("Spotify") or {}
+        username = (spotify_creds.get("username") or "").strip()
+        client_id = (spotify_creds.get("client_id") or "").strip()
+        client_secret = (spotify_creds.get("client_secret") or "").strip()
+        if not username or not client_id or not client_secret:
+            missing = []
+            if not username: missing.append("username")
+            if not client_id: missing.append("client ID")
+            if not client_secret: missing.append("client secret")
+            show_centered_messagebox("Spotify credentials required", "Spotify requires your username, client ID, and client secret to be filled in before searching or downloading.\n\nMissing: " + ", ".join(missing) + ".\n\nPlease set them in Settings.", dialog_type="warning")
+            return False
+
     try:
         set_ui_state_downloading(True)
         stop_event.clear()
@@ -7404,6 +7418,19 @@ def start_search():
         if not platform_name: show_centered_messagebox("Info", "Please select a platform.", dialog_type="warning"); return
         if not search_type_str: show_centered_messagebox("Info", "Please select a search type.", dialog_type="warning"); return
         if search_process_active: show_centered_messagebox("Busy", "A search is already in progress!", dialog_type="warning"); return
+        # Spotify: require username, client ID, and client secret before search/download
+        if platform_name == "Spotify":
+            spotify_creds = (current_settings.get("credentials") or {}).get("Spotify") or {}
+            username = (spotify_creds.get("username") or "").strip()
+            client_id = (spotify_creds.get("client_id") or "").strip()
+            client_secret = (spotify_creds.get("client_secret") or "").strip()
+            if not username or not client_id or not client_secret:
+                missing = []
+                if not username: missing.append("username")
+                if not client_id: missing.append("client ID")
+                if not client_secret: missing.append("client secret")
+                show_centered_messagebox("Spotify credentials required", "Spotify requires your username, client ID, and client secret to be filled in before searching or downloading.\n\nMissing: " + ", ".join(missing) + ".\n\nPlease set them in Settings.", dialog_type="warning")
+                return
 
         clear_search_ui()
         set_ui_state_searching(True)
