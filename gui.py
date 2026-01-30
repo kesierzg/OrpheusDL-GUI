@@ -742,7 +742,7 @@ COVER_SIZE = 38
 COVER_CORNER_RADIUS = 0  # Radius for rounded corners
 
 # Content width for download log, search results, and platform help sections (kept in sync)
-HELP_CONTENT_WIDTH = 760
+HELP_CONTENT_WIDTH = 920
 
 def round_corners(image, radius):
     """Add rounded corners to an image using a mask."""
@@ -2633,8 +2633,9 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     menu_frame = customtkinter.CTkFrame(context_menu, fg_color="#2B2B2B", corner_radius=5)
                                     menu_frame.pack(fill="both", expand=True, padx=1, pady=1)
                                     
-                                    # Copy Image button
+                                    # Copy Image button (gray → white on hover, same as search context menu)
                                     copy_icon = _create_copy_icon(size=(14, 14), color="#AAAAAA")
+                                    copy_icon_white = _create_copy_icon(size=(14, 14), color="white")
                                     copy_btn = customtkinter.CTkButton(
                                         menu_frame,
                                         text="Copy Image",
@@ -2647,10 +2648,14 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                         width=150,
                                         height=28
                                     )
+                                    copy_btn.image = copy_icon
+                                    copy_btn.hover_image = copy_icon_white
+                                    _setup_hover_icon(copy_btn, copy_icon, copy_icon_white)
                                     copy_btn.pack(fill="x", padx=2, pady=1)
                                     
-                                    # Save as... button
-                                    save_icon = _create_save_as_icon(size=(14, 14), color="#AAAAAA")
+                                    # Save as... button (exact same download icon as search results context menu: default size 16×16; gray → white on hover)
+                                    save_icon = _create_download_icon(color="#AAAAAA")
+                                    save_icon_white = _create_download_icon(color="white")
                                     save_btn = customtkinter.CTkButton(
                                         menu_frame,
                                         text="Save as...",
@@ -2663,6 +2668,9 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                         width=150,
                                         height=28
                                     )
+                                    save_btn.image = save_icon
+                                    save_btn.hover_image = save_icon_white
+                                    _setup_hover_icon(save_btn, save_icon, save_icon_white)
                                     save_btn.pack(fill="x", padx=2, pady=1)
                                     
                                     # Close menu when clicking outside
@@ -9194,7 +9202,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     print(f"Error copying to clipboard: {e}")
             
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
+            help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
             
             # --- Single Column: How to set up ---
@@ -9294,7 +9302,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Add help text for Apple Music module
         if platform_name == "AppleMusic":
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
+            help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
             
             # --- Single Column: How to set up ---
@@ -9386,7 +9394,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Add help text for YouTube module
         if platform_name == "YouTube":
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
+            help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1, uniform="help_cols")
             help_frame.grid_columnconfigure(1, weight=1, uniform="help_cols")
             
@@ -9592,11 +9600,11 @@ def _create_credential_tab_content(platform_name, tab_frame):
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
             deezer_help_row = 6 if platform_name == "Deezer" else len(default_platform_fields)
             if platform_name == "Deezer":
-                help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
+                help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
                 if hasattr(tab_frame, "deezer_chk_frame"):
-                    tab_frame.deezer_chk_frame.pack(fill="x", anchor="w", padx=10, pady=(5, 10))
+                    tab_frame.deezer_chk_frame.pack(fill="x", anchor="w", padx=10, pady=(5, 5))
             else:
-                help_frame.grid(row=deezer_help_row, column=0, columnspan=2, sticky="ew", padx=5, pady=(10, 5))
+                help_frame.grid(row=deezer_help_row, column=0, columnspan=2, sticky="ew", padx=3, pady=(10, 5))
             help_frame.grid_columnconfigure(0, weight=1, uniform="help_cols")
             help_frame.grid_columnconfigure(1, weight=1, uniform="help_cols")
             deezer_use_arl = settings_vars.get("credentials", {}).get("Deezer", {}).get("use_arl")
@@ -9758,11 +9766,11 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     print(f"Error copying to clipboard: {e}")
             
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
+            help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1, uniform="help_cols")
             help_frame.grid_columnconfigure(1, weight=1, uniform="help_cols")
             if hasattr(tab_frame, "qobuz_chk_frame"):
-                tab_frame.qobuz_chk_frame.pack(fill="x", anchor="w", padx=10, pady=(5, 10))
+                tab_frame.qobuz_chk_frame.pack(fill="x", anchor="w", padx=10, pady=(5, 5))
 
             qobuz_use_id = settings_vars.get("credentials", {}).get("Qobuz", {}).get("use_id_token")
             qobuz_use_id = qobuz_use_id.get() if hasattr(qobuz_use_id, "get") else False
@@ -9914,7 +9922,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Add help text for SoundCloud module
         if platform_name == "SoundCloud":
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
+            help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
             
             # --- Single Column: How to set up ---
@@ -10015,7 +10023,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     print(f"Error copying to clipboard: {e}")
             
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
+            help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
             help_frame.grid_columnconfigure(1, weight=1)
             
@@ -10130,7 +10138,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Add help text for Beatport module
         if platform_name == "Beatport":
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
+            help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
             
             # --- Single Column: How to set up ---
@@ -10184,7 +10192,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Add help text for Beatsource module
         if platform_name == "Beatsource":
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
+            help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
             
             # --- Single Column: How to set up ---
@@ -10241,7 +10249,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Ensure help_frame exists (create it if it doesn't, e.g. for Beatport/Beatsource)
         if 'help_frame' not in locals():
              help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-             help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=5, pady=(20, 10))
+             help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=3, pady=(20, 10))
              help_frame.grid_columnconfigure(0, weight=1)
              
              # If we just created it, it's empty. We might want to add a minimal title or just leave it for the button.
@@ -10299,12 +10307,16 @@ def _handle_settings_tab_change():
 
     # Deezer/Qobuz: minimal space; Global: less space above Save; other platform tabs: match Download tab (20px above)
     if 'settings_bottom_frame' in globals() and settings_bottom_frame and settings_bottom_frame.winfo_exists():
+        parent = settings_bottom_frame.master  # settings_tab
         if selected_tab_name in ("Deezer", "Qobuz"):
             pady_top = (0, 5)
+            parent.grid_rowconfigure(1, weight=0, minsize=35)  # tighter row so no visible gap above Save
         elif selected_tab_name == "Global":
             pady_top = (5, 5)
+            parent.grid_rowconfigure(1, weight=0, minsize=40)
         else:
-            pady_top = (8, 5)
+            pady_top = (9, 5)
+            parent.grid_rowconfigure(1, weight=0, minsize=40)
         settings_bottom_frame.grid_configure(pady=pady_top)
 
 def update_search_platform_dropdown():
