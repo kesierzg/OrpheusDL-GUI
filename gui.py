@@ -2785,20 +2785,27 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                                 pass
                                     
                                     # Ensure hand cursor when hovering over menu (same as search context menu; needed for overrideredirect toplevel on macOS)
+                                    def _set_menu_cursor(cursor_val):
+                                        try:
+                                            context_menu.configure(cursor=cursor_val)
+                                            menu_frame.configure(cursor=cursor_val)
+                                        except Exception:
+                                            pass
+                                        try:
+                                            # Also set on underlying Tk window (macOS overrideredirect toplevel often ignores CTk configure)
+                                            context_menu.tk.call(context_menu._w, "configure", "-cursor", cursor_val)
+                                        except Exception:
+                                            pass
                                     def _menu_enter(_e):
-                                        try:
-                                            context_menu.configure(cursor=HAND_CURSOR)
-                                            menu_frame.configure(cursor=HAND_CURSOR)
-                                        except Exception:
-                                            pass
+                                        _set_menu_cursor(HAND_CURSOR)
                                     def _menu_leave(_e):
-                                        try:
-                                            context_menu.configure(cursor="")
-                                            menu_frame.configure(cursor="")
-                                        except Exception:
-                                            pass
+                                        _set_menu_cursor("")
                                     menu_frame.bind("<Enter>", _menu_enter)
                                     menu_frame.bind("<Leave>", _menu_leave)
+                                    copy_btn.bind("<Enter>", _menu_enter)
+                                    copy_btn.bind("<Leave>", _menu_leave)
+                                    save_btn.bind("<Enter>", _menu_enter)
+                                    save_btn.bind("<Leave>", _menu_leave)
                                     # Bind close events
                                     context_menu.bind("<FocusOut>", lambda e: _close_menu())
                                     popup.bind("<Button-1>", lambda e: _close_menu(), add="+")
@@ -10192,7 +10199,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             step2_line2 = customtkinter.CTkFrame(step2_text_frame, fg_color="transparent")
             step2_line2.pack(anchor="w")
-            customtkinter.CTkLabel(step2_line2, text="created, when signed up to  ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step2_line2, text="created, when signed up to ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
             
             tidal_link = customtkinter.CTkLabel(step2_line2, text="Tidal", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor=HAND_CURSOR)
             tidal_link.pack(side="left", padx=(2, 0))
