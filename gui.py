@@ -2724,9 +2724,6 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     # Same frame style as search/copy-paste context menu: border_width=2, border_color="#343638", fg_color="#343638"
                                     menu_frame = customtkinter.CTkFrame(context_menu, border_width=2, border_color="#343638", fg_color="#343638")
                                     menu_frame.pack(fill="both", expand=True, padx=1, pady=1)
-                                    # Same hand cursor as search results context menu (macOS pointinghand / Windows hand2)
-                                    context_menu.configure(cursor=HAND_CURSOR)
-                                    menu_frame.configure(cursor=HAND_CURSOR)
                                     button_color = "#343638"
                                     
                                     # Copy Image button (same style/size/font as search context menu: width=80, height=24, font Segoe UI 11, hover #1F6AA5)
@@ -2784,28 +2781,6 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                             except:
                                                 pass
                                     
-                                    # Ensure hand cursor when hovering over menu (same as search context menu; needed for overrideredirect toplevel on macOS)
-                                    def _set_menu_cursor(cursor_val):
-                                        try:
-                                            context_menu.configure(cursor=cursor_val)
-                                            menu_frame.configure(cursor=cursor_val)
-                                        except Exception:
-                                            pass
-                                        try:
-                                            # Also set on underlying Tk window (macOS overrideredirect toplevel often ignores CTk configure)
-                                            context_menu.tk.call(context_menu._w, "configure", "-cursor", cursor_val)
-                                        except Exception:
-                                            pass
-                                    def _menu_enter(_e):
-                                        _set_menu_cursor(HAND_CURSOR)
-                                    def _menu_leave(_e):
-                                        _set_menu_cursor("")
-                                    menu_frame.bind("<Enter>", _menu_enter)
-                                    menu_frame.bind("<Leave>", _menu_leave)
-                                    copy_btn.bind("<Enter>", _menu_enter)
-                                    copy_btn.bind("<Leave>", _menu_leave)
-                                    save_btn.bind("<Enter>", _menu_enter)
-                                    save_btn.bind("<Leave>", _menu_leave)
                                     # Bind close events
                                     context_menu.bind("<FocusOut>", lambda e: _close_menu())
                                     popup.bind("<Button-1>", lambda e: _close_menu(), add="+")
@@ -9768,9 +9743,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
-            customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to  ", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             deezer_link = customtkinter.CTkLabel(step1_text_frame, text="Deezer", font=("Consolas", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
-            deezer_link.pack(side="left", padx=(2, 0))
+            deezer_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
             deezer_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.deezer.com"))
             deezer_link.bind("<Enter>", lambda e: deezer_link.configure(text_color=LINK_HOVER_COLOR))
             deezer_link.bind("<Leave>", lambda e: deezer_link.configure(text_color=LINK_COLOR))
@@ -9933,9 +9908,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
-            customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to  ", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             qobuz_link = customtkinter.CTkLabel(step1_text_frame, text="Qobuz", font=("Consolas", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
-            qobuz_link.pack(side="left", padx=(2, 0))
+            qobuz_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
             qobuz_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.qobuz.com"))
             qobuz_link.bind("<Enter>", lambda e: qobuz_link.configure(text_color=LINK_HOVER_COLOR))
             qobuz_link.bind("<Leave>", lambda e: qobuz_link.configure(text_color=LINK_COLOR))
@@ -10199,10 +10174,10 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             step2_line2 = customtkinter.CTkFrame(step2_text_frame, fg_color="transparent")
             step2_line2.pack(anchor="w")
-            customtkinter.CTkLabel(step2_line2, text="created, when signed up to ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step2_line2, text="created, when signed up to " + ("" if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="gray").pack(side="left")
             
             tidal_link = customtkinter.CTkLabel(step2_line2, text="Tidal", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor=HAND_CURSOR)
-            tidal_link.pack(side="left", padx=(2, 0))
+            tidal_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
             tidal_link.bind("<Button-1>", lambda e: webbrowser.open("https://tidal.com"))
             tidal_link.bind("<Enter>", lambda e: tidal_link.configure(text_color="#4A9EFF"))
             tidal_link.bind("<Leave>", lambda e: tidal_link.configure(text_color="#1F6AA5"))
@@ -10302,10 +10277,10 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to  ", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             
             beatport_link = customtkinter.CTkLabel(step1_text_frame, text="Beatport", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor=HAND_CURSOR)
-            beatport_link.pack(side="left", padx=(2, 0))
+            beatport_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
             beatport_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.beatport.com"))
             beatport_link.bind("<Enter>", lambda e: beatport_link.configure(text_color="#4A9EFF"))
             beatport_link.bind("<Leave>", lambda e: beatport_link.configure(text_color="#1F6AA5"))
@@ -10356,10 +10331,10 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to  ", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             
             beatsource_link = customtkinter.CTkLabel(step1_text_frame, text="Beatsource", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor=HAND_CURSOR)
-            beatsource_link.pack(side="left", padx=(2, 0))
+            beatsource_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
             beatsource_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.beatsource.com"))
             beatsource_link.bind("<Enter>", lambda e: beatsource_link.configure(text_color="#4A9EFF"))
             beatsource_link.bind("<Leave>", lambda e: beatsource_link.configure(text_color="#1F6AA5"))
