@@ -703,6 +703,7 @@ else:
 _cover_image_cache = {}
 _cover_hover_cache = {}  # Cache for hover (darkened) versions of covers
 _cover_hover_iid = None  # Track which cover is currently being hovered
+_cover_fade_in_progress_count = 0  # Limit concurrent fade-ins to avoid GUI freeze
 _placeholder_cover_image = None
 _currently_playing_preview_iid = None  # Track which row is currently playing
 _preview_hover_iid = None  # Track which row's preview button is being hovered
@@ -740,6 +741,11 @@ _current_volume = 75  # 0-100
 # Cover image size constant
 COVER_SIZE = 38
 COVER_CORNER_RADIUS = 0  # Radius for rounded corners
+# Fade-in when cover appears in search results
+COVER_FADE_IN_STEPS = 5
+COVER_FADE_IN_STEP_MS = 45
+COVER_FADE_MAX_CONCURRENT = 4  # Max fades at once; excess show immediately to avoid GUI freeze
+TREEVIEW_BG_HEX = "#1D1E1E"  # Match Custom.Treeview fieldbackground
 
 # Content width for download log, search results, and platform help sections (kept in sync)
 HELP_CONTENT_WIDTH = 920
@@ -958,6 +964,25 @@ def create_darkened_cover(img, opacity=0.7):
     
     return darkened
 
+def _create_fade_in_frames(pil_img, size, bg_hex=TREEVIEW_BG_HEX):
+    """Create a list of PhotoImages for fade-in (alpha steps from 0.2 to 1.0). pil_img must be RGBA."""
+    from PIL import Image, ImageTk
+    if pil_img.mode != 'RGBA':
+        pil_img = pil_img.convert('RGBA')
+    r, g, b, a = pil_img.split()
+    bg_r = int(bg_hex[1:3], 16)
+    bg_g = int(bg_hex[3:5], 16)
+    bg_b = int(bg_hex[5:7], 16)
+    bg_rgb = Image.new('RGB', (size, size), (bg_r, bg_g, bg_b))
+    frames = []
+    for step_alpha in [0.2, 0.4, 0.6, 0.8, 1.0]:
+        a_scaled = a.point(lambda x: int(x * step_alpha))
+        img_step = Image.merge('RGBA', (r, g, b, a_scaled))
+        frame_rgb = bg_rgb.copy()
+        frame_rgb.paste(img_step, (0, 0), a_scaled)
+        frames.append(ImageTk.PhotoImage(frame_rgb))
+    return frames
+
 def load_cover_from_url(url, size=COVER_SIZE, item_iid=None):
     """
     Loads a cover image from URL asynchronously and updates the treeview.
@@ -1043,20 +1068,43 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None):
                     _cover_image_cache[item_iid] = photo
                     _cover_hover_cache[item_iid] = hover_photo
                 
-                # Update treeview on main thread
-                def _update_tree():
+                # Update treeview on main thread with fade-in (limit concurrent fades to avoid freeze)
+                def _update_tree_with_fade():
                     try:
-                        if 'tree' in globals() and tree and tree.winfo_exists():
-                            if tree.exists(item_iid):
-                                # Only update if not currently hovering this item
-                                global _cover_hover_iid
-                                if _cover_hover_iid != item_iid:
-                                    tree.item(item_iid, image=photo)
-                    except Exception as e:
-                        pass  # Silently fail
+                        global _cover_hover_iid, _cover_fade_in_progress_count
+                        if 'tree' not in globals() or not tree or not tree.winfo_exists() or not item_iid or not tree.exists(item_iid) or _cover_hover_iid == item_iid:
+                            return
+                        if _cover_fade_in_progress_count >= COVER_FADE_MAX_CONCURRENT:
+                            tree.item(item_iid, image=photo)
+                            return
+                        _cover_fade_in_progress_count += 1
+                        try:
+                            frames = _create_fade_in_frames(img, size)
+                        except Exception:
+                            _cover_fade_in_progress_count -= 1
+                            tree.item(item_iid, image=photo)
+                            return
+                        def _run_fade(step=0):
+                            try:
+                                global _cover_fade_in_progress_count
+                                if not tree.winfo_exists() or not tree.exists(item_iid) or _cover_hover_iid == item_iid:
+                                    _cover_fade_in_progress_count -= 1
+                                    return
+                                if step < len(frames):
+                                    tree.item(item_iid, image=frames[step])
+                                    if step < len(frames) - 1:
+                                        app.after(COVER_FADE_IN_STEP_MS, lambda s=step + 1: _run_fade(s))
+                                    else:
+                                        tree.item(item_iid, image=photo)
+                                        _cover_fade_in_progress_count -= 1
+                            except Exception:
+                                _cover_fade_in_progress_count -= 1
+                        _run_fade(0)
+                    except Exception:
+                        pass
                 
                 if 'app' in globals() and app and app.winfo_exists():
-                    app.after(0, _update_tree)
+                    app.after(0, _update_tree_with_fade)
             elif response.status_code == 403:
                 # 403 Forbidden - Tidal is blocking the request
                 # Try retrying with 750x750.jpg as fallback (smaller sizes may not be available)
@@ -1098,20 +1146,43 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None):
                                     _cover_image_cache[item_iid] = photo
                                     _cover_hover_cache[item_iid] = hover_photo
                                 
-                                # Update treeview on main thread
-                                def _update_tree():
+                                # Update treeview on main thread with fade-in (limit concurrent fades to avoid freeze)
+                                def _update_tree_with_fade_fallback():
                                     try:
-                                        if 'tree' in globals() and tree and tree.winfo_exists():
-                                            if tree.exists(item_iid):
-                                                # Only update if not currently hovering this item
-                                                global _cover_hover_iid
-                                                if _cover_hover_iid != item_iid:
-                                                    tree.item(item_iid, image=photo)
-                                    except Exception as e:
-                                        pass  # Silently fail
+                                        global _cover_hover_iid, _cover_fade_in_progress_count
+                                        if 'tree' not in globals() or not tree or not tree.winfo_exists() or not item_iid or not tree.exists(item_iid) or _cover_hover_iid == item_iid:
+                                            return
+                                        if _cover_fade_in_progress_count >= COVER_FADE_MAX_CONCURRENT:
+                                            tree.item(item_iid, image=photo)
+                                            return
+                                        _cover_fade_in_progress_count += 1
+                                        try:
+                                            frames = _create_fade_in_frames(img, size)
+                                        except Exception:
+                                            _cover_fade_in_progress_count -= 1
+                                            tree.item(item_iid, image=photo)
+                                            return
+                                        def _run_fade(step=0):
+                                            try:
+                                                global _cover_fade_in_progress_count
+                                                if not tree.winfo_exists() or not tree.exists(item_iid) or _cover_hover_iid == item_iid:
+                                                    _cover_fade_in_progress_count -= 1
+                                                    return
+                                                if step < len(frames):
+                                                    tree.item(item_iid, image=frames[step])
+                                                    if step < len(frames) - 1:
+                                                        app.after(COVER_FADE_IN_STEP_MS, lambda s=step + 1: _run_fade(s))
+                                                    else:
+                                                        tree.item(item_iid, image=photo)
+                                                        _cover_fade_in_progress_count -= 1
+                                            except Exception:
+                                                _cover_fade_in_progress_count -= 1
+                                        _run_fade(0)
+                                    except Exception:
+                                        pass
                                 
                                 if 'app' in globals() and app and app.winfo_exists():
-                                    app.after(0, _update_tree)
+                                    app.after(0, _update_tree_with_fade_fallback)
                                 return  # Success, exit early
                         except Exception as e:
                             if debug_mode:
@@ -1137,8 +1208,11 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None):
     
     threading.Thread(target=_load, daemon=True).start()
 
+# Number of items below viewport to include for cover loading (fixes last covers not loading when maximized)
+COVER_LOAD_VIEWPORT_BUFFER = 25
+
 def get_visible_tree_items():
-    """Get the list of item IDs currently visible in the treeview."""
+    """Get the list of item IDs currently visible in the treeview, plus a buffer below so the last covers load when maximized."""
     global tree
     visible_items = []
     try:
@@ -1146,22 +1220,32 @@ def get_visible_tree_items():
             return visible_items
         
         # Get all children
-        all_items = tree.get_children()
+        all_items = list(tree.get_children())
         if not all_items:
             return visible_items
         
-        # Get treeview dimensions
-        tree_height = tree.winfo_height()
-        
-        # Check each item's visibility by its bbox
+        # Check each item's visibility by its bbox (bbox can miss bottom rows when window is large)
         for item_iid in all_items:
             try:
                 bbox = tree.bbox(item_iid)
                 if bbox:  # bbox returns empty tuple if not visible
-                    # Item is at least partially visible
                     visible_items.append(item_iid)
             except:
                 pass
+        
+        # Include items just below the viewport so scrolling loads them and last rows aren't missed (bbox quirk when maximized)
+        if visible_items:
+            visible_set = set(visible_items)
+            last_visible_iid = visible_items[-1]
+            try:
+                last_idx = all_items.index(last_visible_iid)
+            except ValueError:
+                last_idx = -1
+            for i in range(last_idx + 1, min(last_idx + 1 + COVER_LOAD_VIEWPORT_BUFFER, len(all_items))):
+                iid = all_items[i]
+                if iid not in visible_set:
+                    visible_items.append(iid)
+                    visible_set.add(iid)
     except:
         pass
     
@@ -1174,10 +1258,15 @@ def lazy_load_visible_covers():
     try:
         visible_items = get_visible_tree_items()
         
-        # Limit the number of items to process at once to reduce CPU/memory usage
-        # Process only the first 10 visible items per call to avoid overwhelming the system
-        max_items_per_call = 10
-        items_to_process = visible_items[:max_items_per_call]
+        # Process up to 25 items per call; take first N that still need loading so we make progress toward bottom rows
+        max_items_per_call = 25
+        items_to_process = []
+        for item_iid in visible_items:
+            if item_iid in _cover_image_cache or item_iid in _cover_load_requested:
+                continue
+            items_to_process.append(item_iid)
+            if len(items_to_process) >= max_items_per_call:
+                break
         
         for item_iid in items_to_process:
             # Skip if already loaded or already requested
@@ -2630,30 +2719,35 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     y = event.y_root
                                     context_menu.geometry(f"+{x}+{y}")
                                     
-                                    menu_frame = customtkinter.CTkFrame(context_menu, fg_color="#2B2B2B", corner_radius=5)
+                                    # Same frame style as search/copy-paste context menu: border_width=2, border_color="#343638", fg_color="#343638"
+                                    menu_frame = customtkinter.CTkFrame(context_menu, border_width=2, border_color="#343638", fg_color="#343638")
                                     menu_frame.pack(fill="both", expand=True, padx=1, pady=1)
+                                    button_color = "#343638"
                                     
-                                    # Copy Image button (gray → white on hover, same as search context menu)
-                                    copy_icon = _create_copy_icon(size=(14, 14), color="#AAAAAA")
-                                    copy_icon_white = _create_copy_icon(size=(14, 14), color="white")
+                                    # Copy Image button (same style/size/font as search context menu: width=80, height=24, font Segoe UI 11, hover #1F6AA5)
+                                    copy_icon = _create_copy_icon()
+                                    copy_icon_white = _create_copy_icon(color="white")
                                     copy_btn = customtkinter.CTkButton(
                                         menu_frame,
                                         text="Copy Image",
                                         image=copy_icon,
                                         compound="left",
                                         anchor="w",
-                                        fg_color="transparent",
-                                        hover_color="#3A3A3A",
-                                        command=lambda: _copy_image_to_clipboard(context_menu),
-                                        width=150,
-                                        height=28
+                                        width=80,
+                                        height=24,
+                                        font=("Segoe UI", 11),
+                                        fg_color=button_color,
+                                        hover_color="#1F6AA5",
+                                        text_color_disabled="gray",
+                                        border_width=0,
+                                        command=lambda: _copy_image_to_clipboard(context_menu)
                                     )
                                     copy_btn.image = copy_icon
                                     copy_btn.hover_image = copy_icon_white
                                     _setup_hover_icon(copy_btn, copy_icon, copy_icon_white)
-                                    copy_btn.pack(fill="x", padx=2, pady=1)
+                                    copy_btn.pack(pady=(2, 1), padx=2, fill="x")
                                     
-                                    # Save as... button (exact same download icon as search results context menu: default size 16×16; gray → white on hover)
+                                    # Save as... button (exact same style and download icon as search context menu)
                                     save_icon = _create_download_icon(color="#AAAAAA")
                                     save_icon_white = _create_download_icon(color="white")
                                     save_btn = customtkinter.CTkButton(
@@ -2662,16 +2756,19 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                         image=save_icon,
                                         compound="left",
                                         anchor="w",
-                                        fg_color="transparent",
-                                        hover_color="#3A3A3A",
-                                        command=lambda: _save_image_to_file(context_menu),
-                                        width=150,
-                                        height=28
+                                        width=80,
+                                        height=24,
+                                        font=("Segoe UI", 11),
+                                        fg_color=button_color,
+                                        hover_color="#1F6AA5",
+                                        text_color_disabled="gray",
+                                        border_width=0,
+                                        command=lambda: _save_image_to_file(context_menu)
                                     )
                                     save_btn.image = save_icon
                                     save_btn.hover_image = save_icon_white
                                     _setup_hover_icon(save_btn, save_icon, save_icon_white)
-                                    save_btn.pack(fill="x", padx=2, pady=1)
+                                    save_btn.pack(pady=1, padx=2, fill="x")
                                     
                                     # Close menu when clicking outside
                                     def _close_menu(event=None):
