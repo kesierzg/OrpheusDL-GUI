@@ -11657,6 +11657,8 @@ Unnecessary Lossless-to-Lossless""",
                             widget = customtkinter.CTkEntry(global_settings_frame, textvariable=var)
                             widget.grid(row=row, column=1, sticky="ew", padx=(5, 5), pady=5)
                             widget.bind("<Button-3>", show_context_menu)
+                            widget.bind("<Button-2>", show_context_menu)
+                            widget.bind("<Control-Button-1>", show_context_menu)
                             widget.bind("<FocusIn>", lambda e, w=widget: handle_focus_in(w))
                             widget.bind("<FocusOut>", lambda e, w=widget: handle_focus_out(w))
                             browse_btn = customtkinter.CTkButton(global_settings_frame, text="Browse", width=100, height=30,
@@ -11856,6 +11858,8 @@ Unnecessary Lossless-to-Lossless""",
                             widget = customtkinter.CTkEntry(ffmpeg_path_frame, textvariable=var)
                             widget.grid(row=0, column=0, sticky="ew", padx=(0, 5))
                             widget.bind("<Button-3>", show_context_menu)
+                            widget.bind("<Button-2>", show_context_menu)
+                            widget.bind("<Control-Button-1>", show_context_menu)
                             widget.bind("<FocusIn>", lambda e, w=widget: handle_focus_in(w))
                             widget.bind("<FocusOut>", lambda e, w=widget: handle_focus_out(w))
 
@@ -11869,6 +11873,8 @@ Unnecessary Lossless-to-Lossless""",
                             widget = customtkinter.CTkEntry(global_settings_frame, textvariable=var)
                             widget.grid(row=row, column=1, sticky="ew", padx=(5, 5), pady=5)
                             widget.bind("<Button-3>", show_context_menu)
+                            widget.bind("<Button-2>", show_context_menu)
+                            widget.bind("<Control-Button-1>", show_context_menu)
                             widget.bind("<FocusIn>", lambda e, w=widget: handle_focus_in(w))
                             widget.bind("<FocusOut>", lambda e, w=widget: handle_focus_out(w))
 
