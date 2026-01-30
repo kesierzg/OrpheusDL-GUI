@@ -3409,6 +3409,10 @@ def find_system_deno():
     common_paths = []
     if system == 'Darwin':
         common_paths = ['/opt/homebrew/bin/deno', '/usr/local/bin/deno']
+        try:
+            common_paths.append(os.path.expanduser('~/.deno/bin/deno'))  # curl install
+        except Exception:
+            pass
     else:
         # Linux
         common_paths = ['/usr/bin/deno', '/usr/local/bin/deno']
@@ -3426,6 +3430,7 @@ def find_system_deno():
             try:
                 result = subprocess.run([path, '--version'], capture_output=True, timeout=3)
                 if result.returncode == 0:
+                    _ensure_deno_dir_in_path(path)
                     return True, path
             except Exception:
                 pass
@@ -3434,10 +3439,26 @@ def find_system_deno():
         if result.returncode == 0:
             deno_path = result.stdout.decode().strip()
             if deno_path:
+                _ensure_deno_dir_in_path(deno_path)
                 return True, deno_path
     except Exception:
         pass
     return False, None
+
+
+def _ensure_deno_dir_in_path(deno_path):
+    """Prepend the directory containing deno to PATH so yt-dlp (and subprocesses) can find it.
+    Needed on macOS when the app is launched from Finder and PATH does not include ~/.deno/bin."""
+    if not deno_path or not os.path.isfile(deno_path):
+        return
+    deno_dir = os.path.dirname(os.path.abspath(deno_path))
+    if not deno_dir:
+        return
+    path_sep = os.path.pathsep
+    current = os.environ.get('PATH', '')
+    if deno_dir in current.split(path_sep):
+        return
+    os.environ['PATH'] = deno_dir + path_sep + current
 
 
 def _show_deno_install_message():
