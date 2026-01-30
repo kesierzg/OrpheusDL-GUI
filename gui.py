@@ -295,14 +295,15 @@ def play_audio(source):
     time.sleep(0.1)
     
     # Check if this is a stream (HLS/m3u8 or SoundCloud)
-    # Convert streams to WAV using ffmpeg, then play via winsound
+    # Convert streams to WAV using ffmpeg on Windows (for winsound). On macOS, skip conversion for SoundCloud (afplay supports M4A natively).
     source_lower = source.lower()
     is_hls_stream = '.m3u8' in source_lower or 'hls' in source_lower
     is_soundcloud_stream = 'sndcdn.com' in source_lower
     is_stream = is_hls_stream or is_soundcloud_stream
     
-    # For streams, convert to WAV using ffmpeg first (limited to 30 seconds)
-    if is_stream:
+    # For streams, convert to WAV using ffmpeg first (limited to 30 seconds) on Windows, or non-SoundCloud streams on other platforms.
+    # On macOS, SoundCloud previews (e.g. M4A) are played natively by afplay after download; WAV conversion can break playback.
+    if is_stream and not (system == "Darwin" and is_soundcloud_stream):
         try:
             import tempfile
             ffmpeg_path = _get_ffmpeg_path()
@@ -353,8 +354,10 @@ def play_audio(source):
             import tempfile
             import requests
             
-            # Create a temp file with the correct extension if possible, or .mp3 default
+            # Create a temp file with the correct extension if possible, or .mp3 default (or .m4a for SoundCloud on macOS)
             ext = '.mp3'
+            if system == "Darwin" and 'sndcdn.com' in source.lower():
+                ext = '.m4a'  # SoundCloud CDN often serves M4A; afplay supports it natively
             if '.' in source.split('/')[-1]:
                 possible_ext = '.' + source.split('/')[-1].split('.')[-1].split('?')[0]
                 if len(possible_ext) <= 5: # Sanity check
@@ -3392,6 +3395,182 @@ def find_system_ffmpeg():
         pass
     
     return False, None
+
+
+def find_system_deno():
+    """
+    Find Deno on macOS/Linux (not bundled there). Returns (found: bool, path: str or None).
+    Checks PATH and common locations. Only runs on Darwin/Linux; Windows may bundle deno.
+    """
+    system = platform.system()
+    if system not in ('Darwin', 'Linux'):
+        return True, None  # Only check on macOS/Linux; Windows may bundle deno
+    import subprocess
+    common_paths = []
+    if system == 'Darwin':
+        common_paths = ['/opt/homebrew/bin/deno', '/usr/local/bin/deno']
+    else:
+        # Linux
+        common_paths = ['/usr/bin/deno', '/usr/local/bin/deno']
+        try:
+            common_paths.append(os.path.expanduser('~/.deno/bin/deno'))
+        except Exception:
+            pass
+    try:
+        common_paths.append(os.path.join(get_data_directory(), 'deno'))
+        common_paths.append(os.path.join(get_script_directory(), 'deno'))
+    except Exception:
+        pass
+    for path in common_paths:
+        if os.path.isfile(path):
+            try:
+                result = subprocess.run([path, '--version'], capture_output=True, timeout=3)
+                if result.returncode == 0:
+                    return True, path
+            except Exception:
+                pass
+    try:
+        result = subprocess.run(['which', 'deno'], capture_output=True, timeout=3)
+        if result.returncode == 0:
+            deno_path = result.stdout.decode().strip()
+            if deno_path:
+                return True, deno_path
+    except Exception:
+        pass
+    return False, None
+
+
+def _show_deno_install_message():
+    """Show a pop-up with Deno install instructions (macOS/Linux; Deno is not bundled). Shown when user tries to download from YouTube."""
+    system = platform.system()
+    if system not in ('Darwin', 'Linux'):
+        return
+    try:
+        if 'app' not in globals() or not app or not app.winfo_exists():
+            return
+    except Exception:
+        return
+    dialog = customtkinter.CTkToplevel(app)
+    dialog.title("Deno Not Found")
+    dialog.resizable(False, False)
+    dialog.attributes("-topmost", True)
+    dialog.transient(app)
+
+    def copy_command(cmd, button):
+        try:
+            if not _copy_to_system_clipboard(cmd):
+                app.clipboard_clear()
+                app.clipboard_append(cmd)
+                app.update()
+            original_text = button.cget("text")
+            button.configure(text="✓")
+            button.after(1500, lambda: button.configure(text=original_text))
+        except Exception as e:
+            print(f"Error copying to clipboard: {e}")
+
+    main_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
+    main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+    title_label = customtkinter.CTkLabel(
+        main_frame,
+        text="⚠️  Deno Not Found",
+        font=("", 18, "bold")
+    )
+    title_label.pack(pady=(0, 10))
+
+    desc_label = customtkinter.CTkLabel(
+        main_frame,
+        text="Deno is required for YouTube downloads on macOS and Linux.\nInstall it to continue.",
+        justify="center"
+    )
+    desc_label.pack(pady=(0, 15))
+
+    # Step 1: Install via terminal (works on both macOS and Linux)
+    step1_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
+    step1_frame.pack(fill="x", pady=5)
+    step1_label = customtkinter.CTkLabel(step1_frame, text="1. Install via terminal:", anchor="w")
+    step1_label.pack(fill="x", padx=10, pady=(8, 2))
+    deno_curl_cmd = "curl -fsSL https://deno.land/install.sh | sh"
+    cmd1_frame = customtkinter.CTkFrame(step1_frame, fg_color="#1E1E1E", corner_radius=5)
+    cmd1_frame.pack(fill="x", padx=10, pady=(2, 8))
+    cmd1_label = customtkinter.CTkLabel(cmd1_frame, text=deno_curl_cmd, font=("Consolas", 10), anchor="w", text_color="#98C379")
+    cmd1_label.pack(side="left", fill="x", expand=True, padx=10, pady=8)
+    copy1_btn = customtkinter.CTkButton(
+        cmd1_frame, text="⧉", width=24, height=24,
+        font=("Segoe UI", 14),
+        fg_color="#2B2B2B", hover_color="#3B3B3B",
+        text_color="#999999", corner_radius=3,
+        command=lambda: copy_command(deno_curl_cmd, copy1_btn)
+    )
+    copy1_btn.pack(side="right", padx=8, pady=5)
+
+    if system == 'Darwin':
+        dialog.geometry("580x420")
+        # Step 2: Or via Homebrew (macOS)
+        step2_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
+        step2_frame.pack(fill="x", pady=5)
+        step2_label = customtkinter.CTkLabel(step2_frame, text="2. Or via Homebrew (macOS):", anchor="w")
+        step2_label.pack(fill="x", padx=10, pady=(8, 2))
+        deno_brew_cmd = "brew install deno"
+        cmd2_frame = customtkinter.CTkFrame(step2_frame, fg_color="#1E1E1E", corner_radius=5)
+        cmd2_frame.pack(fill="x", padx=10, pady=(2, 8))
+        cmd2_label = customtkinter.CTkLabel(cmd2_frame, text=deno_brew_cmd, font=("Consolas", 11), anchor="w", text_color="#98C379")
+        cmd2_label.pack(side="left", fill="x", expand=True, padx=10, pady=8)
+        copy2_btn = customtkinter.CTkButton(
+            cmd2_frame, text="⧉", width=24, height=24,
+            font=("Segoe UI", 14),
+            fg_color="#2B2B2B", hover_color="#3B3B3B",
+            text_color="#999999", corner_radius=3,
+            command=lambda: copy_command(deno_brew_cmd, copy2_btn)
+        )
+        copy2_btn.pack(side="right", padx=8, pady=5)
+    else:
+        # Linux: package manager options
+        dialog.geometry("580x520")
+        step2_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
+        step2_frame.pack(fill="x", pady=5)
+        step2_label = customtkinter.CTkLabel(step2_frame, text="2. Or via package manager:", anchor="w")
+        step2_label.pack(fill="x", padx=10, pady=(8, 2))
+        linux_deno_commands = [
+            ("Ubuntu / Debian:", "curl -fsSL https://deno.land/install.sh | sh  # then add ~/.deno/bin to PATH"),
+            ("Fedora:", "sudo dnf install deno"),
+            ("Arch Linux:", "sudo pacman -S deno"),
+        ]
+        for distro, cmd in linux_deno_commands:
+            cmd_frame = customtkinter.CTkFrame(step2_frame, fg_color="#1E1E1E", corner_radius=5)
+            cmd_frame.pack(fill="x", padx=10, pady=3)
+            cmd_label = customtkinter.CTkLabel(cmd_frame, text=cmd, font=("Consolas", 10), anchor="w", text_color="#98C379")
+            cmd_label.pack(side="left", fill="x", expand=True, padx=10, pady=6)
+            copy_btn = customtkinter.CTkButton(
+                cmd_frame, text="⧉", width=24, height=24,
+                font=("Segoe UI", 14),
+                fg_color="#2B2B2B", hover_color="#3B3B3B",
+                text_color="#999999", corner_radius=3,
+                command=lambda: None
+            )
+            copy_btn.pack(side="right", padx=8, pady=4)
+            copy_btn.configure(command=lambda c=cmd, b=copy_btn: copy_command(c, b))
+
+    note_label = customtkinter.CTkLabel(
+        main_frame,
+        text="Ensure deno is in your system PATH, or symlink it to the OrpheusDL root folder.",
+        font=("", 11),
+        text_color="#898c8d",
+        justify="left",
+        wraplength=520
+    )
+    note_label.pack(fill="x", pady=(10, 5))
+
+    ok_btn = customtkinter.CTkButton(main_frame, text="OK", command=dialog.destroy, width=100)
+    ok_btn.pack(pady=(10, 0))
+
+    dialog.update_idletasks()
+    dw = dialog.winfo_width()
+    dh = dialog.winfo_height()
+    if app.winfo_exists():
+        x = app.winfo_rootx() + (app.winfo_width() - dw) // 2
+        y = app.winfo_rooty() + (app.winfo_height() - dh) // 2
+        dialog.geometry(f"+{x}+{y}")
 
 
 # Keep old function name for backward compatibility
@@ -7105,6 +7284,17 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
         client_secret = (spotify_creds.get("client_secret") or "").strip()
         if not username or not client_id or not client_secret:
             show_centered_messagebox("Search Error", "Error during search: spotify -> Spotify credentials are required. Please fill in your username, client ID and secret in the settings.", dialog_type="warning")
+            return False
+
+    # macOS/Linux: Deno is not bundled; required for YouTube downloads. Show install pop-up if missing.
+    if platform.system() in ("Darwin", "Linux") and ('youtube.com' in url_to_download or 'youtu.be' in url_to_download):
+        deno_found, _ = find_system_deno()
+        if not deno_found:
+            try:
+                if 'app' in globals() and app and app.winfo_exists():
+                    app.after(0, _show_deno_install_message)
+            except Exception:
+                _show_deno_install_message()
             return False
 
     try:
