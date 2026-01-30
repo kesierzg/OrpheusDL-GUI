@@ -741,6 +741,9 @@ _current_volume = 75  # 0-100
 COVER_SIZE = 38
 COVER_CORNER_RADIUS = 0  # Radius for rounded corners
 
+# Content width for download log, search results, and platform help sections (kept in sync)
+HELP_CONTENT_WIDTH = 760
+
 def round_corners(image, radius):
     """Add rounded corners to an image using a mask."""
     from PIL import Image, ImageDraw
@@ -4159,6 +4162,7 @@ def save_settings(show_confirmation: bool = True):
          if platform_name not in updated_gui_settings["credentials"]: updated_gui_settings["credentials"][platform_name] = {}
          for field_key, var in fields.items():
               if not isinstance(var, tkinter.Variable): continue
+              if field_key.startswith('_'): continue  # skip internal UI state
               updated_gui_settings["credentials"][platform_name][field_key] = str(var.get())
     if not validate_codec_conversions():
         return False
@@ -4195,6 +4199,11 @@ def save_settings(show_confirmation: bool = True):
         if orpheus_platform:
             if orpheus_platform not in mapped_orpheus_updates["modules"]: mapped_orpheus_updates["modules"][orpheus_platform] = {}
             mapped_orpheus_updates["modules"][orpheus_platform] = creds.copy()
+    # Persist creds for platforms whose tab was never opened (so use_id_token, use_arl, etc. are still written)
+    for gui_platform, creds in current_settings.get("credentials", {}).items():
+        orpheus_platform = platform_map_to_orpheus.get(gui_platform)
+        if orpheus_platform and orpheus_platform not in mapped_orpheus_updates["modules"]:
+            mapped_orpheus_updates["modules"][orpheus_platform] = copy.deepcopy(creds)
 
     final_settings_to_save = deep_merge(existing_settings, mapped_orpheus_updates, keys_to_overwrite_if_dicts=["codec_conversions", "conversion_flags"])
     try:
@@ -4446,6 +4455,25 @@ def handle_focus_out(widget):
     except Exception as e:
         print(f"Error in handle_focus_out for {widget}: {e}")
 
+
+def _masked_entry_focus_in(widget):
+    """Unmask a password/secret entry on focus, then run normal focus-in handling."""
+    try:
+        widget.configure(show="")
+    except Exception:
+        pass
+    handle_focus_in(widget)
+
+
+def _masked_entry_focus_out(widget):
+    """Re-mask a password/secret entry on blur, then run normal focus-out handling."""
+    try:
+        widget.configure(show="*")
+    except Exception:
+        pass
+    handle_focus_out(widget)
+
+
 def show_centered_messagebox(title, message, dialog_type="info", parent=None):
     """Creates and displays a centered CTkToplevel message box."""
     global app
@@ -4539,7 +4567,7 @@ def show_log_viewer(title="Application Logs", parent=None):
     
     log_text = customtkinter.CTkTextbox(
         text_frame, 
-        width=760, 
+        width=HELP_CONTENT_WIDTH, 
         height=380,
         font=("Consolas" if platform.system() == "Windows" else "Monaco", 11),
         wrap="word"
@@ -8675,6 +8703,30 @@ def _create_credential_tab_content(platform_name, tab_frame):
             label.pack(pady=10, padx=10)
             return
         
+        # Deezer / Qobuz / others with "How to" help: pack creds first, then help (expand) so it shows full when maximized.
+        deezer_creds_frame = None
+        qobuz_creds_frame = None
+        other_creds_frame = None
+        _platforms_with_help = ("AppleMusic", "Beatport", "Beatsource", "SoundCloud", "Spotify", "Tidal", "YouTube")
+        if platform_name == "Deezer":
+            deezer_creds_frame = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
+            deezer_creds_frame.pack(fill="x", expand=False, anchor="nw")
+        if platform_name == "Qobuz":
+            qobuz_creds_frame = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
+            qobuz_creds_frame.pack(fill="x", expand=False, anchor="nw")
+        if platform_name in _platforms_with_help:
+            other_creds_frame = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
+            # Same top padding as above Download/Stop in Download tab and selection bar in Search tab (5px)
+            other_creds_frame.pack(fill="x", expand=False, anchor="nw", pady=(5, 0))
+        if platform_name == "Deezer" and deezer_creds_frame:
+            grid_parent = deezer_creds_frame
+        elif platform_name == "Qobuz" and qobuz_creds_frame:
+            grid_parent = qobuz_creds_frame
+        elif other_creds_frame is not None:
+            grid_parent = other_creds_frame
+        else:
+            grid_parent = tab_frame
+        
         # Better label names for credential fields
         label_mapping = {
             'download_pause_seconds': 'Pause Between Downloads (seconds)',
@@ -8685,6 +8737,10 @@ def _create_credential_tab_content(platform_name, tab_frame):
         
         for i, (key, value) in enumerate(default_platform_fields.items()):
             if platform_name == "Tidal" and key in ["prefer_ac4", "fix_mqa"]:
+                continue
+            if platform_name == "Qobuz" and key in ("password", "user_id", "auth_token", "use_id_token"):
+                continue
+            if platform_name == "Deezer" and key in ("password", "arl", "use_arl"):
                 continue
 
             if i == 0:
@@ -8706,17 +8762,140 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
             if platform_name == "Qobuz" and key == "username":
                 label_text = "Email"
-                
-            label = customtkinter.CTkLabel(tab_frame, text=f"{label_text}")
-            label.grid(row=i, column=0, sticky="w", padx=10, pady=pady_config)
-            
+
             current_value = current_settings.get("credentials", {}).get(platform_name, {}).get(key, value)
 
+            # Qobuz: checkbox "Use ID/Token" + two rows (Email/ID, Password/Token) with same fields, labels swap by mode; persist use_id_token.
+            if platform_name == "Qobuz" and key == "username":
+                qobuz_creds = current_settings.get("credentials", {}).get(platform_name, {})
+                var_username = tkinter.StringVar(value=str(qobuz_creds.get("username", "") or ""))
+                var_password = tkinter.StringVar(value=str(qobuz_creds.get("password", "") or ""))
+                var_user_id = tkinter.StringVar(value=str(qobuz_creds.get("user_id", "") or ""))
+                var_auth_token = tkinter.StringVar(value=str(qobuz_creds.get("auth_token", "") or ""))
+                stored = qobuz_creds.get("use_id_token")
+                use_id_token = str(stored).lower() in ("true", "1") if stored not in (None, "") else bool((qobuz_creds.get("user_id") or "").strip() and (qobuz_creds.get("auth_token") or "").strip())
+                var_use_id_token = tkinter.BooleanVar(value=use_id_token)
+                if platform_name not in settings_vars['credentials']:
+                    settings_vars['credentials'][platform_name] = {}
+                settings_vars['credentials'][platform_name]["username"] = var_username
+                settings_vars['credentials'][platform_name]["password"] = var_password
+                settings_vars['credentials'][platform_name]["user_id"] = var_user_id
+                settings_vars['credentials'][platform_name]["auth_token"] = var_auth_token
+                settings_vars['credentials'][platform_name]["use_id_token"] = var_use_id_token
 
+                # Row 1: Email or ID
+                qobuz_label1 = customtkinter.CTkLabel(grid_parent, text="ID:" if use_id_token else "Email:")
+                qobuz_label1.grid(row=i, column=0, sticky="w", padx=10, pady=5)
+                qobuz_entry1 = customtkinter.CTkEntry(grid_parent)
+                qobuz_entry1.grid(row=i, column=1, sticky="ew", padx=10, pady=5)
+                qobuz_entry1.configure(textvariable=var_user_id if use_id_token else var_username)
+                # Row 2: Password or Token
+                qobuz_label2 = customtkinter.CTkLabel(grid_parent, text="Token:" if use_id_token else "Password:")
+                qobuz_label2.grid(row=i+1, column=0, sticky="w", padx=10, pady=5)
+                qobuz_entry2 = customtkinter.CTkEntry(grid_parent, show="*")
+                qobuz_entry2.grid(row=i+1, column=1, sticky="ew", padx=10, pady=5)
+                qobuz_entry2.configure(textvariable=var_auth_token if use_id_token else var_password)
+                for _entry in (qobuz_entry1, qobuz_entry2):
+                    _entry.bind("<Button-3>", show_context_menu)
+                    _entry.bind("<Button-2>", show_context_menu)
+                    _entry.bind("<Control-Button-1>", show_context_menu)
+                    _entry.bind("<Control-c>", _handle_ctrl_c_copy)
+                    _entry.bind("<Control-C>", _handle_ctrl_c_copy)
+                    if _entry is qobuz_entry2:
+                        _entry.bind("<FocusIn>", lambda e, w=_entry: _masked_entry_focus_in(w))
+                        _entry.bind("<FocusOut>", lambda e, w=_entry: _masked_entry_focus_out(w))
+                    else:
+                        _entry.bind("<FocusIn>", lambda e, w=_entry: handle_focus_in(w))
+                        _entry.bind("<FocusOut>", lambda e, w=_entry: handle_focus_out(w))
+                # Checkbox below help section (packed in Qobuz help block)
+                chk_container = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
+                chk_qobuz_id_token = customtkinter.CTkCheckBox(chk_container, text="Use ID/Token (instead of Email/Password)", variable=var_use_id_token)
+
+                def _qobuz_toggle_id_token():
+                    use_id = var_use_id_token.get()
+                    qobuz_label1.configure(text="ID:" if use_id else "Email:")
+                    qobuz_label2.configure(text="Token:" if use_id else "Password:")
+                    qobuz_entry2.configure(show="" if use_id else "*")
+                    qobuz_entry1.configure(textvariable=var_user_id if use_id else var_username)
+                    qobuz_entry2.configure(textvariable=var_auth_token if use_id else var_password)
+                    if hasattr(tab_frame, "qobuz_help_update"):
+                        tab_frame.qobuz_help_update(use_id)
+
+                chk_qobuz_id_token.pack(side="left")
+                chk_qobuz_id_token.configure(command=_qobuz_toggle_id_token)
+                tab_frame.qobuz_chk_frame = chk_container
+                grid_parent.grid_columnconfigure(1, weight=1)
+                continue
+
+            # Deezer: checkbox "Use ARL" + Email/Password vs ARL. Hide Password only when Use ARL checked; persist use_arl.
+            if platform_name == "Deezer" and key == "email":
+                deezer_creds = current_settings.get("credentials", {}).get(platform_name, {})
+                var_email = tkinter.StringVar(value=str(deezer_creds.get("email", "") or ""))
+                var_password = tkinter.StringVar(value=str(deezer_creds.get("password", "") or ""))
+                var_arl = tkinter.StringVar(value=str(deezer_creds.get("arl", "") or ""))
+                stored = deezer_creds.get("use_arl")
+                use_arl = str(stored).lower() in ("true", "1") if stored not in (None, "") else bool((deezer_creds.get("arl") or "").strip())
+                var_use_arl = tkinter.BooleanVar(value=use_arl)
+                if platform_name not in settings_vars['credentials']:
+                    settings_vars['credentials'][platform_name] = {}
+                settings_vars['credentials'][platform_name]["email"] = var_email
+                settings_vars['credentials'][platform_name]["password"] = var_password
+                settings_vars['credentials'][platform_name]["arl"] = var_arl
+                settings_vars['credentials'][platform_name]["use_arl"] = var_use_arl
+
+                deezer_label1 = customtkinter.CTkLabel(grid_parent, text="ARL:" if use_arl else "Email:")
+                deezer_label1.grid(row=i, column=0, sticky="w", padx=10, pady=5)
+                deezer_entry1 = customtkinter.CTkEntry(grid_parent)
+                deezer_entry1.grid(row=i, column=1, sticky="ew", padx=10, pady=5)
+                deezer_entry1.configure(textvariable=var_arl if use_arl else var_email)
+                deezer_label2 = customtkinter.CTkLabel(grid_parent, text="Password:")
+                deezer_label2.grid(row=i+1, column=0, sticky="w", padx=10, pady=5)
+                deezer_entry2 = customtkinter.CTkEntry(grid_parent, show="*")
+                deezer_entry2.grid(row=i+1, column=1, sticky="ew", padx=10, pady=5)
+                deezer_entry2.configure(textvariable=var_password)
+                for _entry in (deezer_entry1, deezer_entry2):
+                    _entry.bind("<Button-3>", show_context_menu)
+                    _entry.bind("<Button-2>", show_context_menu)
+                    _entry.bind("<Control-Button-1>", show_context_menu)
+                    _entry.bind("<Control-c>", _handle_ctrl_c_copy)
+                    _entry.bind("<Control-C>", _handle_ctrl_c_copy)
+                    if _entry is deezer_entry2:
+                        _entry.bind("<FocusIn>", lambda e, w=_entry: _masked_entry_focus_in(w))
+                        _entry.bind("<FocusOut>", lambda e, w=_entry: _masked_entry_focus_out(w))
+                    else:
+                        _entry.bind("<FocusIn>", lambda e, w=_entry: handle_focus_in(w))
+                        _entry.bind("<FocusOut>", lambda e, w=_entry: handle_focus_out(w))
+                chk_deezer_arl = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
+                chk_use_arl = customtkinter.CTkCheckBox(chk_deezer_arl, text="Use ARL (instead of Email/Password)", variable=var_use_arl)
+
+                def _deezer_toggle_arl():
+                    use_a = var_use_arl.get()
+                    deezer_label1.configure(text="ARL:" if use_a else "Email:")
+                    deezer_entry1.configure(textvariable=var_arl if use_a else var_email)
+                    if use_a:
+                        deezer_label2.grid_remove()
+                        deezer_entry2.grid_remove()
+                    else:
+                        deezer_entry2.configure(show="*", textvariable=var_password)
+                        deezer_label2.grid(row=i+1, column=0, sticky="w", padx=10, pady=5)
+                        deezer_entry2.grid(row=i+1, column=1, sticky="ew", padx=10, pady=5)
+                    if hasattr(tab_frame, "deezer_help_update"):
+                        tab_frame.deezer_help_update(use_a)
+
+                chk_use_arl.pack(side="left")
+                chk_use_arl.configure(command=_deezer_toggle_arl)
+                tab_frame.deezer_chk_frame = chk_deezer_arl
+                grid_parent.grid_columnconfigure(1, weight=1)
+                if use_arl:
+                    _deezer_toggle_arl()
+                continue
+
+            label = customtkinter.CTkLabel(grid_parent, text=f"{label_text}")
+            label.grid(row=i, column=0, sticky="w", padx=10, pady=pady_config)
 
             if platform_name == "Tidal" and key == "enable_mobile":
                 # Create container for horizontal checkboxes
-                container = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
+                container = customtkinter.CTkFrame(grid_parent, fg_color="transparent")
                 # Increased top padding as requested by user
                 container.grid(row=i, column=1, sticky="w", padx=10, pady=(5, 5))
                 
@@ -8771,7 +8950,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 
                 var = tkinter.StringVar(value=str(current_value))
                 
-                radio_frame = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
+                radio_frame = customtkinter.CTkFrame(grid_parent, fg_color="transparent")
                 radio_frame.grid(row=i, column=1, sticky="w", padx=10, pady=pady_config)
                 
                 sequential_radio = customtkinter.CTkRadioButton(radio_frame, text="Sequential", variable=var, value="sequential")
@@ -8792,7 +8971,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 
             elif isinstance(value, bool):
                 var = tkinter.BooleanVar(value=current_value)
-                widget = customtkinter.CTkCheckBox(tab_frame, text="", variable=var)
+                widget = customtkinter.CTkCheckBox(grid_parent, text="", variable=var)
                 widget.grid(row=i, column=1, sticky="w", padx=10, pady=pady_config)
 
 
@@ -8813,7 +8992,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 var = tkinter.StringVar(value=str(current_value))
                 
                 # Container for entry and warning label
-                container = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
+                container = customtkinter.CTkFrame(grid_parent, fg_color="transparent")
                 container.grid(row=i, column=1, sticky="ew", padx=(10, 5), pady=adjusted_pady)
                 container.grid_columnconfigure(0, weight=1)
 
@@ -8897,7 +9076,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                                 subprocess.call(('open', config_dir) if sys.platform == 'darwin' else ('xdg-open', config_dir))
 
                 open_button = customtkinter.CTkButton(
-                    tab_frame,
+                    grid_parent,
                     text="Open",
                     width=100,
                     height=30,
@@ -8907,10 +9086,10 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     border_width=0,
                     border_color=None
                 )
-                open_button.grid(row=i, column=2, sticky="nw", padx=(5, 10), pady=pady_config)
+                open_button.grid(row=i, column=2, sticky="ne", padx=(5, 5), pady=pady_config)
                 
                 # Ensure column 1 expands
-                tab_frame.grid_columnconfigure(1, weight=1)
+                grid_parent.grid_columnconfigure(1, weight=1)
                 
                 # Register variable for saving
                 if platform_name not in settings_vars['credentials']:
@@ -8920,8 +9099,11 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 continue # Skip default widget creation
             else:
                 var = tkinter.StringVar(value=str(current_value))
-                widget = customtkinter.CTkEntry(tab_frame)
+                widget = customtkinter.CTkEntry(grid_parent)
                 widget.configure(textvariable=var)
+                _is_masked_field = key == "password" or (key == "client_secret" and platform_name == "Spotify")
+                if _is_masked_field:
+                    widget.configure(show="*")
                 
                 # For Apple Music and YouTube cookies_path, add Open button like Browse in Global settings
                 if (platform_name == "AppleMusic" or platform_name == "YouTube") and key == "cookies_path":
@@ -8951,7 +9133,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                                 show_centered_messagebox("Error", f"Could not open cookies folder:\n{e}", dialog_type="error")
                     
                     open_button = customtkinter.CTkButton(
-                        tab_frame,
+                        grid_parent,
                         text="Open",
                         width=100,
                         height=30,
@@ -8961,8 +9143,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
                         border_width=0,
                         border_color=None
                     )
-                    # padx=(5, 10) ensures right alignment matches others and adds left spacing
-                    open_button.grid(row=i, column=2, sticky="w", padx=(5, 10), pady=pady_config)
+                    # Align right with Save button (same 5px right padding as save_controls_frame)
+                    open_button.grid(row=i, column=2, sticky="e", padx=(5, 5), pady=pady_config)
                 elif platform_name == "AppleMusic":
                     # Match cookies_path width by using same column and padding layout
                     widget.grid(row=i, column=1, sticky="ew", padx=(10, 5), pady=pady_config)
@@ -8973,14 +9155,18 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     # For all other fields/platforms, use default layout (just under each other)
                     widget.grid(row=i, column=1, sticky="ew", padx=10, pady=pady_config)
                 
-                tab_frame.grid_columnconfigure(1, weight=1)
+                grid_parent.grid_columnconfigure(1, weight=1)
                 widget.bind("<Button-3>", show_context_menu)
                 widget.bind("<Button-2>", show_context_menu)
                 widget.bind("<Control-Button-1>", show_context_menu)
                 widget.bind("<Control-c>", _handle_ctrl_c_copy)
                 widget.bind("<Control-C>", _handle_ctrl_c_copy)
-                widget.bind("<FocusIn>", lambda e, w=widget: handle_focus_in(w))
-                widget.bind("<FocusOut>", lambda e, w=widget: handle_focus_out(w))
+                if _is_masked_field:
+                    widget.bind("<FocusIn>", lambda e, w=widget: _masked_entry_focus_in(w))
+                    widget.bind("<FocusOut>", lambda e, w=widget: _masked_entry_focus_out(w))
+                else:
+                    widget.bind("<FocusIn>", lambda e, w=widget: handle_focus_in(w))
+                    widget.bind("<FocusOut>", lambda e, w=widget: handle_focus_out(w))
             
             if platform_name not in settings_vars['credentials']:
                 settings_vars['credentials'][platform_name] = {}
@@ -9008,7 +9194,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     print(f"Error copying to clipboard: {e}")
             
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=3, sticky="ew", padx=10, pady=(10, 5))
+            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
             
             # --- Single Column: How to set up ---
@@ -9108,7 +9294,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Add help text for Apple Music module
         if platform_name == "AppleMusic":
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=3, sticky="ew", padx=10, pady=(10, 5))
+            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
             
             # --- Single Column: How to set up ---
@@ -9200,7 +9386,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Add help text for YouTube module
         if platform_name == "YouTube":
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=3, sticky="ew", padx=10, pady=(10, 5))
+            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1, uniform="help_cols")
             help_frame.grid_columnconfigure(1, weight=1, uniform="help_cols")
             
@@ -9404,59 +9590,107 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     print(f"Error copying to clipboard: {e}")
             
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 5))
+            deezer_help_row = 6 if platform_name == "Deezer" else len(default_platform_fields)
+            if platform_name == "Deezer":
+                help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
+                if hasattr(tab_frame, "deezer_chk_frame"):
+                    tab_frame.deezer_chk_frame.pack(fill="x", anchor="w", padx=10, pady=(5, 10))
+            else:
+                help_frame.grid(row=deezer_help_row, column=0, columnspan=2, sticky="ew", padx=5, pady=(10, 5))
             help_frame.grid_columnconfigure(0, weight=1, uniform="help_cols")
             help_frame.grid_columnconfigure(1, weight=1, uniform="help_cols")
-            
-            # --- Left Column: How to set up ---
+            deezer_use_arl = settings_vars.get("credentials", {}).get("Deezer", {}).get("use_arl")
+            deezer_use_arl = deezer_use_arl.get() if hasattr(deezer_use_arl, "get") else False
+
             left_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
             left_col.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
             
-            # Header
             left_header = customtkinter.CTkFrame(left_col, fg_color="transparent")
             left_header.pack(anchor="w", pady=(0, 15))
-            
-            icon_label = customtkinter.CTkLabel(
-                left_header, 
-                text="💡", 
-                font=("Segoe UI", 20), 
-                text_color=WARNING_COLOR
-            )
+            icon_label = customtkinter.CTkLabel(left_header, text="💡", font=("Segoe UI", 20), text_color=WARNING_COLOR)
             icon_label.pack(side="left", padx=(5, 10))
-            
-            title_label = customtkinter.CTkLabel(
-                left_header, 
-                text="How to set up", 
-                font=("Segoe UI", 16, "bold"), 
-                text_color="#DCE4EE"
-            )
+            title_label = customtkinter.CTkLabel(left_header, text="How to set up", font=("Segoe UI", 16, "bold"), text_color="#DCE4EE")
             title_label.pack(side="left")
+            # See demo: same position as Qobuz ID/Token (top-right of help_frame when ARL)
+            deezer_see_demo_btn = customtkinter.CTkButton(
+                help_frame,
+                text="See demo",
+                width=80,
+                height=24,
+                font=("Segoe UI", 11),
+                fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
+                hover_color="#1F6AA5",
+                command=lambda: webbrowser.open("https://www.deezer.com")
+            )
+            if not deezer_use_arl:
+                deezer_see_demo_btn.place_forget()
             
-            # Instructions
-            # Step 1
-            step1_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            # Email/Password instructions
+            left_col_email = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            left_col_email.pack(anchor="w", pady=0)
+            step1_frame = customtkinter.CTkFrame(left_col_email, fg_color="transparent")
             step1_frame.pack(anchor="w", pady=0)
-            
             customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
-            
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
-            
-            customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to ", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=350).pack(side="left")
-            
+            customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to ", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             deezer_link = customtkinter.CTkLabel(step1_text_frame, text="Deezer", font=("Consolas", 12, "underline"), text_color=LINK_COLOR, cursor="hand2")
             deezer_link.pack(side="left")
             deezer_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.deezer.com"))
             deezer_link.bind("<Enter>", lambda e: deezer_link.configure(text_color=LINK_HOVER_COLOR))
             deezer_link.bind("<Leave>", lambda e: deezer_link.configure(text_color=LINK_COLOR))
-            
-            # Note
-            note_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            note_frame = customtkinter.CTkFrame(left_col_email, fg_color="transparent")
             note_frame.pack(anchor="w", pady=(0, 5))
-            customtkinter.CTkLabel(note_frame, text="", width=35).pack(side="left") # Indent
+            customtkinter.CTkLabel(note_frame, text="", width=35).pack(side="left")
             customtkinter.CTkLabel(note_frame, text="(active subscription required)", font=("Segoe UI", 12), text_color="gray").pack(side="left")
 
-            
+            # ARL instructions
+            def _deezer_step(parent, num, text):
+                f = customtkinter.CTkFrame(parent, fg_color="transparent")
+                f.pack(anchor="w", pady=(0, 5))
+                customtkinter.CTkLabel(f, text=f"{num}.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
+                customtkinter.CTkLabel(f, text=text, font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+                return f
+            left_col_arl = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            step1_arl = customtkinter.CTkFrame(left_col_arl, fg_color="transparent")
+            step1_arl.pack(anchor="w", pady=(0, 5))
+            customtkinter.CTkLabel(step1_arl, text="1.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
+            customtkinter.CTkLabel(step1_arl, text="Log in to ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            deezer_arl_link = customtkinter.CTkLabel(step1_arl, text="Deezer", font=("Consolas", 12, "underline"), text_color=LINK_COLOR, cursor="hand2")
+            deezer_arl_link.pack(side="left")
+            deezer_arl_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.deezer.com"))
+            deezer_arl_link.bind("<Enter>", lambda e: deezer_arl_link.configure(text_color=LINK_HOVER_COLOR))
+            deezer_arl_link.bind("<Leave>", lambda e: deezer_arl_link.configure(text_color=LINK_COLOR))
+            _deezer_step(left_col_arl, 2, "Hit F12 to open DevTools in your browser")
+            _deezer_step(left_col_arl, 3, "Go to Storage/Application → Cookies → www.deezer.com")
+            step4_arl = customtkinter.CTkFrame(left_col_arl, fg_color="transparent")
+            step4_arl.pack(anchor="w", pady=(0, 5))
+            customtkinter.CTkLabel(step4_arl, text="4.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
+            customtkinter.CTkLabel(step4_arl, text="Seek for ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step4_arl, text="arl", font=("Consolas", 12), text_color=LINK_COLOR).pack(side="left")
+            customtkinter.CTkLabel(step4_arl, text=", copy value and paste above", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+
+            def _deezer_help_update(use_arl):
+                if use_arl:
+                    left_col_email.pack_forget()
+                    left_col_arl.pack(anchor="w", pady=0)
+                    deezer_see_demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
+                    deezer_see_demo_btn.lift()
+                else:
+                    left_col_arl.pack_forget()
+                    left_col_email.pack(anchor="w", pady=0)
+                    deezer_see_demo_btn.place_forget()
+            tab_frame.deezer_help_update = _deezer_help_update
+            if deezer_use_arl:
+                left_col_email.pack_forget()
+                left_col_arl.pack(anchor="w", pady=0)
+                deezer_see_demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
+                deezer_see_demo_btn.lift()
+            else:
+                left_col_arl.pack_forget()
+                left_col_email.pack(anchor="w", pady=0)
+                deezer_see_demo_btn.place_forget()
+
             # --- Right Column: Recommended Values ---
             right_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
             right_col.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
@@ -9524,84 +9758,92 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     print(f"Error copying to clipboard: {e}")
             
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 5))
+            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1, uniform="help_cols")
             help_frame.grid_columnconfigure(1, weight=1, uniform="help_cols")
-            
-            # --- Left Column: How to set up ---
+            if hasattr(tab_frame, "qobuz_chk_frame"):
+                tab_frame.qobuz_chk_frame.pack(fill="x", anchor="w", padx=10, pady=(5, 10))
+
+            qobuz_use_id = settings_vars.get("credentials", {}).get("Qobuz", {}).get("use_id_token")
+            qobuz_use_id = qobuz_use_id.get() if hasattr(qobuz_use_id, "get") else False
+
+            # --- Left Column: "How to set up" header + instructions ---
             left_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
             left_col.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
-            
-            # Header
             left_header = customtkinter.CTkFrame(left_col, fg_color="transparent")
             left_header.pack(anchor="w", pady=(0, 15))
-            
-            icon_label = customtkinter.CTkLabel(
-                left_header, 
-                text="💡", 
-                font=("Segoe UI", 20), 
-                text_color=WARNING_COLOR
-            )
+            icon_label = customtkinter.CTkLabel(left_header, text="💡", font=("Segoe UI", 20), text_color=WARNING_COLOR)
             icon_label.pack(side="left", padx=(5, 10))
-            
-            title_label = customtkinter.CTkLabel(
-                left_header, 
-                text="How to set up", 
-                font=("Segoe UI", 16, "bold"), 
-                text_color="#DCE4EE"
-            )
+            title_label = customtkinter.CTkLabel(left_header, text="How to set up", font=("Segoe UI", 16, "bold"), text_color="#DCE4EE")
             title_label.pack(side="left")
-            
-            # Instructions
-            # Step 1
-            step1_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            # See demo: same size/position as Spotify/YouTube (place on help_frame top-right when ID/Token)
+            qobuz_see_demo_btn = customtkinter.CTkButton(
+                help_frame,
+                text="See demo",
+                width=80,
+                height=24,
+                font=("Segoe UI", 11),
+                fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
+                hover_color="#1F6AA5",
+                command=lambda: webbrowser.open("https://play.qobuz.com")
+            )
+            if not qobuz_use_id:
+                qobuz_see_demo_btn.place_forget()
+
+            # --- Email/Password instructions ---
+            left_col_email = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            left_col_email.pack(anchor="w", pady=0)
+            step1_frame = customtkinter.CTkFrame(left_col_email, fg_color="transparent")
             step1_frame.pack(anchor="w", pady=0)
-            
             customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
-            
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
-            
-            customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to ", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=350).pack(side="left")
-            
+            customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to ", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             qobuz_link = customtkinter.CTkLabel(step1_text_frame, text="Qobuz", font=("Consolas", 12, "underline"), text_color=LINK_COLOR, cursor="hand2")
             qobuz_link.pack(side="left")
             qobuz_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.qobuz.com"))
             qobuz_link.bind("<Enter>", lambda e: qobuz_link.configure(text_color=LINK_HOVER_COLOR))
             qobuz_link.bind("<Leave>", lambda e: qobuz_link.configure(text_color=LINK_COLOR))
-            
-            # Note
-            note_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            note_frame = customtkinter.CTkFrame(left_col_email, fg_color="transparent")
             note_frame.pack(anchor="w", pady=(0, 5))
-            customtkinter.CTkLabel(note_frame, text="", width=35).pack(side="left") # Indent
+            customtkinter.CTkLabel(note_frame, text="", width=35).pack(side="left")
             customtkinter.CTkLabel(note_frame, text="(active subscription required)", font=("Segoe UI", 12), text_color="gray").pack(side="left")
 
-            
-            # --- Right Column: Recommended Values ---
+            # --- ID/Token instructions: left = steps 1–3, right = steps 4–5 (no Recommended Values header) ---
+            left_col_idtoken = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            def _qobuz_step(parent, num, text):
+                f = customtkinter.CTkFrame(parent, fg_color="transparent")
+                f.pack(anchor="w", pady=(0, 5))
+                customtkinter.CTkLabel(f, text=f"{num}.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
+                customtkinter.CTkLabel(f, text=text, font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+                return f
+            step1_id_frame = customtkinter.CTkFrame(left_col_idtoken, fg_color="transparent")
+            step1_id_frame.pack(anchor="w", pady=(0, 5))
+            customtkinter.CTkLabel(step1_id_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
+            customtkinter.CTkLabel(step1_id_frame, text="Log in to Qobuz (", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            qobuz_play_link = customtkinter.CTkLabel(step1_id_frame, text="https://play.qobuz.com", font=("Consolas", 12, "underline"), text_color=LINK_COLOR, cursor="hand2")
+            qobuz_play_link.pack(side="left")
+            qobuz_play_link.bind("<Button-1>", lambda e: webbrowser.open("https://play.qobuz.com"))
+            qobuz_play_link.bind("<Enter>", lambda e: qobuz_play_link.configure(text_color=LINK_HOVER_COLOR))
+            qobuz_play_link.bind("<Leave>", lambda e: qobuz_play_link.configure(text_color=LINK_COLOR))
+            customtkinter.CTkLabel(step1_id_frame, text=")", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            _qobuz_step(left_col_idtoken, 2, "Hit F12 to open DevTools in your browser")
+            # Step 3: one-liner (no wrap)
+            step3_id_frame = customtkinter.CTkFrame(left_col_idtoken, fg_color="transparent")
+            step3_id_frame.pack(anchor="w", pady=(0, 5))
+            customtkinter.CTkLabel(step3_id_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
+            customtkinter.CTkLabel(step3_id_frame, text="Go to Storage/Application → Local storage → play.qobuz.com", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+
+            # --- Right Column: "Recommended Values" header (same height as "How to set up") + app_id / app_secret ---
             right_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
             right_col.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
-            
-            # Header
             right_header = customtkinter.CTkFrame(right_col, fg_color="transparent")
             right_header.pack(anchor="w", pady=(0, 15))
-            
-            key_icon = customtkinter.CTkLabel(
-                right_header, 
-                text="🔑", 
-                font=("Segoe UI", 20), 
-                text_color="gray"
-            )
+            key_icon = customtkinter.CTkLabel(right_header, text="🔑", font=("Segoe UI", 20), text_color="gray")
             key_icon.pack(side="left", padx=(0, 10))
-            
-            rec_title = customtkinter.CTkLabel(
-                right_header, 
-                text="Recommended Values", 
-                font=("Segoe UI", 16, "bold"), 
-                text_color="#DCE4EE"
-            )
+            rec_title = customtkinter.CTkLabel(right_header, text="Recommended Values", font=("Segoe UI", 16, "bold"), text_color="#DCE4EE")
             rec_title.pack(side="left")
             
-            # Values List
             def create_value_row(parent, label, value):
                 row = customtkinter.CTkFrame(parent, fg_color="transparent")
                 row.pack(anchor="w", pady=(0, 5))
@@ -9622,11 +9864,57 @@ def _create_credential_tab_content(platform_name, tab_frame):
             create_value_row(right_col, "app_id", "798273057")
             create_value_row(right_col, "app_secret", "abb21364945c0583309667d13ca3d93a")
 
+            # Right column for ID/Token: steps 4 and 5, same left alignment as app_id; style "local user", "ID", "Token" like SoundCloud oauth_token (Consolas, LINK_COLOR)
+            right_col_idtoken = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            _qobuz_spacer = customtkinter.CTkLabel(right_col_idtoken, text="", height=0)
+            _qobuz_spacer.pack(anchor="w", pady=(28, 0))
+            step4_right = customtkinter.CTkFrame(right_col_idtoken, fg_color="transparent")
+            step4_right.pack(anchor="w", pady=(0, 5))
+            customtkinter.CTkLabel(step4_right, text="4. Seek for ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step4_right, text="local user", font=("Consolas", 12), text_color=LINK_COLOR).pack(side="left")
+            step5_right = customtkinter.CTkFrame(right_col_idtoken, fg_color="transparent")
+            step5_right.pack(anchor="w", pady=(0, 5))
+            customtkinter.CTkLabel(step5_right, text="5. Copy ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step5_right, text="ID", font=("Consolas", 12), text_color=LINK_COLOR).pack(side="left")
+            customtkinter.CTkLabel(step5_right, text=" and ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step5_right, text="Token", font=("Consolas", 12), text_color=LINK_COLOR).pack(side="left")
+            customtkinter.CTkLabel(step5_right, text=" value and paste above", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+
+            def _qobuz_help_update(use_id):
+                if use_id:
+                    left_col_email.pack_forget()
+                    left_col_idtoken.pack(anchor="w", pady=0)
+                    right_col.grid_remove()
+                    right_col_idtoken.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+                    # Same position as YouTube: top-right of help_frame, then lift so it's not covered
+                    qobuz_see_demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
+                    qobuz_see_demo_btn.lift()
+                else:
+                    left_col_idtoken.pack_forget()
+                    left_col_email.pack(anchor="w", pady=0)
+                    right_col_idtoken.grid_remove()
+                    right_col.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+                    qobuz_see_demo_btn.place_forget()
+            tab_frame.qobuz_help_update = _qobuz_help_update
+            if qobuz_use_id:
+                left_col_email.pack_forget()
+                left_col_idtoken.pack(anchor="w", pady=0)
+                right_col.grid_remove()
+                right_col_idtoken.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+                qobuz_see_demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
+                qobuz_see_demo_btn.lift()
+            else:
+                left_col_idtoken.pack_forget()
+                left_col_email.pack(anchor="w", pady=0)
+                right_col_idtoken.grid_remove()
+                right_col.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+                qobuz_see_demo_btn.place_forget()
+
         
         # Add help text for SoundCloud module
         if platform_name == "SoundCloud":
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 5))
+            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
             
             # --- Single Column: How to set up ---
@@ -9699,7 +9987,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step4_text_frame, text="Seek for ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
             customtkinter.CTkLabel(step4_text_frame, text="oauth_token", font=("Consolas", 12), text_color=LINK_COLOR).pack(side="left")
             customtkinter.CTkLabel(step4_text_frame, text=" which looks like: ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
-            customtkinter.CTkLabel(step4_text_frame, text="2-000000-0000000000-xxxxxxxxxxxxx", font=("Consolas", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step4_text_frame, text="2-000000-0000000000-xxxxxxxxxxxxx", font=("Consolas", 11), text_color=LINK_COLOR).pack(side="left")
             
             # Step 5
             step5_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
@@ -9727,7 +10015,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     print(f"Error copying to clipboard: {e}")
             
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 5))
+            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
             help_frame.grid_columnconfigure(1, weight=1)
             
@@ -9761,7 +10049,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step1_frame, text="Just enter url to download or use search function", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=350).pack(side="left")
+            customtkinter.CTkLabel(step1_frame, text="Just enter url to download or use search function", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             
             # Step 2
             step2_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
@@ -9772,7 +10060,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step2_text_frame = customtkinter.CTkFrame(step2_frame, fg_color="transparent")
             step2_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step2_text_frame, text="In the browser window that opens, fill in the email & password", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=350).pack(anchor="w")
+            customtkinter.CTkLabel(step2_text_frame, text="In the browser window that opens, fill in the email & password", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(anchor="w")
             
             step2_line2 = customtkinter.CTkFrame(step2_text_frame, fg_color="transparent")
             step2_line2.pack(anchor="w")
@@ -9789,7 +10077,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step3_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step3_frame, text="Hit continue to link your device & close the browser", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=350).pack(side="left")
+            customtkinter.CTkLabel(step3_frame, text="Hit continue to link your device & close the browser", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             
             
             # --- Right Column: Recommended Values ---
@@ -9842,7 +10130,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Add help text for Beatport module
         if platform_name == "Beatport":
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 5))
+            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
             
             # --- Single Column: How to set up ---
@@ -9879,7 +10167,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to ", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=700).pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to ", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             
             beatport_link = customtkinter.CTkLabel(step1_text_frame, text="Beatport", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             beatport_link.pack(side="left")
@@ -9896,7 +10184,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Add help text for Beatsource module
         if platform_name == "Beatsource":
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-            help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 5))
+            help_frame.pack(fill="both", expand=True, padx=5, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
             
             # --- Single Column: How to set up ---
@@ -9933,7 +10221,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to ", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=700).pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to ", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             
             beatsource_link = customtkinter.CTkLabel(step1_text_frame, text="Beatsource", font=("Consolas", 12, "underline"), text_color="#1F6AA5", cursor="hand2")
             beatsource_link.pack(side="left")
@@ -9953,7 +10241,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Ensure help_frame exists (create it if it doesn't, e.g. for Beatport/Beatsource)
         if 'help_frame' not in locals():
              help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
-             help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
+             help_frame.grid(row=len(default_platform_fields), column=0, columnspan=2, sticky="ew", padx=5, pady=(20, 10))
              help_frame.grid_columnconfigure(0, weight=1)
              
              # If we just created it, it's empty. We might want to add a minimal title or just leave it for the button.
@@ -9999,7 +10287,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         traceback.print_exc(file=sys.__stderr__)
 
 def _handle_settings_tab_change():
-    global loaded_credential_tabs, settings_tabview, credential_tabs_config
+    global loaded_credential_tabs, settings_tabview, credential_tabs_config, settings_bottom_frame
     selected_tab_name = settings_tabview.get()
     
     if selected_tab_name not in loaded_credential_tabs:
@@ -10008,6 +10296,16 @@ def _handle_settings_tab_change():
                 _create_credential_tab_content(tab_name, tab_info['frame'])
                 loaded_credential_tabs.add(tab_name)
                 break
+
+    # Deezer/Qobuz: minimal space; Global: less space above Save; other platform tabs: match Download tab (20px above)
+    if 'settings_bottom_frame' in globals() and settings_bottom_frame and settings_bottom_frame.winfo_exists():
+        if selected_tab_name in ("Deezer", "Qobuz"):
+            pady_top = (0, 5)
+        elif selected_tab_name == "Global":
+            pady_top = (5, 5)
+        else:
+            pady_top = (8, 5)
+        settings_bottom_frame.grid_configure(pady=pady_top)
 
 def update_search_platform_dropdown():
     """Updates the platform dropdown in the Search tab based on current settings AND installed modules."""
@@ -10044,15 +10342,25 @@ def update_search_platform_dropdown():
                 continue
 
             current_platform_creds = current_settings.get("credentials", {}).get(platform_name_iter, {})
-            is_fully_filled = True
-            for field_key in default_platform_fields.keys():
-                field_value = current_platform_creds.get(field_key, "")                
-                if isinstance(default_platform_fields[field_key], bool):
-                    pass
-                elif not str(field_value).strip():
-                    is_fully_filled = False
-                    break
-            
+            # Qobuz: valid if (username and password) OR (user_id and auth_token)
+            if platform_name_iter == "Qobuz":
+                has_email_pass = bool(str(current_platform_creds.get("username", "") or "").strip() and str(current_platform_creds.get("password", "") or "").strip())
+                has_id_token = bool(str(current_platform_creds.get("user_id", "") or "").strip() and str(current_platform_creds.get("auth_token", "") or "").strip())
+                is_fully_filled = has_email_pass or has_id_token
+            elif platform_name_iter == "Deezer":
+                has_email_pass = bool(str(current_platform_creds.get("email", "") or "").strip() and str(current_platform_creds.get("password", "") or "").strip())
+                has_arl = bool(str(current_platform_creds.get("arl", "") or "").strip())
+                is_fully_filled = has_email_pass or has_arl
+            else:
+                is_fully_filled = True
+                for field_key in default_platform_fields.keys():
+                    field_value = current_platform_creds.get(field_key, "")
+                    if isinstance(default_platform_fields[field_key], bool):
+                        pass
+                    elif not str(field_value).strip():
+                        is_fully_filled = False
+                        break
+
             if is_fully_filled:
                 configured_platforms.append(platform_name_iter)
         
@@ -10584,13 +10892,13 @@ if __name__ == "__main__":
                 "Beatport": { "username": "", "password": "" },
                 "Beatsource": { "username": "", "password": "" },
                 "Bugs": { "username": "", "password": "" },
-                "Deezer": { "client_id": "447462", "client_secret": "a83bf7f38ad2f137e444727cfc3775cf", "bf_secret": "g4el58wc0zvf9na1", "email": "", "password": "" },
+                "Deezer": { "client_id": "447462", "client_secret": "a83bf7f38ad2f137e444727cfc3775cf", "bf_secret": "g4el58wc0zvf9na1", "email": "", "password": "", "arl": "", "use_arl": "false" },
                 "Idagio": { "username": "", "password": "" }, 
                 "KKBOX": { "kc1_key": "", "secret_key": "", "email": "", "password": "" },
                 "Musixmatch": { "token_limit": 10, "lyrics_format": "standard", "custom_time_decimals": False },
                 "Napster": { "api_key": "", "customer_secret": "", "requested_netloc": "", "username": "", "password": "" },
                 "Nugs": { "username": "", "password": "", "client_id": "", "dev_key": "" },
-                "Qobuz": { "app_id": "798273057", "app_secret": "abb21364945c0583309667d13ca3d93a", "quality_format": "{sample_rate}kHz {bit_depth}bit", "username": "", "password": "" },
+                "Qobuz": { "app_id": "798273057", "app_secret": "abb21364945c0583309667d13ca3d93a", "quality_format": "{sample_rate}kHz {bit_depth}bit", "username": "", "password": "", "user_id": "", "auth_token": "", "use_id_token": "false" },
                 "SoundCloud": { "web_access_token": "" },
                 "Spotify": { "username": "", "download_pause_seconds": 30, "client_id": "", "client_secret": "" },
                 "Tidal": { "tv_atmos_token": "4N3n6Q1x95LL5K7p", "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=", "mobile_atmos_hires_token": "km8T1xS355y7dd3H", "mobile_hires_token": "6BDSRdpK9hqEBTgU", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True },
@@ -10994,7 +11302,7 @@ if __name__ == "__main__":
         settings_tabview.pack(expand=True, fill="both", padx=5, pady=5)
         global_settings_tab = settings_tabview.add("Global")
         global_settings_frame = customtkinter.CTkScrollableFrame(global_settings_tab)
-        global_settings_frame.pack(expand=True, fill="both", padx=0, pady=(0, 5))
+        global_settings_frame.pack(expand=True, fill="both", padx=5, pady=(0, 5))
         global_settings_frame.grid_columnconfigure(1, weight=1)
         global_settings_frame.grid_columnconfigure(0, uniform="settings_label_column")
         global_settings_frame.grid_columnconfigure(2, weight=0)
@@ -11458,13 +11766,39 @@ Unnecessary Lossless-to-Lossless""",
             platform_tab_frame = settings_tabview.add(platform_key)
             credential_tabs_config[platform_key] = {'frame': platform_tab_frame}
         settings_tabview.set("Global")
-        save_controls_frame = customtkinter.CTkFrame(settings_tab, fg_color="transparent"); save_controls_frame.pack(side="bottom", anchor="se", padx=10, pady=(0, 10))
-        save_status_var = tkinter.StringVar(); save_status_label = customtkinter.CTkLabel(save_controls_frame, textvariable=save_status_var, text_color=("#00C851", "#00C851"))
+        # Bottom wrapper frame so Save section never shrinks/disappears regardless of content above
+        settings_tabview.pack_forget()
+        settings_tab.grid_columnconfigure(0, weight=1)
+        settings_tab.grid_rowconfigure(0, weight=1)
+        settings_tab.grid_rowconfigure(1, weight=0, minsize=40)
+        settings_tabview.grid(row=0, column=0, sticky="nsew", padx=5, pady=(5, 0))
+        settings_bottom_frame = customtkinter.CTkFrame(settings_tab, fg_color="transparent")
+        # Padding above Save: Global=5px, Deezer/Qobuz=0, other platform tabs=20px (see _handle_settings_tab_change)
+        settings_bottom_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=(5, 5))
+        settings_bottom_frame.grid_columnconfigure(0, weight=1)
+        globals()['settings_bottom_frame'] = settings_bottom_frame
+        save_controls_frame = customtkinter.CTkFrame(settings_bottom_frame, fg_color="transparent")
+        save_controls_frame.pack(side="bottom", anchor="se", padx=(8, 5), pady=(0, 5))
+        save_status_var = tkinter.StringVar()
+        save_status_label = customtkinter.CTkLabel(save_controls_frame, textvariable=save_status_var, text_color=("#00C851", "#00C851"))
         globals()['save_status_label'] = save_status_label
         save_status_label.pack(side="left", padx=(0, 10))
-        save_button = customtkinter.CTkButton(save_controls_frame, text="Save", width=100, height=30, command=handle_save_settings, fg_color=BUTTON_COLOR, hover_color="#1F6AA5"); save_button.pack(side="left", padx=5, pady=(0, 0))
-        about_tab = tabview.add("About"); about_container = customtkinter.CTkFrame(about_tab, fg_color="transparent"); about_container.pack(fill="both", expand=True, padx=16, pady=(0, 0)); canvas = customtkinter.CTkFrame(about_container, fg_color="transparent"); canvas.pack(fill="both", expand=True); about_frame = customtkinter.CTkFrame(canvas, fg_color="transparent"); about_frame.pack(fill="x", expand=False, pady=10)
-        icon_title_frame = customtkinter.CTkFrame(about_frame, fg_color="transparent")
+        save_button = customtkinter.CTkButton(save_controls_frame, text="Save", width=100, height=30, command=handle_save_settings, fg_color=BUTTON_COLOR, hover_color="#1F6AA5")
+        save_button.pack(side="left", padx=5, pady=(0, 0))
+        about_tab = tabview.add("About")
+        about_container = customtkinter.CTkFrame(about_tab, fg_color="transparent")
+        about_container.pack(fill="both", expand=True, padx=16, pady=(0, 0))
+        canvas = customtkinter.CTkFrame(about_container, fg_color="transparent")
+        canvas.pack(fill="both", expand=True)
+        canvas.grid_columnconfigure(0, weight=1)
+        canvas.grid_rowconfigure(0, weight=1)
+        canvas.grid_rowconfigure(1, weight=0)
+        about_mid = customtkinter.CTkFrame(canvas, fg_color="transparent")
+        about_mid.grid(row=0, column=0, sticky="nsew")
+        about_mid.grid_columnconfigure(0, weight=1)
+        about_mid.grid_rowconfigure(0, weight=1)
+        mid_inner = customtkinter.CTkFrame(about_mid, fg_color="transparent")
+        icon_title_frame = customtkinter.CTkFrame(mid_inner, fg_color="transparent")
         icon_title_frame.pack(pady=(0, 5))
         try:
             current_platform = platform.system()
@@ -11525,23 +11859,34 @@ Unnecessary Lossless-to-Lossless""",
                 print(f"[DEBUG AboutIcon] Error during icon path processing/loading: {type(path_e).__name__}: {path_e}")
         title_label = customtkinter.CTkLabel(icon_title_frame, text="OrpheusDL GUI", font=customtkinter.CTkFont(weight="bold"))
         title_label.pack(pady=(0, 0))
-        description_text = ("Makes downloading music with OrpheusDL easy on Win, macOS & Linux.\nSearch multiple platforms & download high-quality audio with metadata."); description_label = customtkinter.CTkLabel(about_frame, text=description_text, justify="center", wraplength=450); description_label.pack(pady=(0, 10))
+        description_text = ("Makes downloading music with OrpheusDL easy on Win, macOS & Linux.\nSearch multiple platforms & download high-quality audio with metadata.")
+        description_label = customtkinter.CTkLabel(mid_inner, text=description_text, justify="center", wraplength=450)
+        description_label.pack(pady=(0, 10))
         github_url = "https://github.com/bascurtiz/OrpheusDL-GUI"
         command = lambda u=github_url: os.startfile(u) if platform.system() == "Windows" else subprocess.Popen(["open", u]) if platform.system() == "Darwin" else subprocess.Popen(["xdg-open", u])
-        github_button = customtkinter.CTkButton(about_frame, text="GitHub", command=command, width=110, fg_color="#343638", hover_color=LINK_COLOR)
+        github_button = customtkinter.CTkButton(mid_inner, text="GitHub", command=command, width=100, height=30, fg_color="#343638", hover_color=LINK_COLOR)
         github_button.pack(pady=10)
         section_header_font = ("Segoe UI", 11)
         section_header_color = SECONDARY_TEXT_COLOR
-        version_heading_label = customtkinter.CTkLabel(about_frame, text="GUI VERSION", font=section_header_font, text_color=section_header_color)
+        version_heading_label = customtkinter.CTkLabel(mid_inner, text="GUI VERSION", font=section_header_font, text_color=section_header_color)
         version_heading_label.pack(pady=(10, 0))
-        version_number_label = customtkinter.CTkLabel(about_frame, text=__version__)
+        version_number_label = customtkinter.CTkLabel(mid_inner, text=__version__)
         version_number_label.pack(pady=(0, 10))
-        credits_heading_label = customtkinter.CTkLabel(about_frame, text="CREDITS", font=section_header_font, text_color=section_header_color)
+        credits_heading_label = customtkinter.CTkLabel(mid_inner, text="CREDITS", font=section_header_font, text_color=section_header_color)
         credits_heading_label.pack(pady=(0, 2))
-        credits_names_text = ("""OrfiDev (Project Lead)\nDniel97 (Current Lead Developer)\nCommunity developers (Modules)\nBas Curtiz (GUI)"""); credits_names_label = customtkinter.CTkLabel(about_frame, text=credits_names_text.strip(), justify="center"); credits_names_label.pack(pady=(0, 0))
-        modules_title = customtkinter.CTkLabel(about_frame, text="MODULES", font=section_header_font, text_color=section_header_color)
-        modules_title.pack(pady=(20, 5))
-        modules_frame = customtkinter.CTkFrame(about_frame, fg_color="transparent"); modules_frame.pack(fill="x", padx=20, pady=(0, 10))
+        credits_names_text = ("""OrfiDev (Project Lead)\nDniel97 (Current Lead Developer)\nCommunity developers (Modules)\nBas Curtiz (GUI)""")
+        credits_names_label = customtkinter.CTkLabel(mid_inner, text=credits_names_text.strip(), justify="center")
+        credits_names_label.pack(pady=(0, 0))
+        mid_inner.place(relx=0.5, rely=0.5, anchor="center")
+        about_bottom = customtkinter.CTkFrame(canvas, fg_color="transparent")
+        about_bottom.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        about_bottom.grid_columnconfigure(0, weight=1)
+        modules_title = customtkinter.CTkLabel(about_bottom, text="MODULES", font=section_header_font, text_color=section_header_color)
+        modules_title.pack(pady=(0, 5), anchor="center")
+        modules_center_wrapper = customtkinter.CTkFrame(about_bottom, fg_color="transparent")
+        modules_center_wrapper.pack(fill="x", pady=(0, 10))
+        modules_frame = customtkinter.CTkFrame(modules_center_wrapper, fg_color="transparent")
+        modules_frame.pack(anchor="center", padx=20)
         module_buttons_data = [
             ("Apple Music", "https://github.com/bascurtiz/orpheusdl-applemusic"),
             ("Beatport", "https://github.com/bascurtiz/orpheusdl-beatport"),
@@ -11563,9 +11908,8 @@ Unnecessary Lossless-to-Lossless""",
         module_buttons_data.sort(key=lambda item: item[0])
         cols = 8
         rows = (len(module_buttons_data) + cols - 1) // cols if module_buttons_data else 0
-        for i in range(cols):
-            modules_frame.grid_columnconfigure(i, weight=1)
-        button_width = 110
+        button_width = 100
+        button_height = 30
         button_padx = 2
         button_pady = 2
         for index, (name, url) in enumerate(module_buttons_data):
@@ -11577,10 +11921,11 @@ Unnecessary Lossless-to-Lossless""",
                 text=name,
                 command=command,
                 width=button_width,
+                height=button_height,
                 fg_color="#343638",
                 hover_color=LINK_COLOR
             )
-            button.grid(row=row, column=col, padx=button_padx, pady=button_pady, sticky="nsew")
+            button.grid(row=row, column=col, padx=button_padx, pady=button_pady, sticky="nw")
 
         
         # Check for FFmpeg on macOS/Linux and show helpful message if missing
