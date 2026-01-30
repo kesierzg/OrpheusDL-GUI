@@ -6654,7 +6654,7 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                 downloader_settings["general"] = {
                     "download_path": fresh_section.get("download_path", default_section.get("output_path", "./downloads/")),
                     "download_quality": fresh_section.get("download_quality", default_section.get("quality", "hifi")),
-                    "search_limit": fresh_section.get("search_limit", default_section.get("search_limit", 10)),
+                    "search_limit": fresh_section.get("search_limit", default_section.get("search_limit", 25)),
                     "concurrent_downloads": fresh_section.get("concurrent_downloads", default_section.get("concurrent_downloads", 5)),
                     "play_sound_on_finish": fresh_section.get("play_sound_on_finish", default_section.get("play_sound_on_finish", False)),
                     "progress_bar": False
@@ -7444,9 +7444,9 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
             except Exception: pass
             early_return = True
             return
-        search_limit = gui_settings.get("globals", {}).get("general", {}).get("search_limit", 20)
+        search_limit = gui_settings.get("globals", {}).get("general", {}).get("search_limit", 25)
         try: search_limit = int(search_limit)
-        except (ValueError, TypeError): search_limit = 20
+        except (ValueError, TypeError): search_limit = 25
         search_type_map = { "track": local_DownloadTypeEnum.track, "album": local_DownloadTypeEnum.album, "artist": local_DownloadTypeEnum.artist, "playlist": local_DownloadTypeEnum.playlist, "channel": local_DownloadTypeEnum.artist }
         query_type = search_type_map.get(search_type_str.lower())
         if not query_type: raise ValueError(f"Invalid search type: {search_type_str}")
@@ -10963,7 +10963,7 @@ if __name__ == "__main__":
                 "general": {
                     "output_path": os.path.join(_DATA_DIR if _DATA_DIR else _SCRIPT_DIR, "Downloads"),
                     "quality": "hifi",
-                    "search_limit": 20,
+                    "search_limit": 25,
                     "concurrent_downloads": 5,
                     "play_sound_on_finish": True
                 },
