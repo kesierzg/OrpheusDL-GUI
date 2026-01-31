@@ -1,8 +1,7 @@
 import platform
 import os
 from PyInstaller.utils.hooks import collect_all, collect_submodules
-# Tree is provided as a global by PyInstaller when it runs the spec; do not import
-# from PyInstaller.building (e.g. datastructs) as that path changed in PyInstaller 6.x.
+# Do not import Tree from PyInstaller.building (path changed in 6.x). We build datas as 2-tuples below.
 
 block_cipher = None
 
@@ -25,10 +24,15 @@ additional_datas = [
     ('update_checker.py', '.'),
 ]
 
-# Include each module subfolder explicitly so no module (e.g. youtube) is omitted on macOS.
-# A single Tree('modules') can miss subdirs on some PyInstaller/macOS combinations; per-module Tree fixes that.
+# Include each module subfolder explicitly as (src, dest) 2-tuples so no module (e.g. youtube) is omitted.
+# Tree() returns 3-tuple TOC entries; Analysis(datas=...) expects 2-tuples, so we build the list manually.
 if os.path.isdir(MODULES_SRC):
-    # Top-level modules package init (required for import)
+    _exclude_dirs = {'__pycache__', '.git'}
+    _exclude_suffixes = ('.pyc',)
+    def _should_skip(path):
+        if path in _exclude_dirs or path.endswith(_exclude_suffixes) or path == '.gitignore':
+            return True
+        return False
     modules_init = os.path.join(MODULES_SRC, '__init__.py')
     if os.path.isfile(modules_init):
         additional_datas.append((modules_init, 'modules'))
@@ -36,9 +40,20 @@ if os.path.isdir(MODULES_SRC):
     for subdir in sorted(module_subdirs):
         if subdir == '__pycache__':
             continue
-        src = os.path.join(MODULES_SRC, subdir)
-        # Tree with absolute src; prefix so it lands under 'modules/<subdir>' in the bundle
-        additional_datas += Tree(src, prefix=os.path.join('modules', subdir), excludes=['__pycache__', '*.pyc', '.git', '.gitignore'])
+        src_root = os.path.join(MODULES_SRC, subdir)
+        dest_prefix = os.path.join('modules', subdir)
+        for root, dirs, filenames in os.walk(src_root, topdown=True):
+            dirs[:] = [d for d in dirs if not _should_skip(d)]
+            rel_root = os.path.relpath(root, src_root)
+            for f in filenames:
+                if _should_skip(f):
+                    continue
+                src_path = os.path.join(root, f)
+                if rel_root == '.':
+                    dest_path = os.path.join(dest_prefix, f)
+                else:
+                    dest_path = os.path.join(dest_prefix, rel_root, f)
+                additional_datas.append((src_path, os.path.dirname(dest_path)))
     print(f"[PyInstaller] Including modules folder with: {module_subdirs}")
 
 # Collect binaries (ffmpeg - Windows only)

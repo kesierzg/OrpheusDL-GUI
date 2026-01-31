@@ -3622,22 +3622,16 @@ def copy_bundled_resources_to_data_dir(data_dir):
         bundled_module_list = [d for d in os.listdir(bundled_modules) if os.path.isdir(os.path.join(bundled_modules, d))]
         if bundled_module_list:
             os.makedirs(dest_modules, exist_ok=True)
-            dest_module_list = [d for d in os.listdir(dest_modules) if os.path.isdir(os.path.join(dest_modules, d))] if os.path.isdir(dest_modules) else []
-            
-            # Only copy if destination modules folder is empty or has fewer modules
-            if not dest_module_list:
-                print(f"[Resource Copy] Copying bundled modules to {dest_modules}: {bundled_module_list}")
-                for module_name in bundled_module_list:
-                    src = os.path.join(bundled_modules, module_name)
-                    dst = os.path.join(dest_modules, module_name)
-                    if not os.path.exists(dst):
-                        try:
-                            shutil.copytree(src, dst)
-                            print(f"[Resource Copy] Copied module: {module_name}")
-                        except Exception as e:
-                            print(f"[Resource Copy] Failed to copy module {module_name}: {e}")
-            else:
-                print(f"[Resource Copy] Destination modules folder already has content: {dest_module_list}")
+            # Copy each bundled module that is missing in destination (first run or app update with new modules e.g. youtube)
+            for module_name in bundled_module_list:
+                src = os.path.join(bundled_modules, module_name)
+                dst = os.path.join(dest_modules, module_name)
+                if not os.path.exists(dst):
+                    try:
+                        shutil.copytree(src, dst)
+                        print(f"[Resource Copy] Copied module: {module_name}")
+                    except Exception as e:
+                        print(f"[Resource Copy] Failed to copy module {module_name}: {e}")
     else:
         print(f"[Resource Copy] No bundled modules found at {bundled_modules}")
     
