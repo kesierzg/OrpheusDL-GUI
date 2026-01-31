@@ -5,6 +5,10 @@ from PyInstaller.building.datastructs import Tree
 
 block_cipher = None
 
+# Resolve paths relative to the spec file so build works regardless of CWD (e.g. on macOS)
+SPEC_DIR = os.path.dirname(os.path.abspath(__file__ or os.getcwd()))
+MODULES_SRC = os.path.join(SPEC_DIR, 'modules')
+
 # Collect ffmpeg-python package properly to avoid circular import issues
 ffmpeg_datas, ffmpeg_binaries, ffmpeg_hiddenimports = collect_all('ffmpeg')
 print(f"[PyInstaller] Collected ffmpeg submodules: {ffmpeg_hiddenimports}")
@@ -17,13 +21,21 @@ additional_datas = [
     ('update_checker.py', '.'),
 ]
 
-# Include modules folder recursively so every submodule (e.g. youtube) is bundled.
-# Using Tree() ensures all subdirectories are included; plain ('modules','modules') can omit some on macOS.
-if os.path.isdir('modules'):
-    module_contents = [d for d in os.listdir('modules') if os.path.isdir(os.path.join('modules', d))]
-    if module_contents:
-        additional_datas += Tree('modules', prefix='modules', excludes=['__pycache__', '*.pyc', '.git', '.gitignore'])
-        print(f"[PyInstaller] Including modules folder (Tree) with: {module_contents}")
+# Include each module subfolder explicitly so no module (e.g. youtube) is omitted on macOS.
+# A single Tree('modules') can miss subdirs on some PyInstaller/macOS combinations; per-module Tree fixes that.
+if os.path.isdir(MODULES_SRC):
+    # Top-level modules package init (required for import)
+    modules_init = os.path.join(MODULES_SRC, '__init__.py')
+    if os.path.isfile(modules_init):
+        additional_datas.append((modules_init, 'modules'))
+    module_subdirs = [d for d in os.listdir(MODULES_SRC) if os.path.isdir(os.path.join(MODULES_SRC, d))]
+    for subdir in sorted(module_subdirs):
+        if subdir == '__pycache__':
+            continue
+        src = os.path.join(MODULES_SRC, subdir)
+        # Tree with absolute src; prefix so it lands under 'modules/<subdir>' in the bundle
+        additional_datas += Tree(src, prefix=os.path.join('modules', subdir), excludes=['__pycache__', '*.pyc', '.git', '.gitignore'])
+    print(f"[PyInstaller] Including modules folder with: {module_subdirs}")
 
 # Collect binaries (ffmpeg - Windows only)
 # On macOS/Linux, we don't bundle ffmpeg - users should install via package manager
