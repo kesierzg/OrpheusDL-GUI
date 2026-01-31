@@ -3254,6 +3254,27 @@ def get_data_directory():
             is_macos_app_bundle = True
             detection_reason = "frozen PyInstaller app on macOS"
             
+    # Windows Program Files check (install for all users = read-only, cannot write config/temp)
+    if is_frozen and platform.system() == "Windows":
+        exe_dir_lower = abs_executable_path.lower()
+        if "program files" in exe_dir_lower or "program files (x86)" in exe_dir_lower:
+            # Use LOCALAPPDATA (e.g. C:\Users\<user>\AppData\Local\OrpheusDL-GUI)
+            local_app_data = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+            app_data_dir = os.path.join(local_app_data, "OrpheusDL-GUI")
+            try:
+                os.makedirs(app_data_dir, exist_ok=True)
+                print(f"[Windows] Executable in Program Files - using writable data dir: {app_data_dir}")
+                try:
+                    with open(debug_log_path, 'a') as f:
+                        f.write(f"RESULT: Windows Program Files detected, using: {app_data_dir}\n")
+                except:
+                    pass
+                return app_data_dir
+            except Exception as e:
+                print(f"[Windows] ERROR: Could not create data directory {app_data_dir}: {e}")
+                # Fallback to script dir (may fail on write, but better than nothing)
+                pass
+    
     # Linux installation check
     print(f"[get_data_directory] Checking Linux: frozen={is_frozen}, platform={platform.system()}")
     if is_frozen and platform.system().lower() == "linux":
@@ -3652,6 +3673,11 @@ def copy_bundled_resources_to_data_dir(data_dir):
             print(f"[Resource Copy] ffmpeg already exists at {dest_ffmpeg}")
         else:
             print(f"[Resource Copy] No bundled ffmpeg found at {bundled_ffmpeg}")
+        # On Windows, prepend app dir to PATH so bundled deno.exe is findable by yt-dlp
+        app_dir = get_script_directory()
+        if app_dir and app_dir not in os.environ.get('PATH', '').split(os.pathsep):
+            os.environ['PATH'] = app_dir + os.pathsep + os.environ.get('PATH', '')
+            print(f"[Resource Copy] Prepended app dir to PATH for Deno: {app_dir}")
     elif platform.system() == 'Darwin':
         # On macOS, don't bundle FFmpeg - check for Homebrew installation instead
         print(f"[FFmpeg] macOS detected - using system FFmpeg (Homebrew recommended)")
