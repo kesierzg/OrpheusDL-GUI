@@ -6,8 +6,11 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 block_cipher = None
 
-# Resolve paths relative to the spec file so build works regardless of CWD (e.g. on macOS)
-SPEC_DIR = os.path.dirname(os.path.abspath(__file__ or os.getcwd()))
+# Resolve paths relative to the spec file. PyInstaller injects SPECPATH (spec dir); __file__ is not set when spec runs.
+try:
+    SPEC_DIR = os.path.abspath(SPECPATH)
+except NameError:
+    SPEC_DIR = os.getcwd()
 MODULES_SRC = os.path.join(SPEC_DIR, 'modules')
 
 # Collect ffmpeg-python package properly to avoid circular import issues
