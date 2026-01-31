@@ -1,6 +1,7 @@
 import platform
 import os
 from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.building.datastructs import Tree
 
 block_cipher = None
 
@@ -16,12 +17,13 @@ additional_datas = [
     ('update_checker.py', '.'),
 ]
 
-# Include modules folder if it exists and has content
+# Include modules folder recursively so every submodule (e.g. youtube) is bundled.
+# Using Tree() ensures all subdirectories are included; plain ('modules','modules') can omit some on macOS.
 if os.path.isdir('modules'):
     module_contents = [d for d in os.listdir('modules') if os.path.isdir(os.path.join('modules', d))]
     if module_contents:
-        additional_datas.append(('modules', 'modules'))
-        print(f"[PyInstaller] Including modules folder with: {module_contents}")
+        additional_datas += Tree('modules', prefix='modules', excludes=['__pycache__', '*.pyc', '.git', '.gitignore'])
+        print(f"[PyInstaller] Including modules folder (Tree) with: {module_contents}")
 
 # Collect binaries (ffmpeg - Windows only)
 # On macOS/Linux, we don't bundle ffmpeg - users should install via package manager
