@@ -1,7 +1,8 @@
 import platform
 import os
 from PyInstaller.utils.hooks import collect_all, collect_submodules
-from PyInstaller.building.datastructs import Tree
+# Tree is provided as a global by PyInstaller when it runs the spec; do not import
+# from PyInstaller.building (e.g. datastructs) as that path changed in PyInstaller 6.x.
 
 block_cipher = None
 
