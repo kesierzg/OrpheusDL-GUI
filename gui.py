@@ -6866,6 +6866,7 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         except NameError: pass
         except Exception as e: logging.error(f"Error scheduling UI reset after Orpheus instance error: {e}")
         return
+
     def yield_to_gui():
         try:
             if 'app' in globals() and app and app.winfo_exists():
@@ -6873,6 +6874,7 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
             time.sleep(0.001)
         except:
             pass
+    
     yielding_active = threading.Event()
     yielding_active.set()
     
