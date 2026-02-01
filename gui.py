@@ -249,6 +249,11 @@ def _get_ffmpeg_path():
     # Fall back to PATH
     return 'ffmpeg'
 
+def _audio_debug():
+    """Return True if Advanced debug_mode is on (so [Audio] messages can be printed)."""
+    return (current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False)
+            if 'current_settings' in globals() else False)
+
 def _convert_to_wav(input_path, output_path):
     """Convert audio file to WAV using ffmpeg (for better Windows MCI compatibility)."""
     try:
@@ -264,14 +269,17 @@ def _convert_to_wav(input_path, output_path):
         result = subprocess.run(cmd, capture_output=True, timeout=15)
         if result.returncode == 0 and os.path.exists(output_path):
             file_size = os.path.getsize(output_path)
-            print(f"[Audio] Converted to WAV: {file_size} bytes")
+            if _audio_debug():
+                print(f"[Audio] Converted to WAV: {file_size} bytes")
             return True
         else:
             stderr = result.stderr.decode('utf-8', errors='ignore') if result.stderr else ''
-            print(f"[Audio] FFmpeg WAV conversion failed: {stderr[:200]}")
+            if _audio_debug():
+                print(f"[Audio] FFmpeg WAV conversion failed: {stderr[:200]}")
             return False
     except Exception as e:
-        print(f"[Audio] FFmpeg WAV conversion error: {e}")
+        if _audio_debug():
+            print(f"[Audio] FFmpeg WAV conversion error: {e}")
         return False
 
 def play_audio(source):
@@ -284,9 +292,9 @@ def play_audio(source):
     """
     global _audio_process, _current_volume
     system = platform.system()
-    
-    print(f"[Audio] play_audio called with source: {source[:100]}..." if len(str(source)) > 100 else f"[Audio] play_audio called with source: {source}")
-    
+    if _audio_debug():
+        print(f"[Audio] play_audio called with source: {source[:100]}..." if len(str(source)) > 100 else f"[Audio] play_audio called with source: {source}")
+
     # Stop any current playback FIRST
     stop_audio()
     
@@ -316,9 +324,9 @@ def play_audio(source):
             except:
                 import uuid
                 wav_path = os.path.join(temp_dir, f"orpheus_preview_stream_{uuid.uuid4().hex[:8]}.wav")
-            
-            print(f"[Audio] Converting stream to WAV with ffmpeg...")
-            
+            if _audio_debug():
+                print(f"[Audio] Converting stream to WAV with ffmpeg...")
+
             # Use ffmpeg to convert first 30 seconds to WAV
             convert_cmd = [
                 ffmpeg_path, '-y', '-hide_banner', '-loglevel', 'error',
@@ -334,18 +342,22 @@ def play_audio(source):
             result = subprocess.run(convert_cmd, capture_output=True, timeout=30)
             
             if result.returncode == 0 and os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
-                print(f"[Audio] Stream converted to WAV: {os.path.getsize(wav_path)} bytes")
+                if _audio_debug():
+                    print(f"[Audio] Stream converted to WAV: {os.path.getsize(wav_path)} bytes")
                 # Return the path - caller should play on main thread
                 return ('play_file', wav_path)
             else:
                 stderr = result.stderr.decode('utf-8', errors='ignore') if result.stderr else ''
-                print(f"[Audio] Failed to convert stream: {stderr[:200]}")
+                if _audio_debug():
+                    print(f"[Audio] Failed to convert stream: {stderr[:200]}")
                 return False
         except subprocess.TimeoutExpired:
-            print(f"[Audio] Stream conversion timed out")
+            if _audio_debug():
+                print(f"[Audio] Stream conversion timed out")
             return False
         except Exception as e:
-            print(f"[Audio] Error converting stream: {e}")
+            if _audio_debug():
+                print(f"[Audio] Error converting stream: {e}")
             return False
     
     # Handle online URLs by downloading to a temp file first (especially for Windows MCI)
@@ -377,7 +389,8 @@ def play_audio(source):
                 temp_path = os.path.join(temp_dir, f"orpheus_preview_{uuid.uuid4().hex[:8]}{ext}")
             
             # Download the file
-            print(f"[Audio] Downloading preview from: {source[:80]}...")
+            if _audio_debug():
+                print(f"[Audio] Downloading preview from: {source[:80]}...")
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
@@ -386,7 +399,8 @@ def play_audio(source):
                 # Check content type to make sure it's audio
                 content_type = response.headers.get('content-type', '').lower()
                 if 'html' in content_type or 'text' in content_type:
-                    print(f"[Audio] Server returned HTML/text instead of audio (content-type: {content_type})")
+                    if _audio_debug():
+                        print(f"[Audio] Server returned HTML/text instead of audio (content-type: {content_type})")
                     return False
                 
                 total_bytes = 0
@@ -398,7 +412,8 @@ def play_audio(source):
                 # Verify the file was actually written
                 if os.path.exists(temp_path):
                     file_size = os.path.getsize(temp_path)
-                    print(f"[Audio] Downloaded {file_size} bytes to {temp_path}")
+                    if _audio_debug():
+                        print(f"[Audio] Downloaded {file_size} bytes to {temp_path}")
                     if file_size > 1000:  # At least 1KB for valid audio
                         # Quick sanity check - MP3 files start with ID3 or 0xFF
                         with open(temp_path, 'rb') as f:
@@ -406,23 +421,29 @@ def play_audio(source):
                         if header[:3] == b'ID3' or header[:2] == b'\xff\xfb' or header[:2] == b'\xff\xfa':
                             source = temp_path
                         else:
-                            print(f"[Audio] Downloaded file doesn't look like MP3 (header: {header.hex()})")
+                            if _audio_debug():
+                                print(f"[Audio] Downloaded file doesn't look like MP3 (header: {header.hex()})")
                             # Still try to play it - might be a different format
                             source = temp_path
                     elif file_size > 0:
-                        print(f"[Audio] Downloaded file is too small ({file_size} bytes) - likely not valid audio")
+                        if _audio_debug():
+                            print(f"[Audio] Downloaded file is too small ({file_size} bytes) - likely not valid audio")
                         source = temp_path  # Try anyway
                     else:
-                        print(f"[Audio] Downloaded file is empty!")
+                        if _audio_debug():
+                            print(f"[Audio] Downloaded file is empty!")
                         return False
                 else:
-                    print(f"[Audio] Temp file was not created!")
+                    if _audio_debug():
+                        print(f"[Audio] Temp file was not created!")
                     return False
             else:
-                print(f"[Audio] Failed to download preview: HTTP {response.status_code}")
+                if _audio_debug():
+                    print(f"[Audio] Failed to download preview: HTTP {response.status_code}")
                 return False
         except Exception as e:
-            print(f"[Audio] Error downloading preview: {e}")
+            if _audio_debug():
+                print(f"[Audio] Error downloading preview: {e}")
             import traceback
             traceback.print_exc()
             # Fallback to trying to play the URL directly
@@ -447,23 +468,26 @@ def play_audio(source):
                     import uuid
                     wav_path = os.path.join(temp_dir, f"orpheus_preview_play_{uuid.uuid4().hex[:8]}.wav")
                 
-                print(f"[Audio] Converting to WAV for playback...")
+                if _audio_debug():
+                    print(f"[Audio] Converting to WAV for playback...")
                 if _convert_to_wav(source, wav_path):
                     source = wav_path
                 else:
-                    print(f"[Audio] Failed to convert to WAV")
+                    if _audio_debug():
+                        print(f"[Audio] Failed to convert to WAV")
                     return False
-            
+
             # Use winsound for WAV playback - this can be reliably stopped
             import winsound
-            
+
             # Set volume before playing
             wave_volume = int((_current_volume / 100) * 0xFFFF)
             stereo_volume = (wave_volume << 16) | wave_volume
             ctypes.windll.winmm.waveOutSetVolume(0, stereo_volume)
-            
+
             # Play asynchronously (SND_ASYNC = 0x0001, SND_FILENAME = 0x00020000)
-            print(f"[Audio] Playing with winsound: {os.path.basename(source)}")
+            if _audio_debug():
+                print(f"[Audio] Playing with winsound: {os.path.basename(source)}")
             winsound.PlaySound(source, winsound.SND_FILENAME | winsound.SND_ASYNC)
             return True
             
@@ -479,20 +503,20 @@ def play_audio(source):
             return True
             
     except Exception as e:
-        print(f"[Audio] Error playing audio: {e}")
+        if _audio_debug():
+            print(f"[Audio] Error playing audio: {e}")
         return False
 
 def stop_audio():
     """Stops any currently playing audio."""
     global _audio_process
     system = platform.system()
-    debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
-    if debug_mode:
+    if _audio_debug():
         print(f"[Audio] stop_audio() called")
     try:
         # Kill any tracked subprocess (afplay on macOS, xdg-open on Linux)
         if _audio_process is not None:
-            if debug_mode:
+            if _audio_debug():
                 print(f"[Audio] Stopping subprocess (pid: {_audio_process.pid})")
             try:
                 _audio_process.terminate()
@@ -509,16 +533,17 @@ def stop_audio():
             # Stop winsound playback by playing None
             import winsound
             winsound.PlaySound(None, winsound.SND_PURGE)
-            if debug_mode:
+            if _audio_debug():
                 print(f"[Audio] winsound stopped")
-            
+
             # Also close any MCI devices as safety net
             ctypes.windll.winmm.mciSendStringW("close all", None, 0, 0)
         elif system == "Darwin":
             # Kill any afplay processes
             subprocess.run(["killall", "afplay"], capture_output=True)
     except Exception as e:
-        print(f"[Audio] Error stopping audio: {e}")
+        if _audio_debug():
+            print(f"[Audio] Error stopping audio: {e}")
 
 
 class DummyStderr:
@@ -1854,7 +1879,8 @@ def _play_file_on_main_thread(item_iid, file_path):
             ctypes.windll.winmm.waveOutSetVolume(0, stereo_volume)
             
             # Play with winsound (async so it doesn't block)
-            print(f"[Audio] Playing on main thread: {os.path.basename(file_path)}")
+            if _audio_debug():
+                print(f"[Audio] Playing on main thread: {os.path.basename(file_path)}")
             winsound.PlaySound(file_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
             # Call _on_preview_started after a tiny delay to ensure playback actually started
             # This ensures the UI only updates after "[Audio] Playing on main thread:" appears
@@ -1866,7 +1892,8 @@ def _play_file_on_main_thread(item_iid, file_path):
             # On other systems, just call _on_preview_started with success
             _on_preview_started(item_iid, True)
     except Exception as e:
-        print(f"[Audio] Error playing file on main thread: {e}")
+        if _audio_debug():
+            print(f"[Audio] Error playing file on main thread: {e}")
         _on_preview_started(item_iid, False)
 
 def _on_preview_started(item_iid, success):
@@ -3156,7 +3183,8 @@ def set_audio_volume(volume):
         # Note: macOS afplay doesn't support runtime volume change easily
         # Linux xdg-open also doesn't support it
     except Exception as e:
-        print(f"[Audio] Error setting volume: {e}")
+        if _audio_debug():
+            print(f"[Audio] Error setting volume: {e}")
 # ============================================================================
 if platform.system() == "Windows":
     try:
