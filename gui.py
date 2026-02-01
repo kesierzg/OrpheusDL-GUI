@@ -486,11 +486,14 @@ def stop_audio():
     """Stops any currently playing audio."""
     global _audio_process
     system = platform.system()
-    print(f"[Audio] stop_audio() called")
+    debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
+    if debug_mode:
+        print(f"[Audio] stop_audio() called")
     try:
         # Kill any tracked subprocess (afplay on macOS, xdg-open on Linux)
         if _audio_process is not None:
-            print(f"[Audio] Stopping subprocess (pid: {_audio_process.pid})")
+            if debug_mode:
+                print(f"[Audio] Stopping subprocess (pid: {_audio_process.pid})")
             try:
                 _audio_process.terminate()
                 _audio_process.wait(timeout=1)
@@ -506,7 +509,8 @@ def stop_audio():
             # Stop winsound playback by playing None
             import winsound
             winsound.PlaySound(None, winsound.SND_PURGE)
-            print(f"[Audio] winsound stopped")
+            if debug_mode:
+                print(f"[Audio] winsound stopped")
             
             # Also close any MCI devices as safety net
             ctypes.windll.winmm.mciSendStringW("close all", None, 0, 0)
@@ -2910,9 +2914,11 @@ def on_tree_click(event):
                     youtube_url = f"https://www.youtube.com/watch?v={video_id}"
                     try:
                         webbrowser.open(youtube_url)
-                        print(f"[YouTube] Opened video in browser: {youtube_url}")
+                        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                            print(f"[YouTube] Opened video in browser: {youtube_url}")
                     except Exception as e:
-                        print(f"[YouTube] Error opening browser: {e}")
+                        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                            print(f"[YouTube] Error opening browser: {e}")
                 return
             
             preview_url = item_data.get('preview_url')
