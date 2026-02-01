@@ -4534,6 +4534,19 @@ def save_settings(show_confirmation: bool = True):
         if orpheus_platform and orpheus_platform not in mapped_orpheus_updates["modules"]:
             mapped_orpheus_updates["modules"][orpheus_platform] = copy.deepcopy(creds)
 
+    # Preserve use_arl (Deezer) and use_id_token (Qobuz) from current_settings when the creds we're writing
+    # don't already have them (e.g. auto-save before those tabs were opened, or UI vars omitted them)
+    _deezer_creds = current_settings.get("credentials", {}).get("Deezer", {})
+    if _deezer_creds and "deezer" in mapped_orpheus_updates["modules"]:
+        if "use_arl" not in mapped_orpheus_updates["modules"]["deezer"] and "use_arl" in _deezer_creds:
+            _val = _deezer_creds.get("use_arl")
+            mapped_orpheus_updates["modules"]["deezer"]["use_arl"] = str(_val).lower() if _val is not None else "false"
+    _qobuz_creds = current_settings.get("credentials", {}).get("Qobuz", {})
+    if _qobuz_creds and "qobuz" in mapped_orpheus_updates["modules"]:
+        if "use_id_token" not in mapped_orpheus_updates["modules"]["qobuz"] and "use_id_token" in _qobuz_creds:
+            _val = _qobuz_creds.get("use_id_token")
+            mapped_orpheus_updates["modules"]["qobuz"]["use_id_token"] = str(_val).lower() if _val is not None else "false"
+
     final_settings_to_save = deep_merge(existing_settings, mapped_orpheus_updates, keys_to_overwrite_if_dicts=["codec_conversions", "conversion_flags"])
     try:
         config_dir = os.path.dirname(CONFIG_FILE_PATH)
@@ -9071,7 +9084,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Better label names for credential fields
         label_mapping = {
             'download_pause_seconds': 'Pause Between Downloads (seconds)',
-            'sequential_downloads': 'Download mode',
+            'download_mode': 'Download mode',
             'client_id': 'Client ID',
             'client_secret': 'Client Secret',
         }
@@ -9186,7 +9199,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
                 deezer_label1 = customtkinter.CTkLabel(grid_parent, text="ARL:" if use_arl else "Email:")
                 deezer_label1.grid(row=i, column=0, sticky="w", padx=10, pady=5)
-                deezer_entry1 = customtkinter.CTkEntry(grid_parent)
+                deezer_entry1 = customtkinter.CTkEntry(grid_parent, show="*" if use_arl else "")
                 deezer_entry1.grid(row=i, column=1, sticky="ew", padx=10, pady=5)
                 deezer_entry1.configure(textvariable=var_arl if use_arl else var_email)
                 deezer_label2 = customtkinter.CTkLabel(grid_parent, text="Password:")
@@ -9194,6 +9207,16 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 deezer_entry2 = customtkinter.CTkEntry(grid_parent, show="*")
                 deezer_entry2.grid(row=i+1, column=1, sticky="ew", padx=10, pady=5)
                 deezer_entry2.configure(textvariable=var_password)
+                def _deezer_entry1_focus_in(e):
+                    if var_use_arl.get():
+                        _masked_entry_focus_in(deezer_entry1)
+                    else:
+                        handle_focus_in(deezer_entry1)
+                def _deezer_entry1_focus_out(e):
+                    if var_use_arl.get():
+                        _masked_entry_focus_out(deezer_entry1)
+                    else:
+                        handle_focus_out(deezer_entry1)
                 for _entry in (deezer_entry1, deezer_entry2):
                     _entry.bind("<Button-3>", show_context_menu)
                     _entry.bind("<Button-2>", show_context_menu)
@@ -9204,15 +9227,15 @@ def _create_credential_tab_content(platform_name, tab_frame):
                         _entry.bind("<FocusIn>", lambda e, w=_entry: _masked_entry_focus_in(w))
                         _entry.bind("<FocusOut>", lambda e, w=_entry: _masked_entry_focus_out(w))
                     else:
-                        _entry.bind("<FocusIn>", lambda e, w=_entry: handle_focus_in(w))
-                        _entry.bind("<FocusOut>", lambda e, w=_entry: handle_focus_out(w))
+                        _entry.bind("<FocusIn>", _deezer_entry1_focus_in)
+                        _entry.bind("<FocusOut>", _deezer_entry1_focus_out)
                 chk_deezer_arl = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
                 chk_use_arl = customtkinter.CTkCheckBox(chk_deezer_arl, text="Use ARL (instead of Email/Password)", variable=var_use_arl)
 
                 def _deezer_toggle_arl():
                     use_a = var_use_arl.get()
                     deezer_label1.configure(text="ARL:" if use_a else "Email:")
-                    deezer_entry1.configure(textvariable=var_arl if use_a else var_email)
+                    deezer_entry1.configure(textvariable=var_arl if use_a else var_email, show="*" if use_a else "")
                     if use_a:
                         deezer_label2.grid_remove()
                         deezer_entry2.grid_remove()
@@ -9276,10 +9299,10 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 
                 continue
 
-            if platform_name == "YouTube" and key == "sequential_downloads":
+            if platform_name == "YouTube" and key == "download_mode":
                 # Radio buttons for Sequential vs Concurrent downloads
                 download_options = ["sequential", "concurrent"]
-                
+                current_value = current_settings.get("credentials", {}).get(platform_name, {}).get(key, value)
                 # Handle migration from boolean to string
                 if current_value is True or str(current_value).lower() == "true":
                     current_value = "sequential"
@@ -9307,7 +9330,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 
                 if platform_name not in settings_vars['credentials']:
                     settings_vars['credentials'][platform_name] = {}
-                settings_vars['credentials'][platform_name][key] = var
+                settings_vars['credentials'][platform_name]["download_mode"] = var
                 continue
                 
             elif isinstance(value, bool):
@@ -9442,7 +9465,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 var = tkinter.StringVar(value=str(current_value))
                 widget = customtkinter.CTkEntry(grid_parent)
                 widget.configure(textvariable=var)
-                _is_masked_field = key == "password" or (key == "client_secret" and platform_name == "Spotify")
+                _is_masked_field = key == "password" or (key == "client_secret" and platform_name == "Spotify") or (key == "web_access_token" and platform_name == "SoundCloud")
                 if _is_masked_field:
                     widget.configure(show="*")
                 
@@ -9894,7 +9917,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step5_frame, text="5.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
             customtkinter.CTkLabel(step5_frame, text="Close the private window immediately", font=("Segoe UI", 12), text_color="gray").pack(side="left")
 
-            # See Demo Button (Manually placed for YouTube)
+            # See Demo Button (YouTube setup demo video)
             demo_btn = customtkinter.CTkButton(
                 help_frame,
                 text="See demo",
@@ -9903,7 +9926,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://www.youtube.com")
+                command=lambda: webbrowser.open("https://youtu.be/FHGLlox6Das")
             )
             # Use place for absolute positioning within the relative frame
             # x=-15, y=15 gives it some padding from the top-right corner
@@ -9961,7 +9984,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://www.deezer.com")
+                command=lambda: webbrowser.open("https://youtu.be/EXQfv_hxs8M")
             )
             if not deezer_use_arl:
                 deezer_see_demo_btn.place_forget()
@@ -10025,8 +10048,11 @@ def _create_credential_tab_content(platform_name, tab_frame):
             if deezer_use_arl:
                 left_col_email.pack_forget()
                 left_col_arl.pack(anchor="w", pady=0)
-                deezer_see_demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
-                deezer_see_demo_btn.lift()
+                # Defer placement so help_frame has correct size (avoids See Demo button partly hidden on reopen)
+                def _place_deezer_demo_btn():
+                    deezer_see_demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
+                    deezer_see_demo_btn.lift()
+                help_frame.after_idle(_place_deezer_demo_btn)
             else:
                 left_col_arl.pack_forget()
                 left_col_email.pack(anchor="w", pady=0)
@@ -10126,7 +10152,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://play.qobuz.com")
+                command=lambda: webbrowser.open("https://youtu.be/O9HX6_UkWvo")
             )
             if not qobuz_use_id:
                 qobuz_see_demo_btn.place_forget()
@@ -10607,8 +10633,14 @@ def _create_credential_tab_content(platform_name, tab_frame):
                  help_title.grid(row=0, column=0, sticky="ne", padx=(0, 20), pady=0)
 
         # Add the "See demo" button to the top-right of the help_frame
-        # Exclude specific platforms as requested
-        if platform_name not in ["Beatport", "Beatsource", "Deezer", "Qobuz", "Tidal", "YouTube"]:
+        # Each platform has its own demo video URL (platforms with their own See demo in-help are excluded here)
+        SEE_DEMO_URLS = {
+            "AppleMusic": "https://youtu.be/HbV4Fx2Is2I",
+            "SoundCloud": "https://youtu.be/9YFPsEWk6ZY",
+            "Spotify": "https://youtu.be/7A3cZ5ELtZY",
+        }
+        if platform_name in SEE_DEMO_URLS:
+            demo_url = SEE_DEMO_URLS[platform_name]
             demo_btn = customtkinter.CTkButton(
                 help_frame,
                 text="See demo",
@@ -10617,7 +10649,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://www.youtube.com")
+                command=lambda u=demo_url: webbrowser.open(u)
             )
             # Use place for absolute positioning within the relative frame
             # x=-15, y=15 gives it some padding from the top-right corner
@@ -10637,6 +10669,15 @@ def _handle_settings_tab_change():
                 _create_credential_tab_content(tab_name, tab_info['frame'])
                 loaded_credential_tabs.add(tab_name)
                 break
+
+    # When switching to Deezer, re-apply help layout so See Demo button is placed correctly (fixes partly hidden button on reopen)
+    if selected_tab_name == "Deezer":
+        tab_frame = credential_tabs_config.get(selected_tab_name, {}).get("frame")
+        if tab_frame and hasattr(tab_frame, "deezer_help_update"):
+            deezer_use_arl_var = settings_vars.get("credentials", {}).get("Deezer", {}).get("use_arl")
+            if deezer_use_arl_var is not None and hasattr(deezer_use_arl_var, "get"):
+                use_arl = deezer_use_arl_var.get()
+                tab_frame.after_idle(lambda u=use_arl: tab_frame.deezer_help_update(u))
 
     # Deezer/Qobuz: minimal space; Global: less space above Save; other platform tabs: match Download tab (20px above)
     if 'settings_bottom_frame' in globals() and settings_bottom_frame and settings_bottom_frame.winfo_exists():
@@ -11247,7 +11288,7 @@ if __name__ == "__main__":
                 "SoundCloud": { "web_access_token": "" },
                 "Spotify": { "username": "", "download_pause_seconds": 30, "client_id": "", "client_secret": "" },
                 "Tidal": { "tv_atmos_token": "4N3n6Q1x95LL5K7p", "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=", "mobile_atmos_hires_token": "km8T1xS355y7dd3H", "mobile_hires_token": "6BDSRdpK9hqEBTgU", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True },
-                "YouTube": { "cookies_path": "./config/youtube-cookies.txt", "download_pause_seconds": 5, "sequential_downloads": "sequential" }
+                "YouTube": { "cookies_path": "./config/youtube-cookies.txt", "download_pause_seconds": 5, "download_mode": "sequential" }
             }
         }
         installed_platform_keys = []
