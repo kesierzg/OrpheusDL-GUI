@@ -773,7 +773,7 @@ _volume_label = None
 _current_volume = 75  # 0-100
 
 # Cover image size constant
-COVER_SIZE = 38
+COVER_SIZE = 44
 COVER_CORNER_RADIUS = 0  # Radius for rounded corners
 # Fade-in when cover appears in search results
 COVER_FADE_IN_STEPS = 5
@@ -10020,7 +10020,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://youtu.be/EXQfv_hxs8M")
+                command=lambda: webbrowser.open("https://youtu.be/wmpF94D-S4U")
             )
             if not deezer_use_arl:
                 deezer_see_demo_btn.place_forget()
