@@ -3847,6 +3847,17 @@ except ImportError:
 except Exception as e:
     print(f"[Patch Error] Failed to apply CustomTkinter _draw patches: {e}")
 
+# CTkToolTip is treated as a window by customtkinter's scaling_tracker but lacks these methods.
+try:
+    if not hasattr(CTkToolTip, 'block_update_dimensions_event'):
+        CTkToolTip.block_update_dimensions_event = lambda self: None
+        print("[Patch] Patched CTkToolTip.block_update_dimensions_event (no-op).")
+    if not hasattr(CTkToolTip, 'unblock_update_dimensions_event'):
+        CTkToolTip.unblock_update_dimensions_event = lambda self: None
+        print("[Patch] Patched CTkToolTip.unblock_update_dimensions_event (no-op).")
+except Exception as e:
+    print(f"[Patch Warning] Could not patch CTkToolTip for scaling tracker: {e}")
+
 class OrpheusdlError(Exception): pass
 class AuthenticationError(OrpheusdlError): pass
 class DownloadError(OrpheusdlError): pass
