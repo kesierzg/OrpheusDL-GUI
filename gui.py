@@ -1023,11 +1023,67 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None):
     Images are padded on the left to center them in the tree column.
     Creates both normal and hover (darkened) versions.
     """
+    def _apply_cover_on_main(img, darkened_img, item_iid):
+        """Create Tk PhotoImages and update tree on main thread (PIL/Tk must not run in worker)."""
+        global tree, app, _cover_image_cache, _cover_hover_cache, _cover_hover_iid, _cover_fade_in_progress_count
+        try:
+            from PIL import ImageTk
+            photo = ImageTk.PhotoImage(img)
+            hover_photo = ImageTk.PhotoImage(darkened_img)
+            if item_iid:
+                _cover_image_cache[item_iid] = photo
+                _cover_hover_cache[item_iid] = hover_photo
+                # Set image immediately so cover appears without waiting for fade callback
+                try:
+                    if 'tree' in globals() and tree and tree.winfo_exists() and tree.exists(item_iid) and _cover_hover_iid != item_iid:
+                        tree.item(item_iid, image=photo)
+                except Exception:
+                    pass
+
+            def _update_tree_with_fade():
+                try:
+                    if 'tree' not in globals() or not tree or not tree.winfo_exists() or not item_iid or not tree.exists(item_iid) or _cover_hover_iid == item_iid:
+                        return
+                    if _cover_fade_in_progress_count >= COVER_FADE_MAX_CONCURRENT:
+                        tree.item(item_iid, image=photo)
+                        return
+                    _cover_fade_in_progress_count += 1
+                    try:
+                        frames = _create_fade_in_frames(img, size)
+                    except Exception:
+                        _cover_fade_in_progress_count -= 1
+                        tree.item(item_iid, image=photo)
+                        return
+                    def _run_fade(step=0):
+                        try:
+                            global _cover_fade_in_progress_count
+                            if not tree.winfo_exists() or not tree.exists(item_iid) or _cover_hover_iid == item_iid:
+                                _cover_fade_in_progress_count -= 1
+                                return
+                            if step < len(frames):
+                                tree.item(item_iid, image=frames[step])
+                                if step < len(frames) - 1:
+                                    app.after(COVER_FADE_IN_STEP_MS, lambda s=step + 1: _run_fade(s))
+                                else:
+                                    tree.item(item_iid, image=photo)
+                                    _cover_fade_in_progress_count -= 1
+                        except Exception:
+                            _cover_fade_in_progress_count -= 1
+                    _run_fade(0)
+                except Exception:
+                    pass
+
+            if 'app' in globals() and app and app.winfo_exists():
+                app.after(0, _update_tree_with_fade)
+        except Exception:
+            if item_iid and 'app' in globals() and app and app.winfo_exists():
+                app.after(0, lambda: _show_placeholder_cover(item_iid))
+
     def _load():
         nonlocal url  # Allow modifying the outer scope url variable
         global tree, app, _cover_image_cache, _cover_hover_cache, current_settings, search_results_data
         try:
-            from PIL import Image, ImageTk
+            from PIL import Image
             import io
             
             # Debug output
@@ -1090,55 +1146,12 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None):
                 # Apply rounded corners
                 img = round_corners(img, COVER_CORNER_RADIUS)
                 
-                # Create normal version
-                photo = ImageTk.PhotoImage(img)
-                
-                # Create hover (darkened) version
+                # Hover (darkened) version — PIL only, safe in thread
                 darkened_img = create_darkened_cover(img, opacity=0.7)
-                hover_photo = ImageTk.PhotoImage(darkened_img)
                 
-                # Cache both versions to prevent garbage collection
-                if item_iid:
-                    _cover_image_cache[item_iid] = photo
-                    _cover_hover_cache[item_iid] = hover_photo
-                
-                # Update treeview on main thread with fade-in (limit concurrent fades to avoid freeze)
-                def _update_tree_with_fade():
-                    try:
-                        global _cover_hover_iid, _cover_fade_in_progress_count
-                        if 'tree' not in globals() or not tree or not tree.winfo_exists() or not item_iid or not tree.exists(item_iid) or _cover_hover_iid == item_iid:
-                            return
-                        if _cover_fade_in_progress_count >= COVER_FADE_MAX_CONCURRENT:
-                            tree.item(item_iid, image=photo)
-                            return
-                        _cover_fade_in_progress_count += 1
-                        try:
-                            frames = _create_fade_in_frames(img, size)
-                        except Exception:
-                            _cover_fade_in_progress_count -= 1
-                            tree.item(item_iid, image=photo)
-                            return
-                        def _run_fade(step=0):
-                            try:
-                                global _cover_fade_in_progress_count
-                                if not tree.winfo_exists() or not tree.exists(item_iid) or _cover_hover_iid == item_iid:
-                                    _cover_fade_in_progress_count -= 1
-                                    return
-                                if step < len(frames):
-                                    tree.item(item_iid, image=frames[step])
-                                    if step < len(frames) - 1:
-                                        app.after(COVER_FADE_IN_STEP_MS, lambda s=step + 1: _run_fade(s))
-                                    else:
-                                        tree.item(item_iid, image=photo)
-                                        _cover_fade_in_progress_count -= 1
-                            except Exception:
-                                _cover_fade_in_progress_count -= 1
-                        _run_fade(0)
-                    except Exception:
-                        pass
-                
+                # PhotoImage must be created on main thread to avoid GIL/crash
                 if 'app' in globals() and app and app.winfo_exists():
-                    app.after(0, _update_tree_with_fade)
+                    app.after(0, lambda: _apply_cover_on_main(img, darkened_img, item_iid))
             elif response.status_code == 403:
                 # 403 Forbidden - Tidal is blocking the request
                 # Try retrying with 750x750.jpg as fallback (smaller sizes may not be available)
@@ -1168,55 +1181,12 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None):
                                 # Apply rounded corners
                                 img = round_corners(img, COVER_CORNER_RADIUS)
                                 
-                                # Create normal version
-                                photo = ImageTk.PhotoImage(img)
-                                
-                                # Create hover (darkened) version
+                                # Hover (darkened) version — PIL only, safe in thread
                                 darkened_img = create_darkened_cover(img, opacity=0.7)
-                                hover_photo = ImageTk.PhotoImage(darkened_img)
                                 
-                                # Cache both versions to prevent garbage collection
-                                if item_iid:
-                                    _cover_image_cache[item_iid] = photo
-                                    _cover_hover_cache[item_iid] = hover_photo
-                                
-                                # Update treeview on main thread with fade-in (limit concurrent fades to avoid freeze)
-                                def _update_tree_with_fade_fallback():
-                                    try:
-                                        global _cover_hover_iid, _cover_fade_in_progress_count
-                                        if 'tree' not in globals() or not tree or not tree.winfo_exists() or not item_iid or not tree.exists(item_iid) or _cover_hover_iid == item_iid:
-                                            return
-                                        if _cover_fade_in_progress_count >= COVER_FADE_MAX_CONCURRENT:
-                                            tree.item(item_iid, image=photo)
-                                            return
-                                        _cover_fade_in_progress_count += 1
-                                        try:
-                                            frames = _create_fade_in_frames(img, size)
-                                        except Exception:
-                                            _cover_fade_in_progress_count -= 1
-                                            tree.item(item_iid, image=photo)
-                                            return
-                                        def _run_fade(step=0):
-                                            try:
-                                                global _cover_fade_in_progress_count
-                                                if not tree.winfo_exists() or not tree.exists(item_iid) or _cover_hover_iid == item_iid:
-                                                    _cover_fade_in_progress_count -= 1
-                                                    return
-                                                if step < len(frames):
-                                                    tree.item(item_iid, image=frames[step])
-                                                    if step < len(frames) - 1:
-                                                        app.after(COVER_FADE_IN_STEP_MS, lambda s=step + 1: _run_fade(s))
-                                                    else:
-                                                        tree.item(item_iid, image=photo)
-                                                        _cover_fade_in_progress_count -= 1
-                                            except Exception:
-                                                _cover_fade_in_progress_count -= 1
-                                        _run_fade(0)
-                                    except Exception:
-                                        pass
-                                
+                                # PhotoImage must be created on main thread to avoid GIL/crash
                                 if 'app' in globals() and app and app.winfo_exists():
-                                    app.after(0, _update_tree_with_fade_fallback)
+                                    app.after(0, lambda: _apply_cover_on_main(img, darkened_img, item_iid))
                                 return  # Success, exit early
                         except Exception as e:
                             if debug_mode:
@@ -9106,8 +9076,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
             qobuz_creds_frame.pack(fill="x", expand=False, anchor="nw")
         if platform_name in _platforms_with_help:
             other_creds_frame = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
-            # Same top padding as above Download/Stop in Download tab and selection bar in Search tab (5px)
-            other_creds_frame.pack(fill="x", expand=False, anchor="nw", pady=(5, 0))
+            # No top pady so first input aligns with Deezer/Qobuz tabs
+            other_creds_frame.pack(fill="x", expand=False, anchor="nw")
         if platform_name == "Deezer" and deezer_creds_frame:
             grid_parent = deezer_creds_frame
         elif platform_name == "Qobuz" and qobuz_creds_frame:
