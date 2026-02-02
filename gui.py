@@ -1732,95 +1732,52 @@ def toggle_preview_playback(item_iid, preview_url=None):
             if preview_url:
                 _currently_playing_preview_iid = item_iid
                 
-                preview_url_lower = preview_url.lower()
+                # Always show loading and run playback in a background thread so that:
+                # - Loading dots show for all platforms (Apple Music, Beatport, Beatsource, Deezer, etc.) on macOS,
+                #   not just Qobuz/SoundCloud/Spotify (which show loading during lazy URL fetch).
+                # - UI does not freeze during download on macOS/Linux (play_audio downloads then plays).
+                # - Windows already used background thread for conversion; same pattern for everyone.
+                if 'tree' in globals() and tree and tree.winfo_exists():
+                    try:
+                        current_values = list(tree.item(item_iid, 'values'))
+                        if current_values:
+                            current_values[0] = PREVIEW_LOADING_ICON
+                            tree.item(item_iid, values=tuple(current_values))
+                            _start_loading_animation(item_iid)
+                    except Exception:
+                        pass
                 
-                # Check if this needs background thread processing:
-                # - M4A files need conversion on Windows
-                # - SoundCloud/HLS streams need ffmpeg conversion to WAV
-                # - On Windows, ALL network playback should be backgrounded to avoid UI freezing
-                needs_conversion = (
-                    platform.system() == "Windows"
-                )
-                
-                # SoundCloud and HLS streams should also use background thread
-                # (ffmpeg conversion to WAV is used for MCI playback)
-                is_stream = 'sndcdn.com' in preview_url_lower or '.m3u8' in preview_url_lower or 'hls' in preview_url_lower
-                needs_background_playback = needs_conversion or is_stream
-                
-                if needs_background_playback:
-                    # Show loading icon while converting
-                    if 'tree' in globals() and tree and tree.winfo_exists():
-                        try:
-                            current_values = list(tree.item(item_iid, 'values'))
-                            if current_values:
-                                current_values[0] = PREVIEW_LOADING_ICON
-                                tree.item(item_iid, values=tuple(current_values))
-                                # Start walking dots animation
-                                _start_loading_animation(item_iid)
-                        except Exception:
-                            pass
-                    
-                    # Run conversion and playback in background thread
-                    # Capture the item_iid to check if it's still supposed to be playing
-                    target_iid = item_iid
-                    def play_with_conversion():
-                        global _currently_playing_preview_iid
-                        try:
-                            # Check if user has already pressed stop or switched to another preview
-                            if _currently_playing_preview_iid != target_iid:
-                                print(f"[Preview] Playback cancelled for {target_iid}")
-                                return
-                            
-                            result = play_audio(preview_url)
-                            
-                            # Check again after conversion/playback started
-                            if _currently_playing_preview_iid != target_iid:
-                                # User pressed stop during conversion - stop the audio we just started
-                                stop_audio()
-                                return
-                            
-                            # Handle special return type for deferred playback
-                            # (Playback must be called from main thread for proper stop functionality)
-                            if isinstance(result, tuple) and result[0] == 'play_file':
-                                file_path = result[1]
-                                # Schedule playback on main thread
-                                # _play_file_on_main_thread will call _on_preview_started after playback actually starts
-                                if 'app' in globals() and app and app.winfo_exists():
-                                    app.after(0, lambda: _play_file_on_main_thread(target_iid, file_path))
-                                return  # Don't call _on_preview_started here - wait for actual playback
-            
-                            # For non-stream playback, play_audio returns True/False immediately
-                            # Note: For streams, we already handled the tuple return above and returned early
-                            # This path is only for non-stream playback where play_audio returns True/False
-                            success = bool(result)
-                            
-                            # Update UI on main thread
-                            # Note: For streams, _on_preview_started is called from _play_file_on_main_thread
-                            # after playback actually starts (when "[Audio] Playing on main thread:" appears)
+                target_iid = item_iid
+                def play_in_background():
+                    global _currently_playing_preview_iid
+                    try:
+                        if _currently_playing_preview_iid != target_iid:
+                            print(f"[Preview] Playback cancelled for {target_iid}")
+                            return
+                        
+                        result = play_audio(preview_url)
+                        
+                        if _currently_playing_preview_iid != target_iid:
+                            stop_audio()
+                            return
+                        
+                        # Deferred playback (e.g. Windows WAV on main thread)
+                        if isinstance(result, tuple) and result[0] == 'play_file':
+                            file_path = result[1]
                             if 'app' in globals() and app and app.winfo_exists():
-                                app.after(0, lambda: _on_preview_started(target_iid, success))
-                        except Exception as e:
-                            print(f"[Preview] Error during conversion/playback: {e}")
-                            if 'app' in globals() and app and app.winfo_exists():
-                                app.after(0, lambda: _on_preview_started(target_iid, False))
-                    
-                    threading.Thread(target=play_with_conversion, daemon=True).start()
-                    return True
-                else:
-                    # No conversion needed - play directly
-                    if 'tree' in globals() and tree and tree.winfo_exists():
-                        # Show enlarged stop icon if hovering, otherwise normal
-                        if _preview_hover_iid == item_iid:
-                            _enlarge_preview_icon(item_iid)
-                        else:
-                            update_preview_icon(item_iid, playing=True)
-                    play_audio(preview_url)
-                    # Show volume control and set initial volume
-                    show_volume_control()
-                    set_audio_volume(_current_volume)
-                    # Start pulsing animation
-                    _start_pulse_animation()
-                    return True
+                                app.after(0, lambda: _play_file_on_main_thread(target_iid, file_path))
+                            return
+                        
+                        success = bool(result)
+                        if 'app' in globals() and app and app.winfo_exists():
+                            app.after(0, lambda: _on_preview_started(target_iid, success))
+                    except Exception as e:
+                        print(f"[Preview] Error during playback: {e}")
+                        if 'app' in globals() and app and app.winfo_exists():
+                            app.after(0, lambda: _on_preview_started(target_iid, False))
+                
+                threading.Thread(target=play_in_background, daemon=True).start()
+                return True
             else:
                 print(f"[Preview] No preview URL for item {item_iid}")
                 _currently_playing_preview_iid = None
