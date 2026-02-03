@@ -3136,10 +3136,14 @@ def clear_preview_state():
     """Clear the preview playback state when search results are cleared."""
     global _currently_playing_preview_iid, _cover_image_cache, _cover_hover_cache, _cover_hover_iid, _preview_hover_iid, _cover_load_requested, _lazy_loading_preview_iid
     
-    try:
-        stop_audio()
-    except:
-        pass
+    # Run stop_audio in a daemon thread to avoid blocking main thread (can cause deadlock on macOS
+    # when main thread blocks while Tk background threads wait for it)
+    def _stop_audio_async():
+        try:
+            stop_audio()
+        except Exception:
+            pass
+    threading.Thread(target=_stop_audio_async, daemon=True).start()
     
     _stop_pulse_animation()  # Stop pulsing animation
     _stop_loading_animation()  # Stop loading animation
@@ -7554,6 +7558,13 @@ def update_search_types(platform):
 def clear_treeview():
     global tree, scrollbar, app
     try:
+        # Cancel pending lazy_load_visible_covers to avoid stale callbacks after clear (can contribute to deadlock)
+        if hasattr(on_tree_scroll, '_scheduled_id') and on_tree_scroll._scheduled_id and 'app' in globals() and app and app.winfo_exists():
+            try:
+                app.after_cancel(on_tree_scroll._scheduled_id)
+                on_tree_scroll._scheduled_id = None
+            except Exception:
+                pass
         if 'tree' in globals() and tree and tree.winfo_exists():
             for item in tree.get_children(): tree.delete(item)
         if 'app' in globals() and app and app.winfo_exists() and 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists():
