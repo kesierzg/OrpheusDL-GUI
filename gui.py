@@ -77,6 +77,9 @@ import io
 import json
 import multiprocessing
 import os
+import warnings
+# Suppress resource_tracker semaphore leak warning on macOS when using os._exit() for GUI shutdown
+warnings.filterwarnings("ignore", message="resource_tracker: There appear to be .* leaked semaphore.*")
 import platform
 import queue
 import re
@@ -1930,6 +1933,12 @@ def on_tree_motion(event):
         column = tree.identify_column(event.x)
         item_iid = tree.identify_row(event.y)
         region = tree.identify("region", event.x, event.y)
+        
+        # Heading hover: show hand cursor so user knows columns are clickable to sort
+        try:
+            tree.configure(cursor="hand2" if region == "heading" else "")
+        except (tkinter.TclError, Exception):
+            pass
         
         # Row hover: light up row with #272828 when mouse is over any part of it (skip if row is selected)
         if item_iid:
