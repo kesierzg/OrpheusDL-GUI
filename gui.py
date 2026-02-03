@@ -741,6 +741,7 @@ _cover_fade_in_progress_count = 0  # Limit concurrent fade-ins to avoid GUI free
 _placeholder_cover_image = None
 _currently_playing_preview_iid = None  # Track which row is currently playing
 _preview_hover_iid = None  # Track which row's preview button is being hovered
+_row_hover_iid = None  # Track which row has hover highlight (#272828)
 _cover_load_requested = set()  # Track which covers have been requested (for lazy loading)
 _youtube_thumbnail_fetching = set()  # Track which YouTube items are currently fetching thumbnails (to avoid duplicates)
 _youtube_thumbnail_queue = []  # Queue for YouTube thumbnail fetches to limit concurrent requests
@@ -774,7 +775,7 @@ _current_volume = 75  # 0-100
 
 # Cover image size constant
 COVER_SIZE = 44
-COVER_CORNER_RADIUS = 0  # Radius for rounded corners
+COVER_CORNER_RADIUS = 3  # Radius for rounded corners
 # Fade-in when cover appears in search results
 COVER_FADE_IN_STEPS = 5
 COVER_FADE_IN_STEP_MS = 45
@@ -793,9 +794,12 @@ def round_corners(image, radius):
         image = image.convert('RGBA')
     
     # Create a mask with rounded corners
+    # Use (w-1, h-1) so the bottom-right corner arc stays inside the image;
+    # [(0,0), (w,h)] clips the arc and makes the bottom-right appear square.
     mask = Image.new('L', image.size, 0)
     draw = ImageDraw.Draw(mask)
-    draw.rounded_rectangle([(0, 0), image.size], radius=radius, fill=255)
+    w, h = image.size
+    draw.rounded_rectangle([(0, 0), (w - 1, h - 1)], radius=radius, fill=255)
     
     # Apply the mask
     output = Image.new('RGBA', image.size, (0, 0, 0, 0))
@@ -1572,9 +1576,33 @@ def clear_cover_load_state():
     _youtube_thumbnail_queue.clear()
 
 def setup_preview_tags(tree_widget):
-    """Setup tags for preview button styling."""
-    # Tag for playing items - red foreground for stop icon
+    """Setup tags for preview button styling and alternating row colors."""
+    # Tag for playing items - blue foreground for stop icon
     tree_widget.tag_configure("playing", foreground="#1F6AA5")
+    # Alternating row background (odd = slightly lighter, even = default)
+    tree_widget.tag_configure("oddrow", background="#202121")
+    tree_widget.tag_configure("evenrow", background=TREEVIEW_BG_HEX)
+    # Row hover highlight (set foreground too so it persists when hover is the only tag)
+    tree_widget.tag_configure("hover", background="#272828", foreground="#DCE4EE")
+
+def _row_tag_for_index(idx):
+    """Return oddrow or evenrow based on row index (0-based)."""
+    return "oddrow" if idx % 2 == 0 else "evenrow"
+
+def _tree_row_tags(item_iid, playing=False):
+    """Return tags for a tree item, preserving oddrow/evenrow when updating for playing state."""
+    try:
+        if 'tree' in globals() and tree and tree.winfo_exists():
+            current = tree.item(item_iid, 'tags')
+            if "oddrow" in current or "evenrow" in current:
+                row_tag = "oddrow" if "oddrow" in current else "evenrow"
+            else:
+                idx = tree.index(item_iid)
+                row_tag = _row_tag_for_index(idx)
+            return (row_tag, "playing") if playing else (row_tag,)
+    except Exception:
+        pass
+    return ("oddrow", "playing") if playing else ("oddrow",)
 
 def _start_pulse_animation():
     """Start the pulsing animation for the currently playing preview icon."""
@@ -1603,7 +1631,7 @@ def _start_pulse_animation():
                         current_values[0] = PREVIEW_STOP_ICON_PULSE
                     else:
                         current_values[0] = PREVIEW_STOP_ICON
-                    tree.item(_currently_playing_preview_iid, values=tuple(current_values), tags=("playing",))
+                    tree.item(_currently_playing_preview_iid, values=tuple(current_values), tags=_tree_row_tags(_currently_playing_preview_iid, playing=True))
             
             # Schedule next pulse (500ms interval for smooth animation)
             if 'app' in globals() and app and app.winfo_exists():
@@ -1691,7 +1719,7 @@ def _stop_loading_animation():
             current_values = list(tree.item(_currently_playing_preview_iid, 'values'))
             if len(current_values) > 0 and _preview_hover_iid != _currently_playing_preview_iid:
                 current_values[0] = PREVIEW_STOP_ICON
-                tree.item(_currently_playing_preview_iid, values=tuple(current_values), tags=("playing",))
+                tree.item(_currently_playing_preview_iid, values=tuple(current_values), tags=_tree_row_tags(_currently_playing_preview_iid, playing=True))
         except:
             pass
 
@@ -1878,22 +1906,22 @@ def update_preview_icon(item_iid, playing=False, has_preview=True):
                 
                 if not has_preview:
                     current_values[0] = PREVIEW_UNAVAILABLE
-                    tree.item(item_iid, values=tuple(current_values), tags=())
+                    tree.item(item_iid, values=tuple(current_values), tags=_tree_row_tags(item_iid, playing=False))
                 elif playing and _loading_animation_iid != item_iid:
                     # Only show stop icon if we're actually playing (not loading)
                     current_values[0] = PREVIEW_STOP_ICON
-                    tree.item(item_iid, values=tuple(current_values), tags=("playing",))
+                    tree.item(item_iid, values=tuple(current_values), tags=_tree_row_tags(item_iid, playing=True))
                 else:
                     current_values[0] = PREVIEW_PLAY_ICON
-                    tree.item(item_iid, values=tuple(current_values), tags=())
+                    tree.item(item_iid, values=tuple(current_values), tags=_tree_row_tags(item_iid, playing=False))
     except tkinter.TclError as e:
         print(f"[Preview] TclError updating icon: {e}")
     except Exception as e:
         print(f"[Preview] Error updating icon: {e}")
 
 def on_tree_motion(event):
-    """Handle mouse motion over treeview for preview column and cover column hover effects."""
-    global tree, _preview_hover_iid, search_results_data, _currently_playing_preview_iid, platform_var, COVER_SIZE, _cover_hover_iid
+    """Handle mouse motion over treeview for preview column, cover column, and row hover effects."""
+    global tree, _preview_hover_iid, search_results_data, _currently_playing_preview_iid, platform_var, COVER_SIZE, _cover_hover_iid, _row_hover_iid
     
     try:
         if 'tree' not in globals() or not tree or not tree.winfo_exists():
@@ -1902,6 +1930,24 @@ def on_tree_motion(event):
         column = tree.identify_column(event.x)
         item_iid = tree.identify_row(event.y)
         region = tree.identify("region", event.x, event.y)
+        
+        # Row hover: light up row with #272828 when mouse is over any part of it (skip if row is selected)
+        if item_iid:
+            if _row_hover_iid != item_iid:
+                if _row_hover_iid and tree.exists(_row_hover_iid):
+                    is_playing = _currently_playing_preview_iid == _row_hover_iid
+                    tree.item(_row_hover_iid, tags=_tree_row_tags(_row_hover_iid, playing=is_playing))
+                if item_iid not in tree.selection():
+                    # Use only "hover" (+ "playing" if needed) to avoid oddrow/evenrow overriding background
+                    playing = _currently_playing_preview_iid == item_iid
+                    tags = ("hover", "playing") if playing else ("hover",)
+                    tree.item(item_iid, tags=tags)
+                _row_hover_iid = item_iid
+        else:
+            if _row_hover_iid and tree.exists(_row_hover_iid):
+                is_playing = _currently_playing_preview_iid == _row_hover_iid
+                tree.item(_row_hover_iid, tags=_tree_row_tags(_row_hover_iid, playing=is_playing))
+            _row_hover_iid = None
         
         # If we were hovering over a different item, restore its icon first
         if _preview_hover_iid and _preview_hover_iid != item_iid:
@@ -2013,10 +2059,10 @@ def _enlarge_preview_icon(item_iid):
                 if _currently_playing_preview_iid == item_iid and _loading_animation_iid != item_iid:
                     # Only show stop hover icon if we're actually playing (not loading)
                     current_values[0] = PREVIEW_STOP_HOVER
-                    tree.item(item_iid, values=tuple(current_values), tags=("playing",))
+                    tree.item(item_iid, values=tuple(current_values), tags=_tree_row_tags(item_iid, playing=True))
                 else:
                     current_values[0] = PREVIEW_PLAY_HOVER
-                    tree.item(item_iid, values=tuple(current_values), tags=())
+                    tree.item(item_iid, values=tuple(current_values), tags=_tree_row_tags(item_iid, playing=False))
     except:
         pass
 
@@ -2084,20 +2130,20 @@ def _restore_preview_icon(item_iid):
                 # The loading animation should continue until playback actually starts
                 if not has_preview and not can_lazy_load and not is_youtube_track:
                     current_values[0] = PREVIEW_UNAVAILABLE
-                    tree.item(item_iid, values=tuple(current_values), tags=())
+                    tree.item(item_iid, values=tuple(current_values), tags=_tree_row_tags(item_iid, playing=False))
                 elif _currently_playing_preview_iid == item_iid and _loading_animation_iid != item_iid:
                     # Only show stop icon if we're actually playing (not loading)
                     current_values[0] = PREVIEW_STOP_ICON
-                    tree.item(item_iid, values=tuple(current_values), tags=("playing",))
+                    tree.item(item_iid, values=tuple(current_values), tags=_tree_row_tags(item_iid, playing=True))
                 else:
                     current_values[0] = PREVIEW_PLAY_ICON
-                    tree.item(item_iid, values=tuple(current_values), tags=())
+                    tree.item(item_iid, values=tuple(current_values), tags=_tree_row_tags(item_iid, playing=False))
     except:
         pass
 
 def on_tree_leave(event):
     """Handle mouse leaving the treeview."""
-    global tree, _preview_hover_iid
+    global tree, _preview_hover_iid, _row_hover_iid, _currently_playing_preview_iid
     
     try:
         if 'tree' in globals() and tree and tree.winfo_exists():
@@ -2106,6 +2152,11 @@ def on_tree_leave(event):
         if _preview_hover_iid:
             _restore_preview_icon(_preview_hover_iid)
             _preview_hover_iid = None
+        # Clear row hover highlight
+        if _row_hover_iid and tree.exists(_row_hover_iid):
+            is_playing = _currently_playing_preview_iid == _row_hover_iid
+            tree.item(_row_hover_iid, tags=_tree_row_tags(_row_hover_iid, playing=is_playing))
+        _row_hover_iid = None
     except:
         pass
 
@@ -2451,19 +2502,53 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
             y_logical = int(y_phys / scaling)
             popup.geometry(f"+{x_logical}+{y_logical}")
         
+        # Defer popup close on WM_DELETE_WINDOW to avoid macOS Tk crash (EXC_BAD_ACCESS in TkMacOSXGetHostToplevel)
+        def _on_popup_close():
+            def _do_close():
+                try:
+                    if context_menu_ref['menu']:
+                        cm = context_menu_ref['menu']
+                        context_menu_ref['menu'] = None
+                        try:
+                            if cm.winfo_exists():
+                                cm.destroy()
+                        except Exception:
+                            pass
+                    if popup.winfo_exists():
+                        popup.destroy()
+                except Exception:
+                    pass
+            popup.after_idle(_do_close)
+        popup.protocol("WM_DELETE_WINDOW", _on_popup_close)
+        
         # Store PIL Image for copy/save operations
         pil_image_ref = {'image': None, 'original_image': None}
         # Store context menu reference for closing
         context_menu_ref = {'menu': None}
+
+        def _deferred_destroy_menu(menu):
+            """Defer menu destruction to avoid Tk/Cocoa crash on macOS (EXC_BAD_ACCESS in TkMacOSXGetHostToplevel)."""
+            if not menu:
+                return
+            try:
+                m = menu
+                context_menu_ref['menu'] = None
+                def _destroy_later():
+                    try:
+                        if m.winfo_exists():
+                            m.destroy()
+                    except Exception:
+                        pass
+                if popup.winfo_exists():
+                    popup.after_idle(_destroy_later)
+            except Exception:
+                pass
         
         # Copy image to clipboard function
         def _copy_image_to_clipboard(menu=None):
             try:
                 if menu:
-                    try:
-                        menu.destroy()
-                    except:
-                        pass
+                    _deferred_destroy_menu(menu)
                 
                 if not pil_image_ref['image']:
                     return
@@ -2504,10 +2589,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
         def _save_image_to_file(menu=None):
             try:
                 if menu:
-                    try:
-                        menu.destroy()
-                    except:
-                        pass
+                    _deferred_destroy_menu(menu)
                 
                 if not pil_image_ref['original_image']:
                     return
@@ -2664,12 +2746,9 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     if not pil_image_ref['image']:
                                         return
                                     
-                                    # Close existing menu if open
+                                    # Close existing menu if open (deferred to avoid macOS Tk crash)
                                     if context_menu_ref['menu']:
-                                        try:
-                                            context_menu_ref['menu'].destroy()
-                                        except:
-                                            pass
+                                        _deferred_destroy_menu(context_menu_ref['menu'])
                                     
                                     # Create context menu
                                     context_menu = customtkinter.CTkToplevel(popup)
@@ -2733,14 +2812,10 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     _setup_hover_icon(save_btn, save_icon, save_icon_white)
                                     save_btn.pack(pady=1, padx=2, fill="x")
                                     
-                                    # Close menu when clicking outside
+                                    # Close menu when clicking outside (deferred to avoid macOS Tk crash)
                                     def _close_menu(event=None):
                                         if context_menu_ref['menu']:
-                                            try:
-                                                context_menu_ref['menu'].destroy()
-                                                context_menu_ref['menu'] = None
-                                            except:
-                                                pass
+                                            _deferred_destroy_menu(context_menu_ref['menu'])
                                     
                                     # Bind close events
                                     context_menu.bind("<FocusOut>", lambda e: _close_menu())
@@ -7596,8 +7671,9 @@ def display_results(results):
                     )
                 
                 # Insert item without image - cover will be lazy loaded when visible
-                # No playing tag needed for new items
-                tree.insert("", "end", iid=unique_tree_iid, values=values, tags=())
+                # Alternating row bg: odd rows (1,3,5) = #222222, even rows (2,4,6) = default
+                row_tag = "oddrow" if (item_number % 2 == 1) else "evenrow"
+                tree.insert("", "end", iid=unique_tree_iid, values=values, tags=(row_tag,))
                 
                 item_number += 1
                 seen_ids.add(res_id)
@@ -8845,7 +8921,7 @@ def sort_results(column):
         search_results_data.sort(key=sort_key, reverse=is_reverse)
         sort_states[column] = not is_reverse
         clear_treeview()
-        for item_data in search_results_data:
+        for idx, item_data in enumerate(search_results_data):
             try:
                 if 'tree' in globals() and tree and tree.winfo_exists():
                     # Determine preview icon based on playback state and preview availability
@@ -8865,8 +8941,9 @@ def sort_results(column):
                     else:
                         preview_icon = PREVIEW_UNAVAILABLE
                     values = ( preview_icon, item_data.get('number', ''), item_data.get('title', ''), item_data.get('artist', ''), item_data.get('duration', ''), item_data.get('year', ''), item_data.get('additional', ''), item_data.get('explicit', ''), item_data.get('id', '') )
-                    # Determine tags - red for playing items
-                    tags = ("playing",) if is_playing and preview_url else ()
+                    # Alternating row bg + playing tag for preview icon color
+                    row_tag = "oddrow" if (idx % 2 == 0) else "evenrow"
+                    tags = (row_tag, "playing") if (is_playing and preview_url) else (row_tag,)
                     # Use cached cover image if available
                     # Check if we should use hover version (if currently hovering this item)
                     global _cover_hover_iid
