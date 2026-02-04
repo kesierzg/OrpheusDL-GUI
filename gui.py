@@ -9674,30 +9674,39 @@ def _create_credential_tab_content(platform_name, tab_frame):
             dashboard_link.bind("<Enter>", lambda e: dashboard_link.configure(text_color=LINK_HOVER_COLOR))
             dashboard_link.bind("<Leave>", lambda e: dashboard_link.configure(text_color=LINK_COLOR))
             
+            customtkinter.CTkLabel(step1_text_frame, text=" & log in", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            
             # Step 2
             step2_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step2_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step2_frame, text="2.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step2_frame, text="Create an app", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step2_frame, text="Take over username & fill in above", font=("Segoe UI", 12), text_color="gray").pack(side="left")
             
             # Step 3
             step3_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step3_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
+            customtkinter.CTkLabel(step3_frame, text="In the dashboard, create an app (or use existing one)", font=("Segoe UI", 12), text_color="gray").pack(side="left")
             
-            step3_text_frame = customtkinter.CTkFrame(step3_frame, fg_color="transparent")
-            step3_text_frame.pack(side="left")
+            # Step 4
+            step4_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            step4_frame.pack(anchor="w", pady=(0, 5))
             
-            customtkinter.CTkLabel(step3_text_frame, text="Add Redirect URI ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step4_frame, text="4.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
+            
+            step4_text_frame = customtkinter.CTkFrame(step4_frame, fg_color="transparent")
+            step4_text_frame.pack(side="left")
+            
+            customtkinter.CTkLabel(step4_text_frame, text="Add Redirect URI ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
             
             copy_url = "http://127.0.0.1:4381/login"
-            url_label = customtkinter.CTkLabel(step3_text_frame, text=copy_url, font=("Consolas", 11), text_color=LINK_COLOR)
+            url_label = customtkinter.CTkLabel(step4_text_frame, text=copy_url, font=("Consolas", 11), text_color=LINK_COLOR)
             url_label.pack(side="left", padx=(0, 4))
             
             copy_button = customtkinter.CTkButton(
-                step3_text_frame,
+                step4_text_frame,
                 text="⧉",
                 width=24,
                 height=24,
@@ -9712,19 +9721,16 @@ def _create_credential_tab_content(platform_name, tab_frame):
             copy_button.bind("<Enter>", lambda e: copy_button.configure(text_color=WHITE_TEXT_COLOR))
             copy_button.bind("<Leave>", lambda e: copy_button.configure(text_color="gray"))
 
-            # Step 4
-            step4_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
-            step4_frame.pack(anchor="w", pady=(0, 5))
-            
-            customtkinter.CTkLabel(step4_frame, text="4.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step4_frame, text="Copy Client ID + Secret", font=("Segoe UI", 12), text_color="gray").pack(side="left")
-
             # Step 5
             step5_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step5_frame.pack(anchor="w", pady=0)
             
-            customtkinter.CTkLabel(step5_frame, text="5.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step5_frame, text="Paste them above", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step5_frame, text="5.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="s")
+            
+            step5_text_frame = customtkinter.CTkFrame(step5_frame, fg_color="transparent")
+            step5_text_frame.pack(side="left", anchor="w")
+            # Use anchor="s" so Consolas and Segoe UI labels share the same baseline (avoids vertical drift)
+            customtkinter.CTkLabel(step5_text_frame, text="Save. Copy Client ID + Secret, paste them above", font=("Segoe UI", 12), text_color="gray").pack(side="left", anchor="s")            
         
         # Add help text for Apple Music module
         if platform_name == "AppleMusic":
