@@ -1583,10 +1583,10 @@ def setup_preview_tags(tree_widget):
     # Tag for playing items - blue foreground for stop icon
     tree_widget.tag_configure("playing", foreground="#1F6AA5")
     # Alternating row background (odd = slightly lighter, even = default)
-    tree_widget.tag_configure("oddrow", background="#202121")
+    tree_widget.tag_configure("oddrow", background="#222323")
     tree_widget.tag_configure("evenrow", background=TREEVIEW_BG_HEX)
     # Row hover highlight (set foreground too so it persists when hover is the only tag)
-    tree_widget.tag_configure("hover", background="#272828", foreground="#DCE4EE")
+    tree_widget.tag_configure("hover", background="#2B2B2B", foreground="#DCE4EE")
 
 def _row_tag_for_index(idx):
     """Return oddrow or evenrow based on row index (0-based)."""
