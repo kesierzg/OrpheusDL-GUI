@@ -785,6 +785,12 @@ COVER_FADE_IN_STEP_MS = 45
 COVER_FADE_MAX_CONCURRENT = 4  # Max fades at once; excess show immediately to avoid GUI freeze
 TREEVIEW_BG_HEX = "#1D1E1E"  # Match Custom.Treeview fieldbackground
 
+# Fixed width for all right-click context menus (matches main action buttons: 100)
+CONTEXT_MENU_WIDTH = 100
+# Icon and text color for context menu items (match so icons = text)
+CONTEXT_MENU_TEXT_COLOR = "#DCE4EE"
+CONTEXT_MENU_TEXT_DISABLED = "#808080"  # gray (hex for PIL and CTk)
+
 # Content width for download log, search results, and platform help sections (kept in sync)
 HELP_CONTENT_WIDTH = 920
 
@@ -2770,56 +2776,52 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     y = event.y_root
                                     context_menu.geometry(f"+{x}+{y}")
                                     
-                                    # Same frame style as search/copy-paste context menu: border_width=2, border_color="#343638", fg_color="#343638"
-                                    menu_frame = customtkinter.CTkFrame(context_menu, border_width=2, border_color="#343638", fg_color="#343638")
+                                    # Match tooltip background (#1D1E1E) and fixed width; border matches separator color (#2B2B2B)
+                                    menu_frame = customtkinter.CTkFrame(context_menu, border_width=1, border_color="#565B5E", fg_color="#1D1E1E", width=CONTEXT_MENU_WIDTH)
                                     menu_frame.pack(fill="both", expand=True, padx=1, pady=1)
-                                    button_color = "#343638"
+                                    button_color = "#1D1E1E"
                                     
-                                    # Copy Image button (same style/size/font as search context menu: width=80, height=24, font Segoe UI 11, hover #1F6AA5)
-                                    copy_icon = _create_copy_icon()
-                                    copy_icon_white = _create_copy_icon(color="white")
+                                    # Copy Image button (icon color = text color)
+                                    copy_icon = _create_copy_icon(color=CONTEXT_MENU_TEXT_COLOR)
                                     copy_btn = customtkinter.CTkButton(
                                         menu_frame,
                                         text="Copy Image",
                                         image=copy_icon,
                                         compound="left",
                                         anchor="w",
-                                        width=80,
+                                        width=100,
                                         height=24,
                                         font=("Segoe UI", 11),
                                         fg_color=button_color,
                                         hover_color="#1F6AA5",
-                                        text_color_disabled="gray",
+                                        text_color=CONTEXT_MENU_TEXT_COLOR,
+                                        text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
                                         border_width=0,
                                         command=lambda: _copy_image_to_clipboard(context_menu)
                                     )
                                     copy_btn.image = copy_icon
-                                    copy_btn.hover_image = copy_icon_white
-                                    _setup_hover_icon(copy_btn, copy_icon, copy_icon_white)
                                     copy_btn.pack(pady=(2, 1), padx=2, fill="x")
                                     
-                                    # Save as... button (exact same style and download icon as search context menu)
-                                    save_icon = _create_download_icon(color="#AAAAAA")
-                                    save_icon_white = _create_download_icon(color="white")
+                                    # Save as... button (icon color = text color)
+                                    save_icon = _create_download_icon(color=CONTEXT_MENU_TEXT_COLOR)
                                     save_btn = customtkinter.CTkButton(
                                         menu_frame,
                                         text="Save as...",
                                         image=save_icon,
                                         compound="left",
                                         anchor="w",
-                                        width=80,
+                                        width=100,
                                         height=24,
                                         font=("Segoe UI", 11),
                                         fg_color=button_color,
                                         hover_color="#1F6AA5",
-                                        text_color_disabled="gray",
+                                        text_color=CONTEXT_MENU_TEXT_COLOR,
+                                        text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
                                         border_width=0,
                                         command=lambda: _save_image_to_file(context_menu)
                                     )
                                     save_btn.image = save_icon
-                                    save_btn.hover_image = save_icon_white
-                                    _setup_hover_icon(save_btn, save_icon, save_icon_white)
-                                    save_btn.pack(pady=1, padx=2, fill="x")
+                                    save_btn.pack(pady=(1, 2), padx=2, fill="x")
                                     
                                     # Close menu when clicking outside (deferred to avoid macOS Tk crash)
                                     def _close_menu(event=None):
@@ -5024,80 +5026,81 @@ def _create_menu():
     global _context_menu, app, BUTTON_COLOR
     if _context_menu and _context_menu.winfo_exists(): return
     if 'app' not in globals() or not app: return
-    _context_menu = customtkinter.CTkFrame(app, border_width=2, border_color="#343638", fg_color="#343638")
-    button_color = "#343638"
+    # Match tooltip background (#1D1E1E) for consistency; border matches separator color (#2B2B2B)
+    _context_menu = customtkinter.CTkFrame(app, border_width=1, border_color="#565B5E", fg_color="#1D1E1E", width=CONTEXT_MENU_WIDTH)
+    button_color = "#1D1E1E"
 
-    # Undo button
-    undo_icon = _create_undo_icon()
-    undo_icon_white = _create_undo_icon(color="white")
+    # Undo button (icon color = text color; disabled icon = disabled text color)
+    undo_icon = _create_undo_icon(color=CONTEXT_MENU_TEXT_COLOR)
+    undo_icon_disabled = _create_undo_icon(color=CONTEXT_MENU_TEXT_DISABLED)
     undo_button = customtkinter.CTkButton(
         _context_menu, 
         text="Undo", 
         image=undo_icon,
         compound="left",
         command=_undo_text, 
-        width=80, 
+        width=100, 
         height=24, 
         font=("Segoe UI", 11),
         fg_color=button_color, 
         hover_color="#1F6AA5", 
-        text_color_disabled="gray", 
+        text_color=CONTEXT_MENU_TEXT_COLOR,
+        text_color_disabled=CONTEXT_MENU_TEXT_DISABLED, 
         border_width=0,
         anchor="w"
     )
     undo_button.image = undo_icon
-    undo_button.hover_image = undo_icon_white
-    _setup_hover_icon(undo_button, undo_icon, undo_icon_white)
+    undo_button.disabled_image = undo_icon_disabled
     undo_button.pack(pady=(2, 1), padx=2, fill="x")
     
-    # Separator line
-    separator = customtkinter.CTkFrame(_context_menu, width=50, height=2, fg_color="#343638")
-    separator.pack(fill="x", padx=4, pady=2)
+    # Separator line (slightly lighter than menu bg so it's visible)
+    separator = customtkinter.CTkFrame(_context_menu, width=50, height=2, fg_color="#2B2B2B")
+    separator.pack(fill="x", padx=2, pady=2)
     
     # Copy button
-    copy_icon = _create_copy_icon()
-    copy_icon_white = _create_copy_icon(color="white")
+    copy_icon = _create_copy_icon(color=CONTEXT_MENU_TEXT_COLOR)
+    copy_icon_disabled = _create_copy_icon(color=CONTEXT_MENU_TEXT_DISABLED)
     copy_button = customtkinter.CTkButton(
         _context_menu, 
         text="Copy", 
         image=copy_icon,
         compound="left",
         command=copy_text, 
-        width=80, 
+        width=100, 
         height=24, 
         font=("Segoe UI", 11),
         fg_color=button_color, 
         hover_color="#1F6AA5", 
-        text_color_disabled="gray", 
+        text_color=CONTEXT_MENU_TEXT_COLOR,
+        text_color_disabled=CONTEXT_MENU_TEXT_DISABLED, 
         border_width=0,
         anchor="w"
     )
     copy_button.image = copy_icon
-    copy_button.hover_image = copy_icon_white
-    _setup_hover_icon(copy_button, copy_icon, copy_icon_white)
+    copy_button.disabled_image = copy_icon_disabled
     copy_button.pack(pady=1, padx=2, fill="x")
     
     # Paste button
-    paste_icon = _create_paste_icon()
-    paste_icon_white = _create_paste_icon(color="white")
+    paste_icon = _create_paste_icon(color=CONTEXT_MENU_TEXT_COLOR)
+    paste_icon_disabled = _create_paste_icon(color=CONTEXT_MENU_TEXT_DISABLED)
     paste_button = customtkinter.CTkButton(
         _context_menu, 
         text="Paste", 
         image=paste_icon,
         compound="left",
         command=paste_text, 
-        width=80, 
+        width=100, 
         height=24, 
         font=("Segoe UI", 11),
         fg_color=button_color, 
         hover_color="#1F6AA5", 
-        text_color_disabled="gray", 
+        text_color=CONTEXT_MENU_TEXT_COLOR,
+        text_color_disabled=CONTEXT_MENU_TEXT_DISABLED, 
         border_width=0,
         anchor="w"
     )
     paste_button.image = paste_icon
-    paste_button.hover_image = paste_icon_white
-    _setup_hover_icon(paste_button, paste_icon, paste_icon_white)
+    paste_button.disabled_image = paste_icon_disabled
     paste_button.pack(pady=(1, 2), padx=2, fill="x")
     
     _context_menu.pack_forget()
@@ -5158,8 +5161,11 @@ def show_context_menu(event):
         if len(buttons) >= 3:
             undo_btn = buttons[0]; copy_btn = buttons[1]; paste_btn = buttons[2]
             undo_btn.configure(state="normal" if can_undo else "disabled")
+            undo_btn.configure(image=undo_btn.image if can_undo else getattr(undo_btn, "disabled_image", undo_btn.image))
             copy_btn.configure(state="normal" if can_copy else "disabled")
+            copy_btn.configure(image=copy_btn.image if can_copy else getattr(copy_btn, "disabled_image", copy_btn.image))
             paste_btn.configure(state="normal" if can_paste else "disabled")
+            paste_btn.configure(image=paste_btn.image if can_paste else getattr(paste_btn, "disabled_image", paste_btn.image))
         else: print("Context menu: Button widgets not found or invalid."); return
         menu_x = (x_root - app.winfo_rootx()) / app._get_window_scaling() + 2
         menu_y = (y_root - app.winfo_rooty()) / app._get_window_scaling() + 2
@@ -8020,27 +8026,16 @@ def get_selected_items_data():
 
 # Search Results Context Menu
 _search_context_menu = None
+_search_context_menu_wrapper = None  # Wrapper with padx/pady=1 so frame border isn't clipped (like artwork menu)
+_search_context_menu_bottom_label = None  # "No other formats available" for SoundCloud/Apple Music
 _search_quality_menu = None
 _search_context_quality_var = None
 _search_quality_buttons = []  # List to store quality button references
 _search_copy_url_button = None # Reference to the open URL button (opens link in external browser)
 
-def _setup_hover_icon(button, normal_icon, hover_icon):
-    """Setup hover effect for a button to swap icons."""
-    def on_enter(event):
-        if button.cget("state") != "disabled":
-            button.configure(image=hover_icon)
-    
-    def on_leave(event):
-        if button.cget("state") != "disabled":
-            button.configure(image=normal_icon)
-            
-    button.bind("<Enter>", on_enter, add=True)
-    button.bind("<Leave>", on_leave, add=True)
-
 def _create_search_context_menu():
     """Create the search results right-click context menu."""
-    global _search_context_menu, _search_quality_menu, _search_context_quality_var, _search_quality_buttons, _search_copy_url_button, app, BUTTON_COLOR
+    global _search_context_menu, _search_context_menu_wrapper, _search_context_menu_bottom_label, _search_quality_menu, _search_context_quality_var, _search_quality_buttons, _search_copy_url_button, app, BUTTON_COLOR
     
     if _search_context_menu is not None:
         return
@@ -8049,37 +8044,37 @@ def _create_search_context_menu():
         return
     
     try:
-        # Create main context menu frame - match copy/paste menu style
-        _search_context_menu = customtkinter.CTkFrame(app, border_width=2, border_color="#343638", fg_color="#343638")
+        # Wrapper: fixed width; menu frame and spacer also fixed width so menu doesn't grow
+        _search_context_menu_wrapper = customtkinter.CTkFrame(app, fg_color="transparent", width=CONTEXT_MENU_WIDTH)
+        # Main context menu frame - fixed width; rounded corners
+        _search_context_menu = customtkinter.CTkFrame(_search_context_menu_wrapper, border_width=1, border_color="#565B5E", fg_color="#1D1E1E", width=CONTEXT_MENU_WIDTH)
         _search_context_menu.configure(cursor=HAND_CURSOR)
-        button_color = "#343638"
+        button_color = "#1D1E1E"
         
-        # Open URL button - same style as copy/paste buttons
-        external_link_icon = _create_external_link_icon()
-        external_link_icon_white = _create_external_link_icon(color="white")
+        # Open URL button - same style as copy/paste buttons (icon color = text color)
+        external_link_icon = _create_external_link_icon(color=CONTEXT_MENU_TEXT_COLOR)
         _search_copy_url_button = customtkinter.CTkButton(
             _search_context_menu, 
             text="Link", 
             image=external_link_icon,
             compound="left",
             command=_open_selected_url,
-            width=80,
+            width=100,
             height=24,
             font=("Segoe UI", 11),
             fg_color=button_color,
             hover_color="#1F6AA5",
-            text_color_disabled="gray",
+            text_color=CONTEXT_MENU_TEXT_COLOR,
+            text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
             border_width=0,
             anchor="w"
         )
-        _search_copy_url_button.image = external_link_icon # Keep reference
-        _search_copy_url_button.hover_image = external_link_icon_white # Keep reference
-        _setup_hover_icon(_search_copy_url_button, external_link_icon, external_link_icon_white)
+        _search_copy_url_button.image = external_link_icon  # Keep reference
         _search_copy_url_button.pack(pady=(2, 1), padx=2, fill="x")
         
-        # Separator line
-        separator = customtkinter.CTkFrame(_search_context_menu, width=50, height=2, fg_color="#343638")
-        separator.pack(fill="x", padx=4, pady=2)
+        # Separator line (slightly lighter than menu bg so it's visible)
+        separator = customtkinter.CTkFrame(_search_context_menu, width=50, height=2, fg_color="#2B2B2B")
+        separator.pack(fill="x", padx=2, pady=2)
         
         # Quality options as buttons (like a submenu)
         # Create 4 buttons to support platforms like TIDAL that have 4 quality tiers
@@ -8098,25 +8093,36 @@ def _create_search_context_menu():
                 _search_context_menu,
                 text=label,
                 command=lambda v=value: _select_quality_and_download(v),
-                width=80,
+                width=100,
                 height=24,
                 font=("Segoe UI", 11),
                 fg_color=button_color,
                 hover_color="#1F6AA5",
-                text_color_disabled="gray",
+                text_color=CONTEXT_MENU_TEXT_COLOR,
+                text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
                 border_width=0,
                 anchor="w"
             )
-            # Hide 4th button by default (will be shown for TIDAL)
+            # Hide 4th button by default (will be shown for TIDAL); last button gets minimal bottom pady (2); SoundCloud/Apple Music get 4 when repacked
             if i < 3:
-                btn.pack(pady=1, padx=2, fill="x")
+                btn.pack(pady=(1, 2) if i == 2 else 1, padx=2, fill="x")
             _search_quality_buttons.append(btn)  # Store reference to button
 
-        _search_context_menu.pack_forget()
+        # One-liner for SoundCloud/Apple Music: "No other formats available"
+        _search_context_menu_bottom_label = customtkinter.CTkLabel(
+            _search_context_menu, text="  1 format available",
+            font=("Segoe UI", 10), text_color="#808080"
+        )
+        # show_search_context_menu packs it when platform is soundcloud/applemusic
+
+        # Pack menu frame in wrapper
+        _search_context_menu.pack(fill="x", padx=0, pady=0)
         
     except Exception as e:
         print(f"Error creating search context menu: {e}")
         _search_context_menu = None
+        _search_context_menu_wrapper = None
+        _search_context_menu_bottom_label = None
 
 def _select_quality_and_download(quality_value):
     """Set quality and start download."""
@@ -8433,11 +8439,11 @@ def _create_external_link_icon(size=(16, 16), color="#AAAAAA"):
 
 def show_search_context_menu(event):
     """Show the right-click context menu for search results."""
-    global _search_context_menu, _search_context_quality_var, _search_quality_buttons, _search_copy_url_button, tree, app, settings_vars
+    global _search_context_menu, _search_context_menu_wrapper, _search_context_menu_bottom_label, _search_context_quality_var, _search_quality_buttons, _search_copy_url_button, tree, app, settings_vars
     
     _create_search_context_menu()
     
-    if not _search_context_menu:
+    if not _search_context_menu or not _search_context_menu_wrapper:
         return
     
     try:
@@ -8556,11 +8562,9 @@ def show_search_context_menu(event):
                     is_available = quality_value in available_qualities
                     
                     if is_available:
-                        # Create and store icons
-                        icon = _create_download_icon()
-                        icon_white = _create_download_icon(color="white")
+                        # Create and store icons (icon color = text color)
+                        icon = _create_download_icon(color=CONTEXT_MENU_TEXT_COLOR)
                         btn.image = icon  # Keep reference
-                        btn.hover_image = icon_white # Keep reference
                         
                         # Update button text, icon and command
                         btn.configure(
@@ -8570,15 +8574,25 @@ def show_search_context_menu(event):
                             command=lambda v=quality_value: _select_quality_and_download(v),
                             state="normal"
                         )
-                        _setup_hover_icon(btn, icon, icon_white)
-                        # Ensure button is shown
-                        btn.pack(pady=1, padx=2, fill="x")
+                        # Last visible button: less bottom pady for 3+ option platforms; a bit more for SoundCloud/Apple Music (1 option)
+                        is_last_visible = i == len(button_config) - 1
+                        if is_last_visible and platform_name in ('soundcloud', 'applemusic', 'apple music'):
+                            btn.pack(pady=(1, 4), padx=2, fill="x")
+                        else:
+                            btn.pack(pady=(1, 2) if is_last_visible else 1, padx=2, fill="x")
                     else:
                         # Hide unavailable option
                         btn.pack_forget()
                 else:
                     # Hide unused buttons (e.g. 4th button if config has fewer items)
                     btn.pack_forget()
+        
+        # For SoundCloud/Apple Music: show "No other formats available" below the quality button
+        if _search_context_menu_bottom_label and _search_context_menu_bottom_label.winfo_exists():
+            if platform_name in ('soundcloud', 'applemusic', 'apple music'):
+                _search_context_menu_bottom_label.pack(side="bottom", pady=(2, 4), padx=6, anchor="w")
+            else:
+                _search_context_menu_bottom_label.pack_forget()
         
         # Update quality radio button to match current setting
         if 'settings_vars' in globals() and settings_vars and _search_context_quality_var:
@@ -8587,14 +8601,14 @@ def show_search_context_menu(event):
                 current_quality = quality_var.get()
                 _search_context_quality_var.set(current_quality)
         
-        # Position the menu at the cursor
+        # Position the menu at the cursor (place wrapper so 1px padding keeps frame border visible)
         x_root, y_root = app.winfo_pointerxy()
         scaling = app._get_window_scaling()
         menu_x = (x_root - app.winfo_rootx()) / scaling + 2
         menu_y = (y_root - app.winfo_rooty()) / scaling + 2
         
-        _search_context_menu.place(x=menu_x, y=menu_y)
-        _search_context_menu.lift()
+        _search_context_menu_wrapper.place(x=menu_x, y=menu_y)
+        _search_context_menu_wrapper.lift()
         
         # Bind click outside to hide menu
         app.bind("<Button-1>", _hide_search_context_menu_on_click, add=True)
@@ -8604,26 +8618,26 @@ def show_search_context_menu(event):
 
 def _hide_search_context_menu(event=None):
     """Hide the search context menu."""
-    global _search_context_menu
+    global _search_context_menu, _search_context_menu_wrapper
     
     try:
-        if _search_context_menu and _search_context_menu.winfo_exists():
-            _search_context_menu.place_forget()
+        if _search_context_menu_wrapper and _search_context_menu_wrapper.winfo_exists():
+            _search_context_menu_wrapper.place_forget()
     except Exception as e:
         print(f"Error hiding search context menu: {e}")
 
 def _hide_search_context_menu_on_click(event):
     """Hide the search context menu when clicking outside of it."""
-    global _search_context_menu, app
+    global _search_context_menu_wrapper, app
     
     try:
-        if _search_context_menu and _search_context_menu.winfo_exists():
-            # Check if click is outside the menu
+        if _search_context_menu_wrapper and _search_context_menu_wrapper.winfo_exists():
+            # Check if click is outside the menu (use wrapper bounds so 1px padding counts as inside)
             x_root, y_root = app.winfo_pointerxy()
-            menu_x = _search_context_menu.winfo_rootx()
-            menu_y = _search_context_menu.winfo_rooty()
-            menu_width = _search_context_menu.winfo_width()
-            menu_height = _search_context_menu.winfo_height()
+            menu_x = _search_context_menu_wrapper.winfo_rootx()
+            menu_y = _search_context_menu_wrapper.winfo_rooty()
+            menu_width = _search_context_menu_wrapper.winfo_width()
+            menu_height = _search_context_menu_wrapper.winfo_height()
             
             if not (menu_x <= x_root <= menu_x + menu_width and 
                     menu_y <= y_root <= menu_y + menu_height):
