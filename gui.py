@@ -2780,48 +2780,144 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     menu_frame = customtkinter.CTkFrame(context_menu, border_width=1, border_color="#565B5E", fg_color="#1D1E1E", width=CONTEXT_MENU_WIDTH)
                                     menu_frame.pack(fill="both", expand=True, padx=1, pady=1)
                                     button_color = "#1D1E1E"
+                                    hover_color_artwork = "#1F6AA5"
                                     
-                                    # Copy Image button (icon color = text color)
-                                    copy_icon = _create_copy_icon(color=CONTEXT_MENU_TEXT_COLOR)
-                                    copy_btn = customtkinter.CTkButton(
-                                        menu_frame,
-                                        text="Copy Image",
-                                        image=copy_icon,
-                                        compound="left",
-                                        anchor="w",
-                                        width=100,
-                                        height=24,
-                                        font=("Segoe UI", 11),
-                                        fg_color=button_color,
-                                        hover_color="#1F6AA5",
-                                        text_color=CONTEXT_MENU_TEXT_COLOR,
-                                        text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
-                                        border_width=0,
-                                        command=lambda: _copy_image_to_clipboard(context_menu)
-                                    )
-                                    copy_btn.image = copy_icon
-                                    copy_btn.pack(pady=(2, 1), padx=2, fill="x")
-                                    
-                                    # Save as... button (icon color = text color)
-                                    save_icon = _create_download_icon(color=CONTEXT_MENU_TEXT_COLOR)
-                                    save_btn = customtkinter.CTkButton(
-                                        menu_frame,
-                                        text="Save as...",
-                                        image=save_icon,
-                                        compound="left",
-                                        anchor="w",
-                                        width=100,
-                                        height=24,
-                                        font=("Segoe UI", 11),
-                                        fg_color=button_color,
-                                        hover_color="#1F6AA5",
-                                        text_color=CONTEXT_MENU_TEXT_COLOR,
-                                        text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
-                                        border_width=0,
-                                        command=lambda: _save_image_to_file(context_menu)
-                                    )
-                                    save_btn.image = save_icon
-                                    save_btn.pack(pady=(1, 2), padx=2, fill="x")
+                                    # macOS: plain tk rows + motion-based hover (Enter/Leave often don't fire in overrideredirect on macOS)
+                                    if platform.system() == "Darwin":
+                                        from PIL import Image, ImageDraw, ImageTk
+                                        text_fg = CONTEXT_MENU_TEXT_COLOR
+                                        # Icons as PhotoImage for tk.Label (keep refs so they aren't GC'd)
+                                        def _artwork_copy_pil():
+                                            img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+                                            d = ImageDraw.Draw(img)
+                                            bx1, by1, bx2, by2 = 2, 2, 10, 10
+                                            fx1, fy1, fx2, fy2 = 5, 5, 13, 13
+                                            d.line([(bx1, by1), (bx2, by1)], fill=text_fg, width=1)
+                                            d.line([(bx1, by1), (bx1, by2)], fill=text_fg, width=1)
+                                            d.line([(bx2, by1), (bx2, fy1)], fill=text_fg, width=1)
+                                            d.line([(bx1, by2), (fx1, by2)], fill=text_fg, width=1)
+                                            d.rectangle([fx1, fy1, fx2, fy2], outline=text_fg, width=1)
+                                            return img
+                                        def _artwork_download_pil():
+                                            img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+                                            d = ImageDraw.Draw(img)
+                                            cx = 8
+                                            d.line([(3, 13), (13, 13)], fill=text_fg, width=1)
+                                            d.line([(cx, 2), (cx, 10)], fill=text_fg, width=1)
+                                            d.line([(cx - 3, 7), (cx, 10), (cx + 3, 7)], fill=text_fg, width=1)
+                                            return img
+                                        _artwork_copy_photo = ImageTk.PhotoImage(_artwork_copy_pil())
+                                        _artwork_save_photo = ImageTk.PhotoImage(_artwork_download_pil())
+                                        
+                                        copy_row_tk = tkinter.Frame(menu_frame, bg=button_color, height=24, width=CONTEXT_MENU_WIDTH, cursor="", highlightthickness=0)
+                                        copy_row_tk.pack(pady=(2, 1), padx=2)
+                                        copy_row_tk.pack_propagate(False)
+                                        copy_lbl_tk = tkinter.Label(copy_row_tk, text=" Copy Image", image=_artwork_copy_photo, compound="left", bg=button_color, fg=text_fg, font=("Segoe UI", 11), anchor="w", cursor="", highlightthickness=0)
+                                        copy_lbl_tk.pack(fill="both", expand=True, padx=4, pady=1)
+                                        copy_lbl_tk.image = _artwork_copy_photo
+                                        
+                                        save_row_tk = tkinter.Frame(menu_frame, bg=button_color, height=24, width=CONTEXT_MENU_WIDTH, cursor="", highlightthickness=0)
+                                        save_row_tk.pack(pady=(1, 2), padx=2)
+                                        save_row_tk.pack_propagate(False)
+                                        save_lbl_tk = tkinter.Label(save_row_tk, text=" Save as...", image=_artwork_save_photo, compound="left", bg=button_color, fg=text_fg, font=("Segoe UI", 11), anchor="w", cursor="", highlightthickness=0)
+                                        save_lbl_tk.pack(fill="both", expand=True, padx=4, pady=1)
+                                        save_lbl_tk.image = _artwork_save_photo
+                                        
+                                        # Motion-based hover + polling fallback (Enter/Leave and sometimes Motion don't fire in overrideredirect on macOS)
+                                        def _artwork_update_hover(x_root, y_root):
+                                            try:
+                                                r1x, r1y = copy_row_tk.winfo_rootx(), copy_row_tk.winfo_rooty()
+                                                r1w, r1h = copy_row_tk.winfo_width(), copy_row_tk.winfo_height()
+                                                r2x, r2y = save_row_tk.winfo_rootx(), save_row_tk.winfo_rooty()
+                                                r2w, r2h = save_row_tk.winfo_width(), save_row_tk.winfo_height()
+                                            except tkinter.TclError:
+                                                return
+                                            in_copy = r1x <= x_root < r1x + r1w and r1y <= y_root < r1y + r1h
+                                            in_save = r2x <= x_root < r2x + r2w and r2y <= y_root < r2y + r2h
+                                            hover = hover_color_artwork
+                                            if in_copy:
+                                                copy_row_tk.config(bg=hover, cursor=HAND_CURSOR)
+                                                copy_lbl_tk.config(bg=hover, cursor=HAND_CURSOR)
+                                                save_row_tk.config(bg=button_color, cursor="")
+                                                save_lbl_tk.config(bg=button_color, cursor="")
+                                                context_menu.configure(cursor=HAND_CURSOR)
+                                            elif in_save:
+                                                save_row_tk.config(bg=hover, cursor=HAND_CURSOR)
+                                                save_lbl_tk.config(bg=hover, cursor=HAND_CURSOR)
+                                                copy_row_tk.config(bg=button_color, cursor="")
+                                                copy_lbl_tk.config(bg=button_color, cursor="")
+                                                context_menu.configure(cursor=HAND_CURSOR)
+                                            else:
+                                                copy_row_tk.config(bg=button_color, cursor="")
+                                                copy_lbl_tk.config(bg=button_color, cursor="")
+                                                save_row_tk.config(bg=button_color, cursor="")
+                                                save_lbl_tk.config(bg=button_color, cursor="")
+                                                context_menu.configure(cursor="")
+                                        
+                                        def _artwork_motion(e):
+                                            _artwork_update_hover(e.x_root, e.y_root)
+                                        
+                                        def _artwork_poll():
+                                            try:
+                                                if not context_menu.winfo_exists():
+                                                    return
+                                                x = context_menu.winfo_pointerx()
+                                                y = context_menu.winfo_pointery()
+                                                _artwork_update_hover(x, y)
+                                                context_menu.after(50, _artwork_poll)
+                                            except tkinter.TclError:
+                                                pass
+                                        
+                                        context_menu.bind("<Motion>", _artwork_motion)
+                                        menu_frame.bind("<Motion>", _artwork_motion)
+                                        for _w in (copy_row_tk, copy_lbl_tk, save_row_tk, save_lbl_tk):
+                                            _w.bind("<Motion>", _artwork_motion)
+                                        context_menu.after(50, _artwork_poll)  # fallback when Motion doesn't fire on macOS overrideredirect
+                                        copy_row_tk.bind("<Button-1>", lambda e: (_copy_image_to_clipboard(context_menu), _deferred_destroy_menu(context_menu)))
+                                        copy_lbl_tk.bind("<Button-1>", lambda e: (_copy_image_to_clipboard(context_menu), _deferred_destroy_menu(context_menu)))
+                                        save_row_tk.bind("<Button-1>", lambda e: (_save_image_to_file(context_menu), _deferred_destroy_menu(context_menu)))
+                                        save_lbl_tk.bind("<Button-1>", lambda e: (_save_image_to_file(context_menu), _deferred_destroy_menu(context_menu)))
+                                    else:
+                                        menu_frame.configure(cursor=HAND_CURSOR)
+                                        copy_icon = _create_copy_icon(color=CONTEXT_MENU_TEXT_COLOR)
+                                        copy_btn = customtkinter.CTkButton(
+                                            menu_frame,
+                                            text="Copy Image",
+                                            image=copy_icon,
+                                            compound="left",
+                                            anchor="w",
+                                            width=100,
+                                            height=24,
+                                            font=("Segoe UI", 11),
+                                            fg_color=button_color,
+                                            hover_color=hover_color_artwork,
+                                            text_color=CONTEXT_MENU_TEXT_COLOR,
+                                            text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
+                                            border_width=0,
+                                            command=lambda: _copy_image_to_clipboard(context_menu)
+                                        )
+                                        copy_btn.image = copy_icon
+                                        copy_btn.pack(pady=(2, 1), padx=2, fill="x")
+                                        
+                                        save_icon = _create_download_icon(color=CONTEXT_MENU_TEXT_COLOR)
+                                        save_btn = customtkinter.CTkButton(
+                                            menu_frame,
+                                            text="Save as...",
+                                            image=save_icon,
+                                            compound="left",
+                                            anchor="w",
+                                            width=100,
+                                            height=24,
+                                            font=("Segoe UI", 11),
+                                            fg_color=button_color,
+                                            hover_color=hover_color_artwork,
+                                            text_color=CONTEXT_MENU_TEXT_COLOR,
+                                            text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
+                                            border_width=0,
+                                            command=lambda: _save_image_to_file(context_menu)
+                                        )
+                                        save_btn.image = save_icon
+                                        save_btn.pack(pady=(1, 2), padx=2, fill="x")
                                     
                                     # Close menu when clicking outside (deferred to avoid macOS Tk crash)
                                     def _close_menu(event=None):
@@ -8028,6 +8124,8 @@ def get_selected_items_data():
 _search_context_menu = None
 _search_context_menu_wrapper = None  # Wrapper with padx/pady=1 so frame border isn't clipped (like artwork menu)
 _search_context_menu_bottom_label = None  # "No other formats available" for SoundCloud/Apple Music
+_search_context_menu_app_binding_id = None   # So we can unbind only our Button-1 handler (left-click to dismiss)
+_search_context_menu_tree_binding_id = None  # Tree ButtonRelease-1 so release on another row dismisses (avoids competing with tree Button-1 on macOS)
 _search_quality_menu = None
 _search_context_quality_var = None
 _search_quality_buttons = []  # List to store quality button references
@@ -8439,7 +8537,7 @@ def _create_external_link_icon(size=(16, 16), color="#AAAAAA"):
 
 def show_search_context_menu(event):
     """Show the right-click context menu for search results."""
-    global _search_context_menu, _search_context_menu_wrapper, _search_context_menu_bottom_label, _search_context_quality_var, _search_quality_buttons, _search_copy_url_button, tree, app, settings_vars
+    global _search_context_menu, _search_context_menu_wrapper, _search_context_menu_bottom_label, _search_context_quality_var, _search_quality_buttons, _search_copy_url_button, _search_context_menu_app_binding_id, _search_context_menu_tree_binding_id, tree, app, settings_vars
     
     _create_search_context_menu()
     
@@ -8610,16 +8708,37 @@ def show_search_context_menu(event):
         _search_context_menu_wrapper.place(x=menu_x, y=menu_y)
         _search_context_menu_wrapper.lift()
         
-        # Bind click outside to hide menu
-        app.bind("<Button-1>", _hide_search_context_menu_on_click, add=True)
+        # Bind left-click outside to hide menu. Tree: use ButtonRelease-1 so we don't compete with tree's Button-1 (macOS selection).
+        _unbind_search_context_menu_hide()
+        _search_context_menu_app_binding_id = app.bind("<Button-1>", _hide_search_context_menu_on_click, add=True)
+        if 'tree' in globals() and tree and tree.winfo_exists():
+            _search_context_menu_tree_binding_id = tree.bind("<ButtonRelease-1>", _hide_search_context_menu_on_click, add=True)
         
     except Exception as e:
         print(f"Error showing search context menu: {e}")
+
+def _unbind_search_context_menu_hide():
+    """Remove the left-click bindings we added to dismiss the search context menu."""
+    global _search_context_menu_app_binding_id, _search_context_menu_tree_binding_id
+    try:
+        if _search_context_menu_app_binding_id and 'app' in globals() and app and app.winfo_exists():
+            app.unbind("<Button-1>", _search_context_menu_app_binding_id)
+    except (tkinter.TclError, Exception):
+        pass
+    _search_context_menu_app_binding_id = None
+    try:
+        if _search_context_menu_tree_binding_id and 'tree' in globals() and tree and tree.winfo_exists():
+            tree.unbind("<ButtonRelease-1>", _search_context_menu_tree_binding_id)
+    except (tkinter.TclError, Exception):
+        pass
+    _search_context_menu_tree_binding_id = None
+
 
 def _hide_search_context_menu(event=None):
     """Hide the search context menu."""
     global _search_context_menu, _search_context_menu_wrapper
     
+    _unbind_search_context_menu_hide()
     try:
         if _search_context_menu_wrapper and _search_context_menu_wrapper.winfo_exists():
             _search_context_menu_wrapper.place_forget()
@@ -8627,27 +8746,25 @@ def _hide_search_context_menu(event=None):
         print(f"Error hiding search context menu: {e}")
 
 def _hide_search_context_menu_on_click(event):
-    """Hide the search context menu when clicking outside of it."""
-    global _search_context_menu_wrapper, app
+    """Hide the search context menu when clicking outside of it (left-click anywhere, including on tree)."""
+    global _search_context_menu_wrapper
     
     try:
         if _search_context_menu_wrapper and _search_context_menu_wrapper.winfo_exists():
             # Check if click is outside the menu (use wrapper bounds so 1px padding counts as inside)
-            x_root, y_root = app.winfo_pointerxy()
+            if 'app' in globals() and app and app.winfo_exists():
+                x_root, y_root = app.winfo_pointerxy()
+            else:
+                return
             menu_x = _search_context_menu_wrapper.winfo_rootx()
             menu_y = _search_context_menu_wrapper.winfo_rooty()
             menu_width = _search_context_menu_wrapper.winfo_width()
             menu_height = _search_context_menu_wrapper.winfo_height()
             
-            if not (menu_x <= x_root <= menu_x + menu_width and 
+            if not (menu_x <= x_root <= menu_x + menu_width and
                     menu_y <= y_root <= menu_y + menu_height):
                 _hide_search_context_menu()
-                # Unbind to avoid multiple bindings
-                try:
-                    app.unbind("<Button-1>")
-                except:
-                    pass
-    except Exception as e:
+    except Exception:
         pass
 
 def build_url_from_result(result_data):
