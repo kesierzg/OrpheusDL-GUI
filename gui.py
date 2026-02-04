@@ -10103,7 +10103,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step4_arl, text="4.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
             customtkinter.CTkLabel(step4_arl, text="Seek for ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
             customtkinter.CTkLabel(step4_arl, text="arl", font=("Consolas", 12), text_color=LINK_COLOR).pack(side="left")
-            customtkinter.CTkLabel(step4_arl, text=", copy value and paste above", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step4_arl, text=", copy value & paste above", font=("Segoe UI", 12), text_color="gray").pack(side="left")
 
             def _deezer_help_update(use_arl):
                 if use_arl:
@@ -10316,9 +10316,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step5_right, text="5.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
             customtkinter.CTkLabel(step5_right, text="Copy ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
             customtkinter.CTkLabel(step5_right, text="ID", font=("Consolas", 12), text_color=LINK_COLOR).pack(side="left")
-            customtkinter.CTkLabel(step5_right, text=" and ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step5_right, text=" + ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
             customtkinter.CTkLabel(step5_right, text="Token", font=("Consolas", 12), text_color=LINK_COLOR).pack(side="left")
-            customtkinter.CTkLabel(step5_right, text=" value and paste above", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step5_right, text=" value & paste above", font=("Segoe UI", 12), text_color="gray").pack(side="left")
 
             def _qobuz_help_update(use_id):
                 if use_id:
@@ -10434,7 +10434,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step5_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step5_frame, text="5.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step5_frame, text="Copy and paste above", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step5_frame, text="Copy & paste above", font=("Segoe UI", 12), text_color="gray").pack(side="left")
         
         # Add help text for Tidal module
         if platform_name == "Tidal":
