@@ -756,6 +756,12 @@ _pulse_state = False  # Track current pulse state (bright/dim)
 _loading_after_id = None  # Track the after() ID for loading dots animation
 _loading_dot_position = 0  # Track current position in walking dots animation (0-2)
 _loading_animation_iid = None  # Track which item is currently showing loading animation
+_expanded_album_playlist_iids = set()  # Tree iids of expanded album/playlist rows (show tracks as children)
+# When viewing an album's tracks in the list view (instead of inline expand), holds saved search state for "Back"
+_album_track_list_context = None  # None = normal search view; else {"saved_data": [...], "title": "Album: ..."}
+# Bordered pill badge showing content type (Album / Playlist / Artist) in results header; created in search tab setup
+_content_type_badge = None
+_content_type_badge_label = None
 
 # Preview button styling
 # Note: ttk.Treeview doesn't support per-cell coloring, only per-row via tags
@@ -766,6 +772,11 @@ PREVIEW_STOP_ICON = " ▶ "  # Stop square with spacing for visibility
 PREVIEW_STOP_ICON_PULSE = "   "  # Pulsing stop icon (hollow square for animation)
 PREVIEW_STOP_HOVER = "[ ■ ]"  # Enlarged appearance on hover
 PREVIEW_UNAVAILABLE = " · "  # Small dot for unavailable
+# Expand/collapse: list icon = expand to show tracks, up = collapse
+PREVIEW_EXPAND_COLLAPSED = "  ≡  "   # List/sort icon: click to expand and show tracks below
+PREVIEW_EXPAND_COLLAPSED_HOVER = " [ ≡ ] "  # Hover: brackets like play icon
+PREVIEW_EXPAND_EXPANDED = "  ▲  "    # Up: expanded, click to collapse
+PREVIEW_EXPAND_EXPANDED_HOVER = " [ ▲ ] "  # Hover: brackets
 PREVIEW_LOADING_ICON = " ... "  # Placeholder for loading animation
 PREVIEW_LOADING_ICON = " … "  # Loading indicator for lazy-loaded previews (ellipsis) - base, will be animated
 LOADING_ANIMATION_FRAMES = [" . ", " .. ", " ... "]  # Animation frames for loading state
@@ -778,6 +789,9 @@ _current_volume = 75  # 0-100
 
 # Cover image size constant
 COVER_SIZE = 44
+# Tree column #0 (cover) width; Preview column (≡/▶) follows and has this width
+PREVIEW_COLUMN_START = COVER_SIZE + 6   # tree.column("#0", width=COVER_SIZE+6)
+PREVIEW_COLUMN_WIDTH = 56               # col_configs["Preview"]["width"]
 COVER_CORNER_RADIUS = 3  # Radius for rounded corners
 # Fade-in when cover appears in search results
 COVER_FADE_IN_STEPS = 5
@@ -790,6 +804,8 @@ CONTEXT_MENU_WIDTH = 100
 # Icon and text color for context menu items (match so icons = text)
 CONTEXT_MENU_TEXT_COLOR = "#DCE4EE"
 CONTEXT_MENU_TEXT_DISABLED = "#808080"  # gray (hex for PIL and CTk)
+# Background for all tooltips and right-click context menus
+TOOLTIP_MENU_BG = "#222323"
 
 # Content width for download log, search results, and platform help sections (kept in sync)
 HELP_CONTENT_WIDTH = 920
@@ -1030,55 +1046,55 @@ def _create_fade_in_frames(pil_img, size, bg_hex=TREEVIEW_BG_HEX):
         frames.append(ImageTk.PhotoImage(frame_rgb))
     return frames
 
-def load_cover_from_url(url, size=COVER_SIZE, item_iid=None):
+def load_cover_from_url(url, size=COVER_SIZE, item_iid=None, apply_to_iids=None):
     """
     Loads a cover image from URL asynchronously and updates the treeview.
-    Images are padded on the left to center them in the tree column.
-    Creates both normal and hover (darkened) versions.
+    If apply_to_iids is a list, the same image is applied to all those item_iids (e.g. album track list).
     """
-    def _apply_cover_on_main(img, darkened_img, item_iid):
+    def _apply_cover_on_main(img, darkened_img, item_iid, apply_to_iids=None):
         """Create Tk PhotoImages and update tree on main thread (PIL/Tk must not run in worker)."""
         global tree, app, _cover_image_cache, _cover_hover_cache, _cover_hover_iid, _cover_fade_in_progress_count
         try:
             from PIL import ImageTk
             photo = ImageTk.PhotoImage(img)
             hover_photo = ImageTk.PhotoImage(darkened_img)
-            if item_iid:
-                _cover_image_cache[item_iid] = photo
-                _cover_hover_cache[item_iid] = hover_photo
-                # Set image immediately so cover appears without waiting for fade callback
+            iids_to_apply = list(apply_to_iids) if apply_to_iids else ([item_iid] if item_iid else [])
+            for iid in iids_to_apply:
+                _cover_image_cache[iid] = photo
+                _cover_hover_cache[iid] = hover_photo
                 try:
-                    if 'tree' in globals() and tree and tree.winfo_exists() and tree.exists(item_iid) and _cover_hover_iid != item_iid:
-                        tree.item(item_iid, image=photo)
+                    if 'tree' in globals() and tree and tree.winfo_exists() and tree.exists(iid) and _cover_hover_iid != iid:
+                        tree.item(iid, image=photo)
                 except Exception:
                     pass
+            primary_iid = item_iid or (iids_to_apply[0] if iids_to_apply else None)
 
             def _update_tree_with_fade():
                 try:
-                    if 'tree' not in globals() or not tree or not tree.winfo_exists() or not item_iid or not tree.exists(item_iid) or _cover_hover_iid == item_iid:
+                    if 'tree' not in globals() or not tree or not tree.winfo_exists() or not primary_iid or not tree.exists(primary_iid) or _cover_hover_iid == primary_iid:
                         return
                     if _cover_fade_in_progress_count >= COVER_FADE_MAX_CONCURRENT:
-                        tree.item(item_iid, image=photo)
+                        tree.item(primary_iid, image=photo)
                         return
                     _cover_fade_in_progress_count += 1
                     try:
                         frames = _create_fade_in_frames(img, size)
                     except Exception:
                         _cover_fade_in_progress_count -= 1
-                        tree.item(item_iid, image=photo)
+                        tree.item(primary_iid, image=photo)
                         return
                     def _run_fade(step=0):
                         try:
                             global _cover_fade_in_progress_count
-                            if not tree.winfo_exists() or not tree.exists(item_iid) or _cover_hover_iid == item_iid:
+                            if not tree.winfo_exists() or not tree.exists(primary_iid) or _cover_hover_iid == primary_iid:
                                 _cover_fade_in_progress_count -= 1
                                 return
                             if step < len(frames):
-                                tree.item(item_iid, image=frames[step])
+                                tree.item(primary_iid, image=frames[step])
                                 if step < len(frames) - 1:
                                     app.after(COVER_FADE_IN_STEP_MS, lambda s=step + 1: _run_fade(s))
                                 else:
-                                    tree.item(item_iid, image=photo)
+                                    tree.item(primary_iid, image=photo)
                                     _cover_fade_in_progress_count -= 1
                         except Exception:
                             _cover_fade_in_progress_count -= 1
@@ -1089,8 +1105,9 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None):
             if 'app' in globals() and app and app.winfo_exists():
                 app.after(0, _update_tree_with_fade)
         except Exception:
-            if item_iid and 'app' in globals() and app and app.winfo_exists():
-                app.after(0, lambda: _show_placeholder_cover(item_iid))
+            fallback_iid = item_iid or (apply_to_iids[0] if apply_to_iids else None)
+            if fallback_iid and 'app' in globals() and app and app.winfo_exists():
+                app.after(0, lambda: _show_placeholder_cover(fallback_iid))
 
     def _load():
         nonlocal url  # Allow modifying the outer scope url variable
@@ -1164,7 +1181,7 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None):
                 
                 # PhotoImage must be created on main thread to avoid GIL/crash
                 if 'app' in globals() and app and app.winfo_exists():
-                    app.after(0, lambda: _apply_cover_on_main(img, darkened_img, item_iid))
+                    app.after(0, lambda: _apply_cover_on_main(img, darkened_img, item_iid, apply_to_iids))
             elif response.status_code == 403:
                 # 403 Forbidden - Tidal is blocking the request
                 # Try retrying with 750x750.jpg as fallback (smaller sizes may not be available)
@@ -1199,7 +1216,7 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None):
                                 
                                 # PhotoImage must be created on main thread to avoid GIL/crash
                                 if 'app' in globals() and app and app.winfo_exists():
-                                    app.after(0, lambda: _apply_cover_on_main(img, darkened_img, item_iid))
+                                    app.after(0, lambda: _apply_cover_on_main(img, darkened_img, item_iid, apply_to_iids))
                                 return  # Success, exit early
                         except Exception as e:
                             if debug_mode:
@@ -1299,12 +1316,13 @@ def lazy_load_visible_covers():
                     if debug_mode:
                         platform_name = item_data.get('platform', 'Unknown')
                         search_type = item_data.get('type', '').lower() if item_data.get('type') else ''
-                        title = item_data.get('title', 'Unknown')
+                        # For artist search, name is in 'artist'; for others use 'title'
+                        display_name = (item_data.get('artist') or item_data.get('title') or 'Unknown').strip() or 'Unknown'
                         raw_result = item_data.get('raw_result')
                         square_image_info = ""
-                        if isinstance(raw_result, dict):
+                        if platform_name.lower() == 'tidal' and isinstance(raw_result, dict):
                             square_image_info = f", squareImage in raw_result: {raw_result.get('squareImage') is not None}"
-                        print(f"[{platform_name} Cover] {search_type.capitalize()} '{title}' (item {item_iid}): cover_url={item_data['cover_url']}{square_image_info}")
+                        print(f"[{platform_name} Cover] {search_type.capitalize()} '{display_name}' (item {item_iid}): cover_url={item_data['cover_url']}{square_image_info}")
                     _cover_load_requested.add(item_iid)
                     load_cover_from_url(item_data['cover_url'], size=COVER_SIZE, item_iid=item_iid)
                 else:
@@ -1969,22 +1987,8 @@ def on_tree_motion(event):
             _restore_preview_icon(_preview_hover_iid)
             _preview_hover_iid = None
         
-        # Check if we're over the Cover column (#0)
-        # Try multiple methods to detect cover column hover
-        is_over_cover_column = False
-        if column == "#0":
-            is_over_cover_column = True
-        else:
-            # Fallback: check x coordinate against cover column width
-            try:
-                cover_column_width = tree.column("#0", "width")
-                if cover_column_width and event.x >= 0 and event.x <= cover_column_width:
-                    is_over_cover_column = True
-            except:
-                # If column width check fails, use constant
-                cover_column_width = COVER_SIZE + 6
-                if event.x >= 0 and event.x <= cover_column_width:
-                    is_over_cover_column = True
+        # Cover vs Preview: use COVER_SIZE only so play column is never treated as cover
+        is_over_cover_column = (event.x >= 0 and event.x <= COVER_SIZE)
         
         if is_over_cover_column and item_iid:
             # Accept any region type for tree column (tree, cell, etc.)
@@ -2004,32 +2008,27 @@ def on_tree_motion(event):
                     _apply_cover_hover(item_iid)
                 return
         
-        # Check if we're over the Preview column (#1) and on a cell
-        if column == "#1" and region == "cell" and item_iid:
-            # Check if this item has a preview URL
+        # Preview column: only the ≡/▶ column (same bounds as click)
+        is_over_preview_column = (PREVIEW_COLUMN_START < event.x <= PREVIEW_COLUMN_START + PREVIEW_COLUMN_WIDTH)
+        if is_over_preview_column and item_iid:
             item_data = next((item for item in search_results_data if str(item.get('tree_iid')) == str(item_iid)), None)
             if item_data:
                 has_preview = item_data.get('preview_url')
-                
-                # For Qobuz/SoundCloud/Spotify/Tidal, also allow hover effect for lazy-loadable previews
-                # YouTube: hover effect enabled for tracks (opens in browser)
-                # But only for tracks - albums/playlists/artists can't be previewed
+                row_type = (item_data.get('type') or '').lower()
+                # Normalize platform (e.g. "Apple Music" -> "applemusic")
+                current_platform = (item_data.get('platform') or '').lower().replace(' ', '')
                 can_lazy_load = False
                 is_youtube_track = False
-                if not has_preview and 'platform_var' in globals() and platform_var and 'type_var' in globals() and type_var:
-                    current_platform = platform_var.get().lower()
-                    current_type = type_var.get().lower()
-                    if current_platform in ('qobuz', 'soundcloud', 'spotify', 'tidal') and current_type == 'track':
+                if not has_preview and row_type == 'track':
+                    if current_platform in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic'):
                         can_lazy_load = True
-                    elif current_platform == 'youtube' and current_type == 'track':
+                    elif current_platform == 'youtube':
                         is_youtube_track = True
-                
-                if has_preview or can_lazy_load or is_youtube_track:
-                    # Change cursor to hand (same as context menu on macOS)
+                is_album_playlist = item_data.get('is_album_playlist')
+                is_artist = item_data.get('is_artist')
+                if has_preview or can_lazy_load or is_youtube_track or is_album_playlist or is_artist:
                     tree.configure(cursor=HAND_CURSOR)
-                    
-                    # Enlarge the icon if not already hovering this item
-                    if _preview_hover_iid != item_iid:
+                    if (has_preview or can_lazy_load or is_youtube_track or is_album_playlist or is_artist) and _preview_hover_iid != item_iid:
                         _preview_hover_iid = item_iid
                         _enlarge_preview_icon(item_iid)
                     return
@@ -2068,6 +2067,15 @@ def _enlarge_preview_icon(item_iid):
                     # Item is showing loading animation, don't overwrite it
                     return
                 
+                # Expand icon (≡ / ▲) hover: show [ ≡ ] / [ ▲ ]
+                if current_icon.strip() == PREVIEW_EXPAND_COLLAPSED.strip():
+                    current_values[0] = PREVIEW_EXPAND_COLLAPSED_HOVER
+                    tree.item(item_iid, values=tuple(current_values), tags=_tree_row_tags(item_iid, playing=False))
+                    return
+                if current_icon.strip() == PREVIEW_EXPAND_EXPANDED.strip():
+                    current_values[0] = PREVIEW_EXPAND_EXPANDED_HOVER
+                    tree.item(item_iid, values=tuple(current_values), tags=_tree_row_tags(item_iid, playing=False))
+                    return
                 # Determine which hover icon to show based on play state
                 # IMPORTANT: Don't show stop hover icon if we're still loading (even if _currently_playing_preview_iid is set)
                 # The loading animation should continue until playback actually starts
@@ -2126,19 +2134,38 @@ def _restore_preview_icon(item_iid):
                 
                 # Find if this item has a preview URL
                 item_data = next((item for item in search_results_data if str(item.get('tree_iid')) == str(item_iid)), None)
+                # Album/playlist/artist: restore to ≡ (expand icon)
+                if item_data and (item_data.get('is_album_playlist') or item_data.get('is_artist')):
+                    current_values[0] = PREVIEW_EXPAND_COLLAPSED
+                    tree.item(item_iid, values=tuple(current_values), tags=_tree_row_tags(item_iid, playing=False))
+                    return
                 has_preview = item_data and item_data.get('preview_url')
                 
                 # Check if we can lazy-load preview for Qobuz/SoundCloud/Spotify/Tidal (tracks only)
                 # YouTube: tracks show play icon (opens in browser)
+                # Album tracklist rows: use row's platform and treat as track (ignore search type_var which may be "album")
                 can_lazy_load = False
                 is_youtube_track = False
-                if not has_preview and 'platform_var' in globals() and platform_var and 'type_var' in globals() and type_var:
-                    current_platform = platform_var.get().lower()
-                    current_type = type_var.get().lower()
-                    if current_platform in ('qobuz', 'soundcloud', 'spotify', 'tidal') and current_type == 'track':
-                        can_lazy_load = True
-                    elif current_platform == 'youtube' and current_type == 'track':
-                        is_youtube_track = True
+                is_track_row = item_data and (
+                    (isinstance(item_iid, str) and item_iid.startswith("album_track_")) or
+                    (item_data.get('duration') is not None and not item_data.get('is_album_playlist'))
+                )
+                if not has_preview:
+                    if is_track_row and item_data:
+                        current_platform = (item_data.get('platform') or '').lower().replace(' ', '')
+                        if current_platform in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic'):
+                            can_lazy_load = True
+                        elif current_platform == 'youtube':
+                            is_youtube_track = True
+                    elif 'platform_var' in globals() and platform_var and 'type_var' in globals() and type_var:
+                        current_platform = platform_var.get().lower()
+                        current_type = type_var.get().lower()
+                        # Use row type when available so preview works for track rows (e.g. expanded album/playlist) even when search type is album/playlist
+                        row_is_track = (item_data and (item_data.get('type') or '').lower() == 'track') if item_data else (current_type == 'track')
+                        if current_platform in ('qobuz', 'soundcloud', 'spotify', 'tidal') and row_is_track:
+                            can_lazy_load = True
+                        elif current_platform == 'youtube' and row_is_track:
+                            is_youtube_track = True
                 
                 # Restore to normal icon
                 # IMPORTANT: Don't show stop icon if we're still loading (even if _currently_playing_preview_iid is set)
@@ -2650,7 +2677,9 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                 print(f"Error saving image: {e}")
                 tkinter.messagebox.showerror("Error", f"Failed to save image: {e}", parent=popup)
         
-        # Load image asynchronously
+        # Load image asynchronously (use original cover_url as fallback when fullsize fails)
+        original_cover_url = cover_url
+
         def _load_fullsize_image():
             nonlocal fullsize_url  # Allow modification of outer scope variable
             try:
@@ -2685,6 +2714,36 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                 if debug_mode:
                     print(f"[{platform_display} Cover Popup] Response: HTTP {response.status_code}")
                 
+                # If fullsize failed and we have a different original (thumbnail) URL, retry with that
+                # (Apple Music, Qobuz, etc. may allow thumbnails but block or 403 on large sizes)
+                if response.status_code != 200 and original_cover_url and original_cover_url != fullsize_url:
+                    try:
+                        fallback_response = requests.get(original_cover_url, timeout=10, headers=headers)
+                        if debug_mode:
+                            print(f"[{platform_display} Cover Popup] Fallback (thumbnail) response: HTTP {fallback_response.status_code}")
+                        if fallback_response.status_code == 200:
+                            fullsize_url = original_cover_url
+                            response = fallback_response
+                    except Exception as e:
+                        if debug_mode:
+                            print(f"[{platform_display} Cover Popup] Fallback request failed: {e}")
+                
+                # Apple Music: 1400x1400 may 403 in some contexts (e.g. playlist tracklist); try smaller size
+                am_platform = (platform_name or '').lower().replace(' ', '')
+                if response.status_code != 200 and am_platform in ('applemusic', 'applemusic') and 'bb.jpg' in fullsize_url:
+                    am_fallback = re.sub(r'\d+x\d+bb\.jpg', '500x500bb.jpg', fullsize_url)
+                    if am_fallback != fullsize_url:
+                        try:
+                            am_response = requests.get(am_fallback, timeout=10, headers=headers)
+                            if debug_mode:
+                                print(f"[{platform_display} Cover Popup] Apple Music fallback (500x500): HTTP {am_response.status_code}")
+                            if am_response.status_code == 200:
+                                fullsize_url = am_fallback
+                                response = am_response
+                        except Exception as e:
+                            if debug_mode:
+                                print(f"[{platform_display} Cover Popup] Apple Music fallback failed: {e}")
+
                 # If non-200 status and Tidal URL, try retrying with 750x750.jpg as fallback
                 # (smaller sizes like 80x80 or larger like 1280x1280 may not be available)
                 if response.status_code != 200 and 'resources.tidal.com/images' in fullsize_url:
@@ -2776,10 +2835,10 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     y = event.y_root
                                     context_menu.geometry(f"+{x}+{y}")
                                     
-                                    # Match tooltip background (#1D1E1E) and fixed width; border matches separator color (#2B2B2B)
-                                    menu_frame = customtkinter.CTkFrame(context_menu, border_width=1, border_color="#565B5E", fg_color="#1D1E1E", width=CONTEXT_MENU_WIDTH)
+                                    # Match tooltip background and fixed width; border matches separator color (#2B2B2B)
+                                    menu_frame = customtkinter.CTkFrame(context_menu, border_width=1, border_color="#565B5E", fg_color=TOOLTIP_MENU_BG, width=CONTEXT_MENU_WIDTH)
                                     menu_frame.pack(fill="both", expand=True, padx=1, pady=1)
-                                    button_color = "#1D1E1E"
+                                    button_color = TOOLTIP_MENU_BG
                                     hover_color_artwork = "#1F6AA5"
                                     
                                     # macOS: plain tk rows + motion-based hover (Enter/Leave often don't fire in overrideredirect on macOS)
@@ -2815,6 +2874,10 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                         copy_lbl_tk = tkinter.Label(copy_row_tk, text=" Copy Image", image=_artwork_copy_photo, compound="left", bg=button_color, fg=text_fg, font=("Segoe UI", 11), anchor="w", cursor="", highlightthickness=0)
                                         copy_lbl_tk.pack(fill="both", expand=True, padx=4, pady=1)
                                         copy_lbl_tk.image = _artwork_copy_photo
+                                        
+                                        sep_tk = tkinter.Frame(menu_frame, bg="#2B2B2B", height=2, highlightthickness=0)
+                                        sep_tk.pack(fill="x", padx=2, pady=2)
+                                        sep_tk.pack_propagate(False)
                                         
                                         save_row_tk = tkinter.Frame(menu_frame, bg=button_color, height=24, width=CONTEXT_MENU_WIDTH, cursor="", highlightthickness=0)
                                         save_row_tk.pack(pady=(1, 2), padx=2)
@@ -2898,6 +2961,9 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                         )
                                         copy_btn.image = copy_icon
                                         copy_btn.pack(pady=(2, 1), padx=2, fill="x")
+                                        
+                                        sep_frame = customtkinter.CTkFrame(menu_frame, width=50, height=2, fg_color="#2B2B2B")
+                                        sep_frame.pack(fill="x", padx=2, pady=2)
                                         
                                         save_icon = _create_download_icon(color=CONTEXT_MENU_TEXT_COLOR)
                                         save_btn = customtkinter.CTkButton(
@@ -3005,25 +3071,11 @@ def on_tree_click(event):
         if not item_data:
             return
         
-        # Column #0 is the Cover column (tree column)
-        # Try multiple methods to detect cover column click
-        is_over_cover_column = False
-        if column == "#0":
-            is_over_cover_column = True
-        else:
-            # Fallback: check x coordinate against cover column width
-            try:
-                cover_column_width = tree.column("#0", "width")
-                if cover_column_width and event.x >= 0 and event.x <= cover_column_width:
-                    is_over_cover_column = True
-            except:
-                # If column width check fails, use constant
-                cover_column_width = COVER_SIZE + 6
-                if event.x >= 0 and event.x <= cover_column_width:
-                    is_over_cover_column = True
+        # Cover vs Preview: use only the cover image width so play column is never treated as cover.
+        # Tree column #0 can be reported wide on some themes/OS; use COVER_SIZE so clicks on play icon always count.
+        is_over_cover_column = (event.x >= 0 and event.x <= COVER_SIZE)
         
         if is_over_cover_column:  # Cover column
-            # Allow clicks on tree column region (tree, cell, etc.)
             cover_url = item_data.get('cover_url')
             if cover_url:
                 title = item_data.get('title', '')
@@ -3033,38 +3085,705 @@ def on_tree_click(event):
                 show_cover_popup(cover_url, title, artist, platform_name, raw_result)
             return
         
-        # For other columns, require "cell" region
-        if region != "cell":
+        # Preview column: only the ≡/▶ column (not the whole row) for play/expand
+        is_over_preview_column = (PREVIEW_COLUMN_START < event.x <= PREVIEW_COLUMN_START + PREVIEW_COLUMN_WIDTH)
+        if not is_over_preview_column:
+            return
+        # Only reject header clicks; accept any row region (ttk can report "cell", "tree", or empty for child rows)
+        if region == "heading":
             return
         
-        # Column #1 is the Preview column (#0 is tree column for covers, #1 is first data column)
-        # With our columns: Preview, #, Title, ... Preview is index 0 in values, column #1 in identify_column
-        if column == "#1":  # Preview column
-            # Special handling for YouTube: open video in browser instead of playing preview
-            current_platform = item_data.get('platform', '').lower() if item_data.get('platform') else ''
-            if current_platform == 'youtube':
-                # Get video ID from item data
-                video_id = item_data.get('id')
-                if video_id:
-                    # Construct YouTube URL and open in browser
-                    youtube_url = f"https://www.youtube.com/watch?v={video_id}"
-                    try:
-                        webbrowser.open(youtube_url)
-                        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                            print(f"[YouTube] Opened video in browser: {youtube_url}")
-                    except Exception as e:
-                        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                            print(f"[YouTube] Error opening browser: {e}")
-                return
-            
-            preview_url = item_data.get('preview_url')
-            if preview_url:
-                toggle_preview_playback(item_iid, preview_url)
-            else:
-                # Try lazy-loading preview URL for services that don't include them in search results
-                _try_lazy_load_preview(item_iid, item_data)
+        # Preview column click: album/playlist → show tracks; artist → show albums
+        if item_data.get('is_album_playlist'):
+            _fetch_and_expand_album_playlist(item_iid, item_data)
+            return
+        if item_data.get('is_artist'):
+            _fetch_and_show_artist_albums(item_iid, item_data)
+            return
+        # Track row (root or child): YouTube open in browser or play preview
+        current_platform = item_data.get('platform', '').lower() if item_data.get('platform') else ''
+        if current_platform == 'youtube':
+            video_id = item_data.get('id')
+            if video_id:
+                youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+                try:
+                    webbrowser.open(youtube_url)
+                    if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                        print(f"[YouTube] Opened video in browser: {youtube_url}")
+                except Exception as e:
+                    if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                        print(f"[YouTube] Error opening browser: {e}")
+            return
+        preview_url = item_data.get('preview_url')
+        if preview_url:
+            toggle_preview_playback(item_iid, preview_url)
+        else:
+            _try_lazy_load_preview(item_iid, item_data)
     except Exception as e:
         print(f"[Preview] Error handling tree click: {e}")
+
+def _collapse_album_playlist(parent_iid):
+    """Remove child track rows from an expanded album/playlist and update parent icon."""
+    global tree, search_results_data, _expanded_album_playlist_iids
+    try:
+        if 'tree' not in globals() or not tree or not tree.winfo_exists():
+            return
+        children = list(tree.get_children(parent_iid))
+        for child_iid in children:
+            tree.delete(child_iid)
+            search_results_data[:] = [d for d in search_results_data if str(d.get('tree_iid')) != str(child_iid)]
+        _expanded_album_playlist_iids.discard(parent_iid)
+        current_values = list(tree.item(parent_iid, 'values'))
+        if current_values:
+            current_values[0] = PREVIEW_EXPAND_COLLAPSED
+            tree.item(parent_iid, values=tuple(current_values))
+    except Exception as e:
+        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+            print(f"[Expand] Error collapsing album/playlist: {e}")
+
+def _track_to_result_entry(track, index, parent_data, parent_iid, platform_str):
+    """Convert a track (TrackInfo, dict, or plain ID) to a search result entry dict for display."""
+    # Some modules (e.g. Deezer) return tracks as list of IDs; others return TrackInfo/dict with name, artists, etc.
+    is_plain_id = isinstance(track, (str, int)) or (isinstance(track, dict) and not track.get('name') and not track.get('title'))
+    if is_plain_id:
+        tid = str(track) if isinstance(track, (str, int)) else str(track.get('id', ''))
+        name = f"Track {index}"
+        artist_str = (parent_data.get('artist') or parent_data.get('title') or '-').strip() or '-'
+        duration_str = year_str = '-'
+        explicit_str = ''
+        cover_url = ''
+        preview_url = None
+        raw = track
+    else:
+        tid = getattr(track, 'id', None) or (track.get('id') if isinstance(track, dict) else None) or ''
+        name = getattr(track, 'name', None) or (track.get('name') if isinstance(track, dict) else None) or (track.get('title') if isinstance(track, dict) else None) or 'N/A'
+        artists = getattr(track, 'artists', None) or (track.get('artists') if isinstance(track, dict) else []) or []
+        artist_str = ', '.join([str(a) for a in artists]) if artists else '-'
+        dur = getattr(track, 'duration', None) or (track.get('duration') if isinstance(track, dict) else None)
+        duration_str = beauty_format_seconds(dur) if dur is not None else '-'
+        year = getattr(track, 'release_year', None) or (track.get('release_year') if isinstance(track, dict) else None)
+        year_str = str(year) if year is not None else '-'
+        explicit = getattr(track, 'explicit', False) or (track.get('explicit') if isinstance(track, dict) else False)
+        explicit_str = 'Y' if explicit else ''
+        cover_url = getattr(track, 'cover_url', None) or (track.get('cover_url') if isinstance(track, dict) else None) or ''
+        preview_url = getattr(track, 'preview_url', None) if hasattr(track, 'preview_url') else (track.get('preview_url') if isinstance(track, dict) else None)
+        raw = track if not isinstance(track, dict) else track
+        # Fallback to parent when track has no title/artist (e.g. partial metadata)
+        if not name or name == 'N/A':
+            name = f"Track {index}"
+        if not artist_str or artist_str == '-':
+            artist_str = (parent_data.get('artist') or '-').strip() or '-'
+    child_iid = f"{parent_iid}_t{index}"
+    return {
+        "id": str(tid), "number": str(index), "title": name, "artist": artist_str,
+        "duration": duration_str, "year": year_str, "additional": "-", "explicit": explicit_str,
+        "platform": platform_str, "type": "track", "raw_result": raw, "tree_iid": child_iid,
+        "preview_url": preview_url, "cover_url": cover_url, "parent_iid": parent_iid
+    }
+
+def _insert_album_playlist_children(parent_iid, parent_data, track_entries):
+    """Insert track rows under an album/playlist parent (main thread)."""
+    global tree, search_results_data, _expanded_album_playlist_iids, app
+    try:
+        if 'tree' not in globals() or not tree or not tree.winfo_exists():
+            return
+        platform_str = parent_data.get('platform', 'Unknown')
+        # Same logic as display_results: show play icon when preview available or platform supports lazy-load
+        # Normalize platform (e.g. "Apple Music" -> "applemusic") for comparison
+        platforms_with_preview = ('qobuz', 'soundcloud', 'spotify', 'tidal', 'youtube', 'deezer', 'applemusic')
+        platform_key = (platform_str or '').lower().replace(' ', '')
+        for entry in track_entries:
+            tree_iid = entry['tree_iid']
+            has_preview = bool(entry.get('preview_url'))
+            can_lazy = platform_key in platforms_with_preview
+            is_yt = platform_key == 'youtube'
+            preview_icon = PREVIEW_PLAY_ICON if (has_preview or can_lazy or is_yt) else PREVIEW_UNAVAILABLE
+            values = (
+                preview_icon, entry.get('number', ''),
+                entry.get('title', ''), entry.get('artist', ''), entry.get('duration', ''),
+                entry.get('year', ''), entry.get('additional', ''), entry.get('explicit', ''),
+                entry.get('id', '')
+            )
+            row_tag = "oddrow" if (int(entry.get('number', 0) or 0) % 2 == 1) else "evenrow"
+            tree.insert(parent_iid, "end", iid=tree_iid, values=values, tags=(row_tag,))
+            search_results_data.append(entry)
+        _expanded_album_playlist_iids.add(parent_iid)
+        try:
+            tree.item(parent_iid, open=True)  # Expand parent so child tracks are visible
+        except tkinter.TclError:
+            pass
+        current_values = list(tree.item(parent_iid, 'values'))
+        if current_values:
+            current_values[0] = PREVIEW_EXPAND_EXPANDED
+            tree.item(parent_iid, values=tuple(current_values))
+    except Exception as e:
+        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+            print(f"[Expand] Error inserting tracks: {e}")
+
+def _fetch_and_expand_album_playlist(parent_iid, item_data):
+    """Fetch album/playlist tracks in a background thread and expand the row on the main thread."""
+    global orpheus_instance, app, tree, _expanded_album_playlist_iids
+    try:
+        if 'orpheus_instance' not in globals() or not orpheus_instance or 'app' not in globals() or not app or not app.winfo_exists():
+            return
+        platform_name = (item_data.get('platform') or '').lower()
+        item_type = (item_data.get('type') or '').lower()
+        res_id = item_data.get('id')
+        if not platform_name or item_type not in ('album', 'playlist') or not res_id:
+            return
+        # Show animated loading dots while fetching (same as preview lazy-load)
+        if tree and tree.winfo_exists() and tree.exists(parent_iid):
+            current_values = list(tree.item(parent_iid, 'values'))
+            if current_values:
+                current_values[0] = LOADING_ANIMATION_FRAMES[0]
+                tree.item(parent_iid, values=tuple(current_values))
+            _start_loading_animation(parent_iid)
+        def worker():
+            track_entries = []
+            try:
+                module_instance = orpheus_instance.load_module(platform_name)
+                # SoundCloud requires data dict (id -> entity) for get_album_info/get_playlist_info
+                if platform_name == 'soundcloud':
+                    raw = item_data.get('raw_result')
+                    data = {str(res_id): raw} if isinstance(raw, dict) else {}
+                    if item_type == 'album':
+                        info = module_instance.get_album_info(res_id, data) if (hasattr(module_instance, 'get_album_info') and data) else None
+                    else:
+                        info = module_instance.get_playlist_info(res_id, data) if (hasattr(module_instance, 'get_playlist_info') and data) else None
+                else:
+                    if item_type == 'album':
+                        info = module_instance.get_album_info(res_id) if hasattr(module_instance, 'get_album_info') else None
+                    else:
+                        info = module_instance.get_playlist_info(res_id) if hasattr(module_instance, 'get_playlist_info') else None
+                if not info or not getattr(info, 'tracks', None):
+                    return
+                tracks = info.tracks
+                extra_kwargs = getattr(info, 'track_extra_kwargs', None) or {}
+                # If module returns only track IDs (e.g. Deezer), resolve to full TrackInfo for real titles
+                quality_tier = codec_options = None
+                try:
+                    from utils.models import QualityEnum, CodecOptions
+                    g = current_settings.get("globals", {}).get("general", {})
+                    q = (g.get("quality") or g.get("download_quality") or "high").upper()
+                    quality_tier = getattr(QualityEnum, q, QualityEnum.HIGH)
+                    c = current_settings.get("globals", {}).get("codecs", {})
+                    codec_options = CodecOptions(proprietary_codecs=c.get("proprietary_codecs", False), spatial_codecs=c.get("spatial_codecs", True))
+                except Exception:
+                    pass
+                resolved = []
+                for idx, track in enumerate(tracks, start=1):
+                    if quality_tier is not None and codec_options is not None and hasattr(module_instance, 'get_track_info') and isinstance(track, (str, int)):
+                        try:
+                            t = module_instance.get_track_info(str(track), quality_tier, codec_options, **extra_kwargs)
+                            if t is not None:
+                                track = t
+                        except Exception:
+                            pass
+                    resolved.append(track)
+                # Deezer: album/playlist tracks are resolved from IDs; attach preview URLs in bulk for tracklist playback
+                if platform_name == 'deezer' and resolved and tracks:
+                    try:
+                        # Use original track IDs (Deezer returns IDs; TrackInfo may not have id set)
+                        track_ids = [str(tracks[i]) for i in range(len(resolved)) if i < len(tracks) and isinstance(tracks[i], (str, int))]
+                        if not track_ids:
+                            track_ids = [str(getattr(t, 'id', None) or (t.get('id') if isinstance(t, dict) else None)) for t in resolved if getattr(t, 'id', None) or (isinstance(t, dict) and t.get('id'))]
+                        if track_ids and hasattr(module_instance, 'session') and hasattr(module_instance.session, 'get_tracks_public_data'):
+                            public = module_instance.session.get_tracks_public_data(track_ids)
+                            for i, t in enumerate(resolved):
+                                tid = str(tracks[i]) if i < len(tracks) and isinstance(tracks[i], (str, int)) else str(getattr(t, 'id', None) or (t.get('id') if isinstance(t, dict) else None) or '')
+                                if tid in public and public[tid].get('preview'):
+                                    url = public[tid]['preview']
+                                    if isinstance(t, dict):
+                                        t['preview_url'] = url
+                                    else:
+                                        setattr(t, 'preview_url', url)
+                    except Exception:
+                        pass
+                # Qobuz: attach sample URLs for album/playlist tracklist so preview plays without lazy-load
+                if platform_name == 'qobuz' and resolved:
+                    try:
+                        get_sample = getattr(module_instance.session, 'get_sample_url', None) if hasattr(module_instance, 'session') else None
+                        if get_sample:
+                            for t in resolved:
+                                tid = getattr(t, 'id', None) or (t.get('id') if isinstance(t, dict) else None)
+                                if tid:
+                                    url = get_sample(str(tid))
+                                    if url:
+                                        if isinstance(t, dict):
+                                            t['preview_url'] = url
+                                        else:
+                                            setattr(t, 'preview_url', url)
+                    except Exception:
+                        pass
+                for idx, track in enumerate(resolved, start=1):
+                    entry = _track_to_result_entry(track, idx, item_data, parent_iid, platform_name)
+                    track_entries.append(entry)
+            except Exception as e:
+                if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                    print(f"[Expand] Error fetching album/playlist tracks: {e}")
+                track_entries = []
+            def on_done():
+                _stop_loading_animation()
+                if track_entries:
+                    _show_album_track_list_view(item_data, track_entries)
+                elif tree and tree.winfo_exists() and tree.exists(parent_iid):
+                    current_values = list(tree.item(parent_iid, 'values'))
+                    if current_values:
+                        current_values[0] = PREVIEW_EXPAND_COLLAPSED
+                        tree.item(parent_iid, values=tuple(current_values))
+            try:
+                if app and app.winfo_exists():
+                    app.after(0, on_done)
+            except Exception:
+                pass
+        threading.Thread(target=worker, daemon=True).start()
+    except Exception as e:
+        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+            print(f"[Expand] Error starting expand: {e}")
+
+def _fetch_and_show_artist_albums(parent_iid, item_data):
+    """Fetch artist's albums and show them in the list view (like album track list). One get_artist_info call when module returns full album data."""
+    global orpheus_instance, app, tree
+    try:
+        if 'orpheus_instance' not in globals() or not orpheus_instance or 'app' not in globals() or not app or not app.winfo_exists():
+            return
+        platform_name = (item_data.get('platform') or '').lower()
+        res_id = item_data.get('id')
+        if not platform_name or not res_id:
+            return
+        if tree and tree.winfo_exists() and tree.exists(parent_iid):
+            current_values = list(tree.item(parent_iid, 'values'))
+            if current_values:
+                current_values[0] = LOADING_ANIMATION_FRAMES[0]
+                tree.item(parent_iid, values=tuple(current_values))
+            _start_loading_animation(parent_iid)
+        def worker():
+            album_entries = []
+            def on_done():
+                _stop_loading_animation()
+                if album_entries:
+                    _show_artist_albums_view(item_data, album_entries)
+                else:
+                    if tree and tree.winfo_exists() and tree.exists(parent_iid):
+                        current_values = list(tree.item(parent_iid, 'values'))
+                        if current_values:
+                            current_values[0] = PREVIEW_EXPAND_COLLAPSED
+                            tree.item(parent_iid, values=tuple(current_values))
+                    if platform_name == 'soundcloud':
+                        try:
+                            if app and app.winfo_exists() and 'show_centered_messagebox' in globals():
+                                app.after(0, lambda: show_centered_messagebox("SoundCloud Artist", "No albums or tracks could be loaded for this artist. The API may not return content for this user, or the link may need to be opened from SoundCloud (e.g. soundcloud.com/username/albums).", dialog_type="info"))
+                        except Exception:
+                            pass
+            def schedule_done():
+                if app and app.winfo_exists():
+                    try:
+                        app.after(0, on_done)
+                    except Exception:
+                        pass
+            try:
+                module_instance = orpheus_instance.load_module(platform_name)
+                if not hasattr(module_instance, 'get_artist_info'):
+                    schedule_done()
+                    return
+                # SoundCloud requires data dict (id -> entity) for get_artist_info
+                if platform_name == 'soundcloud':
+                    raw = item_data.get('raw_result')
+                    # If raw_result is the SearchResult object (e.g. formatting fallback), get entity from extra_kwargs['data']
+                    if not isinstance(raw, dict) and hasattr(raw, 'extra_kwargs'):
+                        ek = getattr(raw, 'extra_kwargs', {}) or {}
+                        if isinstance(ek, dict) and isinstance(ek.get('data'), dict):
+                            d = ek['data']
+                            raw = d.get(res_id) or d.get(str(res_id)) or (d.get(int(res_id)) if str(res_id).isdigit() else None) or (next(iter(d.values())) if d else None)
+                    data = {}
+                    if isinstance(raw, dict):
+                        data[str(res_id)] = raw
+                        if str(res_id).isdigit():
+                            data[int(res_id)] = raw
+                    # Module now handles empty data (fetches user name from API)
+                    info = module_instance.get_artist_info(res_id, True, data)
+                else:
+                    info = module_instance.get_artist_info(res_id, get_credited_albums=True, **{})
+                if not info:
+                    schedule_done()
+                    return
+                albums = getattr(info, 'albums', None) or []
+                tracks = getattr(info, 'tracks', None) or []
+                platform_str = item_data.get('platform', 'Unknown')
+                artist_name = item_data.get('artist') or getattr(info, 'name', '') or 'Artist'
+                album_extra = getattr(info, 'album_extra_kwargs', None) or {}
+                track_extra = getattr(info, 'track_extra_kwargs', None) or {}
+                album_data_dict = album_extra.get('data') if isinstance(album_extra, dict) else {}
+                track_data_dict = track_extra.get('data') if isinstance(track_extra, dict) else {}
+                # No albums but has tracks: show tracks in tracklist view (e.g. SoundCloud artist with only tracks)
+                if not albums and tracks and track_data_dict and platform_name == 'soundcloud':
+                    try:
+                        quality_tier = codec_options = None
+                        try:
+                            from utils.models import QualityEnum, CodecOptions
+                            g = current_settings.get("globals", {}).get("general", {})
+                            q = (g.get("quality") or g.get("download_quality") or "high").upper()
+                            quality_tier = getattr(QualityEnum, q, QualityEnum.HIGH)
+                            c = current_settings.get("globals", {}).get("codecs", {})
+                            codec_options = CodecOptions(proprietary_codecs=c.get("proprietary_codecs", False), spatial_codecs=c.get("spatial_codecs", True))
+                        except Exception:
+                            pass
+                        resolved = []
+                        for t in tracks:
+                            tid = str(t) if isinstance(t, (str, int)) else str(t.get('id', '')) if isinstance(t, dict) else ''
+                            track_dict = track_data_dict.get(t) or track_data_dict.get(str(t)) or (track_data_dict.get(int(t)) if isinstance(t, str) and t.isdigit() else None)
+                            if quality_tier and codec_options and hasattr(module_instance, 'get_track_info') and tid:
+                                try:
+                                    tr = module_instance.get_track_info(tid, quality_tier, codec_options, **{'data': track_data_dict})
+                                    resolved.append(tr if tr is not None else track_dict or t)
+                                except Exception:
+                                    resolved.append(track_dict or t)
+                            else:
+                                resolved.append(track_dict or t)
+                        synthetic_album = dict(item_data)
+                        synthetic_album['title'] = f"Tracks by {artist_name}"
+                        synthetic_album['type'] = 'playlist'
+                        track_entries = []
+                        for idx, track in enumerate(resolved, start=1):
+                            track_entries.append(_track_to_result_entry(track, idx, synthetic_album, parent_iid, platform_name))
+                        def on_done_tracks():
+                            _stop_loading_animation()
+                            if track_entries:
+                                _show_album_track_list_view(synthetic_album, track_entries)
+                            elif tree and tree.winfo_exists() and tree.exists(parent_iid):
+                                current_values = list(tree.item(parent_iid, 'values'))
+                                if current_values:
+                                    current_values[0] = PREVIEW_EXPAND_COLLAPSED
+                                    tree.item(parent_iid, values=tuple(current_values))
+                        if app and app.winfo_exists():
+                            app.after(0, on_done_tracks)
+                    except Exception as e:
+                        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                            print(f"[Artist] Error showing artist tracks: {e}")
+                        schedule_done()
+                    return
+                if not albums:
+                    schedule_done()
+                    return
+                for idx, album in enumerate(albums, start=1):
+                    # Resolve full album dict when we only have an id (e.g. SoundCloud returns list of ids; album_extra_kwargs['data'] has full dicts)
+                    album_dict = None
+                    if isinstance(album, dict):
+                        album_dict = album
+                    elif album_data_dict:
+                        aid = album
+                        album_dict = album_data_dict.get(aid) or album_data_dict.get(str(aid)) or (album_data_dict.get(int(aid)) if str(aid).isdigit() else None)
+                    if album_dict and isinstance(album_dict, dict):
+                        # Use full album metadata (SoundCloud: title, duration in ms, release_date/display_date/created_at; others: name, release_year, etc.)
+                        dur = album_dict.get('duration')
+                        duration_str = '-'
+                        if dur is not None:
+                            try:
+                                sec = int(dur)
+                                if sec > 86400:  # > 1 day in seconds → assume milliseconds (e.g. SoundCloud)
+                                    sec = sec // 1000
+                                duration_str = beauty_format_seconds(sec)
+                            except (TypeError, ValueError):
+                                duration_str = str(dur)
+                        title = album_dict.get('title') or album_dict.get('name', 'Unknown Album')
+                        artist_raw = (album_dict.get('user') or {}).get('username') if isinstance(album_dict.get('user'), dict) else album_dict.get('artist', artist_name)
+                        # Tidal/Qobuz etc. return artist as dict {'id', 'name', ...}; extract name
+                        artist = (artist_raw.get('name') if isinstance(artist_raw, dict) else artist_raw) or artist_name
+                        cover_url = album_dict.get('artwork_url') or album_dict.get('cover_url') or ''
+                        # Tidal: cover is a UUID, not a URL; generate Tidal image URL
+                        if not cover_url and platform_str.lower().replace(' ', '') == 'tidal':
+                            cover_id = album_dict.get('cover')
+                            if cover_id:
+                                cover_url = f'https://resources.tidal.com/images/{str(cover_id).replace("-", "/")}/750x750.jpg'
+                        if cover_url and '-large' in cover_url:
+                            cover_url = cover_url.replace('-large', '-t200x200')
+                        year = '-'
+                        for key in ('release_date', 'display_date', 'created_at', 'releaseDate', 'streamStartDate'):
+                            val = album_dict.get(key)
+                            if val and isinstance(val, str) and len(val) >= 4:
+                                year = val[:4]
+                                break
+                        if year == '-' and album_dict.get('release_year'):
+                            year = str(album_dict.get('release_year'))
+                        entry = {
+                            "tree_iid": f"artist_album_{idx}",
+                            "title": title,
+                            "artist": artist,
+                            "cover_url": cover_url,
+                            "id": str(album_dict.get('id', album) if album_dict.get('id') is not None else album),
+                            "platform": platform_str,
+                            "type": "album",
+                            "is_album_playlist": True,
+                            "number": str(idx),
+                            "year": year,
+                            "duration": duration_str,
+                            "additional": album_dict.get('additional') or album_dict.get('genre') or '-',
+                            "explicit": "",
+                            "parent_iid": None,
+                            "raw_result": album_dict,
+                        }
+                    else:
+                        entry = {
+                            "tree_iid": f"artist_album_{idx}",
+                            "title": "Album",
+                            "artist": artist_name,
+                            "cover_url": "",
+                            "id": str(album),
+                            "platform": platform_str,
+                            "type": "album",
+                            "is_album_playlist": True,
+                            "number": str(idx),
+                            "year": "-",
+                            "duration": "-",
+                            "additional": "-",
+                            "explicit": "",
+                            "parent_iid": None,
+                        }
+                        if album_data_dict:
+                            aid = entry['id']
+                            entry['raw_result'] = album_data_dict.get(aid) or album_data_dict.get(int(aid)) if str(aid).isdigit() else album_data_dict.get(aid)
+                    album_entries.append(entry)
+            except Exception as e:
+                if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                    print(f"[Artist] Error fetching artist albums: {e}")
+                album_entries = []
+            schedule_done()
+        threading.Thread(target=worker, daemon=True).start()
+    except Exception as e:
+        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+            print(f"[Artist] Error starting artist albums fetch: {e}")
+
+def _show_artist_albums_view(artist_item_data, album_entries):
+    """Show an artist's albums in the results list (each row is an album; click ≡ on a row to see its tracks). Call on main thread."""
+    global search_results_data, tree, app, _album_track_list_context, results_label, _back_to_search_button, _expanded_album_playlist_iids
+    try:
+        if 'tree' not in globals() or not tree or not tree.winfo_exists():
+            return
+        _album_track_list_context = {"saved_data": list(search_results_data), "title": None}
+        artist_name = artist_item_data.get('artist') or artist_item_data.get('title') or 'Artist'
+        _album_track_list_context["title"] = f"Artist: {artist_name}"
+        platform_str = artist_item_data.get('platform', 'Unknown')
+        _expanded_album_playlist_iids.clear()
+        clear_treeview()
+        search_results_data = album_entries
+        for idx, item_data in enumerate(album_entries):
+            tree_iid = item_data["tree_iid"]
+            values = (
+                PREVIEW_EXPAND_COLLAPSED,
+                item_data.get('number', ''),
+                item_data.get('title', ''),
+                item_data.get('artist', ''),
+                item_data.get('duration', '-'),
+                item_data.get('year', '-'),
+                item_data.get('additional', '-'),
+                item_data.get('explicit', ''),
+                item_data.get('id', '')
+            )
+            row_tag = "oddrow" if (idx % 2 == 1) else "evenrow"
+            tree.insert("", "end", iid=tree_iid, values=values, tags=(row_tag,))
+        _update_preview_column_heading(True)  # ≡ for artist albums list
+        if '_back_to_search_button' in globals() and _back_to_search_button and _back_to_search_button.winfo_exists():
+            if results_label and results_label.winfo_exists():
+                results_label.pack_forget()
+            _back_to_search_button.pack(side="left", anchor="w", padx=(6, 12), pady=0)
+            _update_results_header_context(_album_track_list_context["title"])
+            if results_label and results_label.winfo_exists():
+                results_label.pack(side="left", anchor="w", padx=6, pady=0)
+        elif 'results_label' in globals() and results_label and results_label.winfo_exists():
+            results_label.configure(text=_album_track_list_context["title"])
+        if 'app' in globals() and app and app.winfo_exists():
+            app.after(100, lazy_load_visible_covers)
+            app.after(50, lambda: _check_and_toggle_scrollbar(tree, scrollbar) if 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists() else None)
+    except Exception as e:
+        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+            print(f"[Artist] Error showing artist albums: {e}")
+
+def _show_album_track_list_view(album_item_data, track_entries):
+    """Show an album/playlist's tracks in the results list (flat, with previews) instead of inline expand. Call on main thread."""
+    global search_results_data, tree, app, _album_track_list_context, results_label, _back_to_search_button, _expanded_album_playlist_iids, _currently_playing_preview_iid
+    try:
+        if 'tree' not in globals() or not tree or not tree.winfo_exists():
+            return
+        # Clear playback state so the new tracklist doesn't inherit "playing" for same iids (e.g. album_track_3)
+        if _currently_playing_preview_iid:
+            stop_audio()
+            _currently_playing_preview_iid = None
+            hide_volume_control()
+        # Save current search state so we can go back
+        _album_track_list_context = {
+            "saved_data": list(search_results_data),
+            "title": None
+        }
+        title = album_item_data.get('title') or album_item_data.get('name') or 'Album'
+        kind = "Playlist" if (album_item_data.get('type') or '').lower() == 'playlist' else "Album"
+        _album_track_list_context["title"] = f"{kind}: {title}"
+        platform_str = album_item_data.get('platform', 'Unknown')
+        album_cover_url = album_item_data.get('cover_url') or ''
+        platforms_with_preview = ('qobuz', 'soundcloud', 'spotify', 'tidal', 'youtube', 'deezer', 'applemusic')
+        platform_key = (platform_str or '').lower().replace(' ', '')
+        # Use distinct tree_iids (album_track_1, ...) so we don't overwrite cover cache for original search (item_1, ...)
+        flat = []
+        for idx, entry in enumerate(track_entries, start=1):
+            copy = dict(entry)
+            copy["tree_iid"] = f"album_track_{idx}"
+            copy["parent_iid"] = None
+            copy["number"] = str(idx)
+            # Use album/playlist cover for all rows so display and click-to-popup use the same URL
+            copy["cover_url"] = album_cover_url or copy.get("cover_url")
+            copy["platform"] = copy.get("platform") or platform_str  # ensure platform set for preview/lazy-load
+            flat.append(copy)
+        _expanded_album_playlist_iids.clear()
+        clear_treeview()
+        search_results_data = flat
+        # Insert rows like track search: preview icon, values, tags
+        for idx, item_data in enumerate(flat):
+            tree_iid = item_data["tree_iid"]
+            has_preview = bool(item_data.get('preview_url'))
+            can_lazy = platform_key in platforms_with_preview
+            is_yt = platform_key == 'youtube'
+            preview_icon = (PREVIEW_PLAY_ICON if (has_preview or can_lazy or is_yt) else PREVIEW_UNAVAILABLE)
+            values = (
+                preview_icon,
+                item_data.get('number', ''),
+                item_data.get('title', ''),
+                item_data.get('artist', ''),
+                item_data.get('duration', ''),
+                item_data.get('year', ''),
+                item_data.get('additional', ''),
+                item_data.get('explicit', ''),
+                item_data.get('id', '')
+            )
+            row_tag = "oddrow" if (idx % 2 == 1) else "evenrow"
+            tree.insert("", "end", iid=tree_iid, values=values, tags=(row_tag,))
+        # Load album cover once and apply to all rows (already loaded from search, so fast)
+        if album_cover_url and flat:
+            global _cover_load_requested
+            all_iids = [e["tree_iid"] for e in flat]
+            for iid in all_iids:
+                _cover_load_requested.add(iid)
+            load_cover_from_url(album_cover_url, size=COVER_SIZE, item_iid=flat[0]["tree_iid"], apply_to_iids=all_iids)
+        _update_preview_column_heading(False)  # ▶ for track list
+        if '_back_to_search_button' in globals() and _back_to_search_button and _back_to_search_button.winfo_exists():
+            if results_label and results_label.winfo_exists():
+                results_label.pack_forget()
+            _back_to_search_button.pack(side="left", anchor="w", padx=(6, 12), pady=0)
+            _update_results_header_context(_album_track_list_context["title"])
+            if results_label and results_label.winfo_exists():
+                results_label.pack(side="left", anchor="w", padx=6, pady=0)
+        elif 'results_label' in globals() and results_label and results_label.winfo_exists():
+            results_label.configure(text=_album_track_list_context["title"])
+        if 'app' in globals() and app and app.winfo_exists():
+            app.after(100, lazy_load_visible_covers)
+            app.after(50, lambda: _check_and_toggle_scrollbar(tree, scrollbar) if 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists() else None)
+    except Exception as e:
+        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+            print(f"[Album list] Error showing album track list: {e}")
+
+def _update_results_header_context(full_title):
+    """Update results header with optional content-type badge (Album/Playlist/Artist) and title. full_title=None means normal RESULTS view."""
+    global results_label, _content_type_badge, _content_type_badge_label
+    if full_title is None:
+        if '_content_type_badge' in globals() and _content_type_badge and _content_type_badge.winfo_exists():
+            _content_type_badge.pack_forget()
+        if 'results_label' in globals() and results_label and results_label.winfo_exists():
+            results_label.configure(text="RESULTS")
+        return
+    type_str = None
+    rest = full_title
+    if full_title.startswith("Album: "):
+        type_str = "album"
+        rest = full_title[7:]
+    elif full_title.startswith("Playlist: "):
+        type_str = "playlist"
+        rest = full_title[10:]
+    elif full_title.startswith("Artist: "):
+        type_str = "artist"
+        rest = full_title[8:]
+    if type_str and '_content_type_badge' in globals() and _content_type_badge and _content_type_badge_label and _content_type_badge_label.winfo_exists():
+        _content_type_badge_label.configure(text=type_str)
+        _content_type_badge.pack(side="left", anchor="w", padx=(0, 8), pady=0)
+    if 'results_label' in globals() and results_label and results_label.winfo_exists():
+        results_label.configure(text=rest)
+
+def _back_to_search_results():
+    """Restore the previous search results view (after viewing an album/playlist track list)."""
+    global search_results_data, tree, _album_track_list_context, results_label, _back_to_search_button, _expanded_album_playlist_iids
+    global _currently_playing_preview_iid, _cover_hover_cache, _cover_image_cache, _cover_load_requested, _content_type_badge
+    try:
+        if _album_track_list_context is None:
+            return
+        saved = _album_track_list_context.get("saved_data") or []
+        _album_track_list_context = None
+        _expanded_album_playlist_iids.clear()
+        # Restoring to artist albums view? Then keep artist_album_* in caches so their covers still show.
+        restoring_to_artist_albums = any(
+            str(item.get('tree_iid', '')).startswith('artist_album_') for item in saved
+        )
+        # Remove album track list entries from cover caches (we're leaving tracklist view). Only remove artist_album_* if we're not restoring to artist albums view.
+        for iid in list(_cover_image_cache.keys()):
+            if not isinstance(iid, str):
+                continue
+            if iid.startswith("album_track_"):
+                del _cover_image_cache[iid]
+            elif iid.startswith("artist_album_") and not restoring_to_artist_albums:
+                del _cover_image_cache[iid]
+        for iid in list(_cover_hover_cache.keys()):
+            if not isinstance(iid, str):
+                continue
+            if iid.startswith("album_track_"):
+                del _cover_hover_cache[iid]
+            elif iid.startswith("artist_album_") and not restoring_to_artist_albums:
+                del _cover_hover_cache[iid]
+        _cover_load_requested -= {iid for iid in _cover_load_requested if isinstance(iid, str) and iid.startswith("album_track_")}
+        if not restoring_to_artist_albums:
+            _cover_load_requested -= {iid for iid in _cover_load_requested if isinstance(iid, str) and iid.startswith("artist_album_")}
+        clear_treeview()
+        search_results_data = saved
+        # Repopulate tree from saved_data (root-level only; same logic as sort_results)
+        for idx, item_data in enumerate(saved):
+            try:
+                if 'tree' not in globals() or not tree or not tree.winfo_exists():
+                    break
+                tree_iid = item_data.get('tree_iid', item_data.get('id', ''))
+                parent_iid = item_data.get('parent_iid') or ""
+                preview_url = item_data.get('preview_url')
+                platform_str = item_data.get('platform', 'Unknown')
+                search_type_str = item_data.get('type', 'track')
+                is_track_search = search_type_str.lower() == "track"
+                can_lazy_load_preview = (platform_str.lower().replace(' ', '') in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic')) and is_track_search
+                is_youtube_track = (platform_str.lower().replace(' ', '') == 'youtube') and is_track_search
+                is_album_playlist = item_data.get('is_album_playlist')
+                is_artist = item_data.get('is_artist')
+                if is_album_playlist or is_artist:
+                    preview_icon = PREVIEW_EXPAND_COLLAPSED
+                elif preview_url or can_lazy_load_preview or is_youtube_track:
+                    preview_icon = PREVIEW_STOP_ICON if (_currently_playing_preview_iid == tree_iid) else PREVIEW_PLAY_ICON
+                else:
+                    preview_icon = PREVIEW_UNAVAILABLE
+                values = (preview_icon, item_data.get('number', ''), item_data.get('title', ''), item_data.get('artist', ''), item_data.get('duration', ''), item_data.get('year', ''), item_data.get('additional', ''), item_data.get('explicit', ''), item_data.get('id', ''))
+                row_tag = "oddrow" if (idx % 2 == 0) else "evenrow"
+                is_playing = _currently_playing_preview_iid == tree_iid
+                tags = (row_tag, "playing") if (is_playing and preview_url) else (row_tag,)
+                # Use normal cover (not hover/darkened) when restoring so rows don't all look hovered
+                cover_image = _cover_image_cache.get(tree_iid) or _cover_hover_cache.get(tree_iid)
+                if cover_image:
+                    tree.insert(parent_iid, "end", iid=tree_iid, values=values, image=cover_image, tags=tags)
+                else:
+                    tree.insert(parent_iid, "end", iid=tree_iid, values=values, tags=tags)
+            except (tkinter.TclError, Exception):
+                pass
+        show_expand_in_header = restoring_to_artist_albums or any(
+            item.get('is_artist') or item.get('is_album_playlist') for item in saved
+        )
+        _update_preview_column_heading(show_expand_in_header)
+        _update_results_header_context(None)
+        if '_back_to_search_button' in globals() and _back_to_search_button and _back_to_search_button.winfo_exists():
+            _back_to_search_button.pack_forget()
+        if 'app' in globals() and app and app.winfo_exists() and 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists():
+            app.after(50, lambda: _check_and_toggle_scrollbar(tree, scrollbar))
+    except Exception as e:
+        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+            print(f"[Back] Error restoring search results: {e}")
 
 def _try_lazy_load_preview(item_iid, item_data):
     """Try to lazy-load a preview URL for services that don't include them in search results (e.g., Qobuz, SoundCloud, Spotify)."""
@@ -3072,22 +3791,18 @@ def _try_lazy_load_preview(item_iid, item_data):
     
     try:
         # Check if we have the necessary globals
-        if 'platform_var' not in globals() or not platform_var:
-            return
         if 'orpheus_instance' not in globals() or not orpheus_instance:
             return
-        
-        current_platform = platform_var.get().lower()
-        
-        # Services that support lazy-loading of preview URLs
-        # Spotify added because preview_url is deprecated in API, must scrape from embed page
-        # Tidal added because preview URLs are not included in search results
-        # YouTube is handled separately - opens video in browser instead of playing preview
-        lazy_load_services = ['qobuz', 'soundcloud', 'spotify', 'tidal']
+        # Use row's platform (so child tracks use correct platform); fallback to search dropdown
+        current_platform = (item_data.get('platform') or (platform_var.get() if 'platform_var' in globals() and platform_var else '')).lower().replace(' ', '')
+        if not current_platform:
+            return
+        # Services that support lazy-loading of preview URLs (for search and expanded album/playlist child tracks)
+        lazy_load_services = ['qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic']
         if current_platform not in lazy_load_services:
             return
         
-        # Get the track ID from the item data
+        # Get the track ID from the item data (works for root tracks and child tracks from expanded album/playlist)
         track_id = item_data.get('id')
         if not track_id:
             return
@@ -3138,9 +3853,15 @@ def _try_lazy_load_preview(item_iid, item_data):
                         preview_url = module_instance.session.get_sample_url(track_id)
                 
                 elif current_platform == 'soundcloud':
-                    # SoundCloud: use get_preview_stream_url method
+                    # SoundCloud: use get_preview_stream_url (pass track_authorization from album/playlist track if available)
                     if hasattr(module_instance, 'websession') and hasattr(module_instance.websession, 'get_preview_stream_url'):
-                        preview_url = module_instance.websession.get_preview_stream_url(track_id)
+                        track_auth = None
+                        raw = item_data.get('raw_result')
+                        if hasattr(raw, 'download_extra_kwargs') and isinstance(getattr(raw, 'download_extra_kwargs'), dict):
+                            track_auth = raw.download_extra_kwargs.get('track_authorization')
+                        elif isinstance(raw, dict) and isinstance(raw.get('download_extra_kwargs'), dict):
+                            track_auth = raw['download_extra_kwargs'].get('track_authorization')
+                        preview_url = module_instance.websession.get_preview_stream_url(track_id, track_auth)
                 
                 elif current_platform == 'spotify':
                     # Spotify: preview_url is deprecated in API, scrape from embed page
@@ -3160,6 +3881,26 @@ def _try_lazy_load_preview(item_iid, item_data):
                             print(f"[Preview] Tidal preview URL found: {preview_url[:80]}...")
                         else:
                             print(f"[Preview] No Tidal preview found for track {track_id}")
+                
+                elif current_platform == 'deezer':
+                    # Deezer: 30s preview from public API (works for search and expanded album/playlist tracks)
+                    if hasattr(module_instance, 'session') and hasattr(module_instance.session, 'get_track_preview_url'):
+                        preview_url = module_instance.session.get_track_preview_url(track_id)
+                        if preview_url and current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                            print(f"[Preview] Deezer preview URL found for track {track_id}")
+                
+                elif current_platform == 'applemusic':
+                    # Apple Music: 30s preview from get_song attributes.previews (search and expanded album/playlist child tracks)
+                    if hasattr(module_instance, 'apple_music_api') and hasattr(module_instance.apple_music_api, 'get_song'):
+                        try:
+                            track_data = module_instance.apple_music_api.get_song(track_id)
+                            if track_data and isinstance(track_data, dict) and 'attributes' in track_data:
+                                attrs = track_data.get('attributes', {})
+                                previews = attrs.get('previews', [])
+                                if previews and len(previews) > 0:
+                                    preview_url = previews[0].get('url')
+                        except Exception:
+                            pass
                 
                 # Check again before updating UI
                 if _lazy_loading_preview_iid != target_iid:
@@ -3217,14 +3958,29 @@ def _on_preview_url_fetched(item_iid, item_data, preview_url):
             # Start playing the preview
             toggle_preview_playback(item_iid, preview_url)
         else:
-            # No preview URL available, restore unavailable icon
-            print(f"[Preview] No preview available for this track (Spotify embed page had no preview)")
+            # No preview URL available, restore unavailable icon (platform-specific message)
+            platform_str = (item_data.get('platform') or '').lower().replace(' ', '')
+            if platform_str == 'spotify':
+                print(f"[Preview] No preview available for this track (Spotify embed had no preview)")
+            elif platform_str == 'soundcloud':
+                print(f"[Preview] No preview available for this track (SoundCloud). The track may be restricted in your region or not streamable.")
+            elif platform_str:
+                print(f"[Preview] No preview available for this track ({platform_str})")
+            else:
+                print(f"[Preview] No preview available for this track")
             if 'tree' in globals() and tree and tree.winfo_exists():
                 try:
                     current_values = list(tree.item(item_iid, 'values'))
                     if current_values:
                         current_values[0] = PREVIEW_UNAVAILABLE
                         tree.item(item_iid, values=tuple(current_values))
+                except Exception:
+                    pass
+            # Show user-friendly message in GUI for SoundCloud when preview unavailable (e.g. geo-restricted)
+            if platform_str == 'soundcloud' and 'show_centered_messagebox' in globals():
+                try:
+                    if app and app.winfo_exists():
+                        app.after(0, lambda: show_centered_messagebox("Preview unavailable", "This track has no preview (it may be restricted in your region or not streamable on SoundCloud).", dialog_type="info"))
                 except Exception:
                     pass
     except Exception as e:
@@ -5122,9 +5878,9 @@ def _create_menu():
     global _context_menu, app, BUTTON_COLOR
     if _context_menu and _context_menu.winfo_exists(): return
     if 'app' not in globals() or not app: return
-    # Match tooltip background (#1D1E1E) for consistency; border matches separator color (#2B2B2B)
-    _context_menu = customtkinter.CTkFrame(app, border_width=1, border_color="#565B5E", fg_color="#1D1E1E", width=CONTEXT_MENU_WIDTH)
-    button_color = "#1D1E1E"
+    # Match tooltip/menu background for consistency; border matches separator color (#2B2B2B)
+    _context_menu = customtkinter.CTkFrame(app, border_width=1, border_color="#565B5E", fg_color=TOOLTIP_MENU_BG, width=CONTEXT_MENU_WIDTH)
+    button_color = TOOLTIP_MENU_BG
 
     # Undo button (icon color = text color; disabled icon = disabled text color)
     undo_icon = _create_undo_icon(color=CONTEXT_MENU_TEXT_COLOR)
@@ -7675,9 +8431,19 @@ def clear_treeview():
     except tkinter.TclError as e: print(f"TclError clearing treeview (widget destroyed?): {e}")
     except Exception as e: print(f"Error clearing treeview: {e}")
 
+def _update_preview_column_heading(show_expand_icon):
+    """Set the Preview column header to ≡ (album/playlist/artist) or ▶ (track/tracklist)."""
+    try:
+        if 'tree' not in globals() or not tree or not tree.winfo_exists():
+            return
+        tree.heading("Preview", text="  ≡  " if show_expand_icon else " ▶ ")
+    except (tkinter.TclError, Exception):
+        pass
+
 def clear_search_results_data():
-     global search_results_data, selection_var, search_download_button
+     global search_results_data, selection_var, search_download_button, _expanded_album_playlist_iids
      search_results_data = []
+     _expanded_album_playlist_iids.clear()
      # Clear any playing preview audio
      clear_preview_state()
      try:
@@ -7701,8 +8467,15 @@ def clear_search_ui():
     except Exception as e: print(f"Error resetting search progress bar: {e}")
 
 def display_results(results):
-    global search_results_data, tree, scrollbar, app, platform_var, type_var    
+    global search_results_data, tree, scrollbar, app, platform_var, type_var, _album_track_list_context
     clear_treeview(); search_results_data = []
+    _album_track_list_context = None  # New search: leave any album/playlist/artist view
+    _update_results_header_context(None)  # Reset to "RESULTS", hide badge and Back button
+    try:
+        if '_back_to_search_button' in globals() and _back_to_search_button and _back_to_search_button.winfo_exists():
+            _back_to_search_button.pack_forget()
+    except (tkinter.TclError, Exception):
+        pass
     item_number = 1
     seen_ids = set()
     local_DownloadTypeEnum = DownloadTypeEnum
@@ -7716,6 +8489,7 @@ def display_results(results):
         print(f"Error getting search type/platform: {e}")
         current_search_type_str = "track"
         current_platform_str = "Unknown"
+    current_search_type_lower = (current_search_type_str or "track").lower()
 
     for result in results:
         res_id = result.get('id', f'sim_{item_number}')
@@ -7746,9 +8520,12 @@ def display_results(results):
             "preview_url": preview_url,
             "cover_url": cover_url
         }
-        if current_search_type_str == "artist":
+        if current_search_type_lower == "artist":
             result_entry["title"] = ""
             result_entry["artist"] = name
+            result_entry["is_artist"] = True
+        if current_search_type_lower in ("album", "playlist"):
+            result_entry["is_album_playlist"] = True
 
         search_results_data.append(result_entry)
 
@@ -7765,9 +8542,13 @@ def display_results(results):
                 can_lazy_load_preview = (current_platform_str.lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal')) and is_track_search
                 # YouTube tracks always show play icon (opens in browser)
                 is_youtube_track = (current_platform_str.lower() == 'youtube') and is_track_search
-                preview_icon = PREVIEW_PLAY_ICON if (preview_url or can_lazy_load_preview or is_youtube_track) else PREVIEW_UNAVAILABLE
+                # Album/playlist/artist: show ≡ so user can open track list or artist albums; track type: show ▶ or ·
+                is_album_playlist = current_search_type_lower in ("album", "playlist")
+                is_artist = current_search_type_lower == "artist"
+                preview_icon = (PREVIEW_EXPAND_COLLAPSED if (is_album_playlist or is_artist) else
+                    (PREVIEW_PLAY_ICON if (preview_url or can_lazy_load_preview or is_youtube_track) else PREVIEW_UNAVAILABLE))
                 
-                if current_search_type_str == "artist":
+                if current_search_type_lower == "artist":
                     values = (
                         preview_icon,  # Preview column (first)
                         str(item_number),  # # column
@@ -7818,6 +8599,7 @@ def display_results(results):
             if not getattr(sys, 'frozen', False):
                 print(f"Error inserting into treeview: {e}", file=sys.__stderr__)
     
+    _update_preview_column_heading(current_search_type_lower in ("album", "playlist", "artist"))
     try:
         if 'app' in globals() and app and app.winfo_exists() and 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists():
             app.after(50, lambda: _check_and_toggle_scrollbar(tree, scrollbar))
@@ -7884,6 +8666,14 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
             extra_kwargs = getattr(result, 'extra_kwargs', {})
             if isinstance(extra_kwargs, dict):
                 raw_result = extra_kwargs.get('raw_result')
+                # SoundCloud (and similar) pass entity dict in extra_kwargs['data']; use it so expand tracklist/artist albums can pass it to get_album_info/get_playlist_info/get_artist_info
+                if raw_result is None and isinstance(extra_kwargs.get('data'), dict):
+                    data = extra_kwargs['data']
+                    rid = getattr(result, 'result_id', '')
+                    rid_str = str(rid)
+                    raw_result = data.get(rid) or data.get(rid_str) or (data.get(int(rid)) if (rid_str.isdigit()) else None)
+                    if raw_result is None and data:
+                        raw_result = next(iter(data.values()))
             # Fallback to the SearchResult object itself if no raw_result in extra_kwargs
             if raw_result is None:
                 raw_result = result
@@ -8145,9 +8935,9 @@ def _create_search_context_menu():
         # Wrapper: fixed width; menu frame and spacer also fixed width so menu doesn't grow
         _search_context_menu_wrapper = customtkinter.CTkFrame(app, fg_color="transparent", width=CONTEXT_MENU_WIDTH)
         # Main context menu frame - fixed width; rounded corners
-        _search_context_menu = customtkinter.CTkFrame(_search_context_menu_wrapper, border_width=1, border_color="#565B5E", fg_color="#1D1E1E", width=CONTEXT_MENU_WIDTH)
+        _search_context_menu = customtkinter.CTkFrame(_search_context_menu_wrapper, border_width=1, border_color="#565B5E", fg_color=TOOLTIP_MENU_BG, width=CONTEXT_MENU_WIDTH)
         _search_context_menu.configure(cursor=HAND_CURSOR)
-        button_color = "#1D1E1E"
+        button_color = TOOLTIP_MENU_BG
         
         # Open URL button - same style as copy/paste buttons (icon color = text color)
         external_link_icon = _create_external_link_icon(color=CONTEXT_MENU_TEXT_COLOR)
@@ -9058,7 +9848,7 @@ def download_selected():
     except Exception as e: print(f"Unexpected error in download_selected: {e}")
 
 def sort_results(column):
-    global sort_states, search_results_data, tree, _currently_playing_preview_iid, _cover_hover_cache, _cover_hover_iid
+    global sort_states, search_results_data, tree, _currently_playing_preview_iid, _cover_hover_cache, _cover_hover_iid, _expanded_album_playlist_iids
     try:
         if 'tree' not in globals() or not tree or not tree.winfo_exists(): return
         is_numeric = column in ["#", "Year"]; is_reverse = sort_states.get(column, False)
@@ -9069,45 +9859,51 @@ def sort_results(column):
             if value is None: value = ""
             if is_numeric: return int(value) if str(value).isdigit() else 0
             else: return str(value).lower()
-        search_results_data.sort(key=sort_key, reverse=is_reverse)
+        # Sort only root-level items; keep children attached to their parent
+        roots = [r for r in search_results_data if not r.get('parent_iid')]
+        roots.sort(key=sort_key, reverse=is_reverse)
+        ordered = []
+        for r in roots:
+            ordered.append(r)
+            ordered.extend([c for c in search_results_data if c.get('parent_iid') == r.get('tree_iid')])
+        search_results_data = ordered
         sort_states[column] = not is_reverse
+        _expanded_album_playlist_iids.clear()  # Collapse all on sort
         clear_treeview()
-        for idx, item_data in enumerate(search_results_data):
+        for idx, item_data in enumerate(ordered):
             try:
                 if 'tree' in globals() and tree and tree.winfo_exists():
-                    # Determine preview icon based on playback state and preview availability
                     preview_url = item_data.get('preview_url')
                     tree_iid = item_data.get('tree_iid', item_data.get('id', ''))
+                    parent_iid = item_data.get('parent_iid')
                     is_playing = _currently_playing_preview_iid == tree_iid
-                    
-                    # Logic matched from display_results for lazy loading support
                     platform_str = item_data.get('platform', 'Unknown')
                     search_type_str = item_data.get('type', 'track')
                     is_track_search = search_type_str.lower() == "track"
                     can_lazy_load_preview = (platform_str.lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal')) and is_track_search
                     is_youtube_track = (platform_str.lower() == 'youtube') and is_track_search
-                    
-                    if preview_url or can_lazy_load_preview or is_youtube_track:
+                    is_album_playlist = item_data.get('is_album_playlist')
+                    is_artist = item_data.get('is_artist')
+                    if is_album_playlist or is_artist:
+                        preview_icon = PREVIEW_EXPAND_COLLAPSED
+                    elif preview_url or can_lazy_load_preview or is_youtube_track:
                         preview_icon = PREVIEW_STOP_ICON if is_playing else PREVIEW_PLAY_ICON
                     else:
                         preview_icon = PREVIEW_UNAVAILABLE
                     values = ( preview_icon, item_data.get('number', ''), item_data.get('title', ''), item_data.get('artist', ''), item_data.get('duration', ''), item_data.get('year', ''), item_data.get('additional', ''), item_data.get('explicit', ''), item_data.get('id', '') )
-                    # Alternating row bg + playing tag for preview icon color
                     row_tag = "oddrow" if (idx % 2 == 0) else "evenrow"
                     tags = (row_tag, "playing") if (is_playing and preview_url) else (row_tag,)
-                    # Use cached cover image if available
-                    # Check if we should use hover version (if currently hovering this item)
                     global _cover_hover_iid
                     cover_image = None
                     if _cover_hover_iid == tree_iid:
                         cover_image = _cover_hover_cache.get(tree_iid)
                     if not cover_image:
                         cover_image = _cover_image_cache.get(tree_iid)
-                    
+                    insert_parent = parent_iid if parent_iid else ""
                     if cover_image:
-                        tree.insert("", "end", iid=tree_iid, values=values, image=cover_image, tags=tags)
+                        tree.insert(insert_parent, "end", iid=tree_iid, values=values, image=cover_image, tags=tags)
                     else:
-                        tree.insert("", "end", iid=tree_iid, values=values, tags=tags)
+                        tree.insert(insert_parent, "end", iid=tree_iid, values=values, tags=tags)
                 else: break
             except NameError: break
             except tkinter.TclError as e: print(f"TclError repopulating sorted treeview (widget destroyed?): {e}"); break
@@ -9528,7 +10324,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 widget = radio_frame
                 
                 # Add tooltip explaining the options
-                CTkToolTip(radio_frame, message="Sequential: Downloads one track at a time with pause between tracks (safer, shows pause messages)\nConcurrent: Downloads multiple tracks at once (faster, higher rate limiting risk)", bg_color="#1D1E1E", text_color=LIGHT_TEXT_COLOR)
+                CTkToolTip(radio_frame, message="Sequential: Downloads one track at a time with pause between tracks (safer, shows pause messages)\nConcurrent: Downloads multiple tracks at once (faster, higher rate limiting risk)", bg_color=TOOLTIP_MENU_BG, text_color=LIGHT_TEXT_COLOR)
                 
                 if platform_name not in settings_vars['credentials']:
                     settings_vars['credentials'][platform_name] = {}
@@ -11749,9 +12545,30 @@ if __name__ == "__main__":
         search_download_button = customtkinter.CTkButton(selection_controls_frame, text="Download", command=download_selected, width=100, height=30, state="disabled", fg_color="#343638", hover_color="#1F6AA5"); search_download_button.pack(side="left", padx=(5, 6))
         # Now pack the results frame which will expand to fill remaining space
         results_outer_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); results_outer_frame.pack(fill="both", expand=True, pady=(8,15))
-        # Results header with RESULTS label and volume control
+        # Results header: optional "← Back" (left), then RESULTS / Album: ... label, then volume
         results_header_frame = customtkinter.CTkFrame(results_outer_frame, fg_color="transparent"); results_header_frame.pack(fill="x", padx=0, pady=0)
+        _back_to_search_button = customtkinter.CTkButton(
+            results_header_frame,
+            text="← Back",
+            width=80,
+            height=24,
+            font=("Segoe UI", 11),
+            fg_color=BUTTON_COLOR,
+            hover_color="#1F6AA5",
+            command=_back_to_search_results
+        )
+        _back_to_search_button.pack(side="left", anchor="w", padx=(6, 12), pady=0)
+        _back_to_search_button.pack_forget()  # Hidden until user opens an album/playlist track list
         results_label = customtkinter.CTkLabel(results_header_frame, text="RESULTS", text_color="#898c8d", font=("Segoe UI", 11)); results_label.pack(side="left", anchor="w", padx=6, pady=0)
+        # Content-type badge (Album / Playlist / Artist) with border; tight padding so border sits close to text
+        _content_type_badge = customtkinter.CTkFrame(results_header_frame, fg_color="transparent", border_width=1, border_color="#565B5E", corner_radius=6, width=50, height=22)
+        try:
+            _content_type_badge.pack_propagate(False)  # keep fixed size
+        except AttributeError:
+            pass
+        _content_type_badge_label = customtkinter.CTkLabel(_content_type_badge, text="Album", text_color="#898c8d", font=("Segoe UI", 11))
+        _content_type_badge_label.pack(padx=8, pady=1)  # tight horizontal padding so border is close to text
+        # Badge is not packed here; _update_results_header_context() packs it when showing album/playlist/artist view
         # Volume control frame (Windows only; macOS/Linux cannot regulate volume from GUI)
         if platform.system() == "Windows":
             _volume_frame = customtkinter.CTkFrame(results_header_frame, fg_color="transparent")
@@ -11835,7 +12652,7 @@ if __name__ == "__main__":
         # Configure tree column (#0) for cover images (tight fit, left-aligned)
         tree.column("#0", width=COVER_SIZE + 6, minwidth=COVER_SIZE + 6, stretch=False, anchor="w")
         tree.heading("#0", text="", anchor="center")
-        col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Preview": {"text": "▶", "width": 50, "anchor": "center"}, "Title": {"text": "Title", "width": 300, "anchor": "w"}, "Artist": {"text": "Artist", "width": 200, "anchor": "w"}, "Duration": {"text": "Duration", "width": 80, "anchor": "center"}, "Year": {"text": "Year", "width": 60, "anchor": "center"}, "Additional": {"text": "Additional", "width": 120, "anchor": "w"}, "Explicit": {"text": "E", "width": 30, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
+        col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Preview": {"text": "▶", "width": 56, "anchor": "center"}, "Title": {"text": "Title", "width": 300, "anchor": "w"}, "Artist": {"text": "Artist", "width": 200, "anchor": "w"}, "Duration": {"text": "Duration", "width": 80, "anchor": "center"}, "Year": {"text": "Year", "width": 60, "anchor": "center"}, "Additional": {"text": "Additional", "width": 120, "anchor": "w"}, "Explicit": {"text": "E", "width": 30, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
         for col in columns: cfg = col_configs[col]; tree.heading(col, text=cfg["text"], anchor=cfg["anchor"], command=lambda c=col: sort_results(c) if c not in ("Preview",) else None); tree.column(col, width=cfg["width"], anchor=cfg["anchor"], stretch=False)
         tree.column("Title", stretch=True); tree.column("Artist", stretch=True)
         # Custom scroll handler to trigger lazy loading
@@ -11850,7 +12667,6 @@ if __name__ == "__main__":
         tree.bind("<Button-5>", lambda e: on_tree_scroll())    # Linux scroll down
         # Setup preview button tags for colored icons
         setup_preview_tags(tree)
-        # Preview column click handler for audio playback
         tree.bind("<Button-1>", lambda event: on_tree_click(event), add="+")
         # Preview column hover handlers for cursor change
         tree.bind("<Motion>", on_tree_motion)
@@ -11998,7 +12814,7 @@ Unnecessary Lossless-to-Lossless""",
                         aac_slider_widget = customtkinter.CTkSlider(aac_slider_frame, from_=0, to=len(aac_options_list)-1, number_of_steps=len(aac_options_list)-1, command=_update_aac_slider_display)
                         aac_slider_widget.set(aac_slider_pos)
                         aac_slider_widget.grid(row=0, column=0, sticky="ew")
-                        CTkToolTip(aac_slider_frame, message=tooltip_texts.get(aac_full_key, ""), bg_color="#1D1E1E", text_color="#dddddd")
+                        CTkToolTip(aac_slider_frame, message=tooltip_texts.get(aac_full_key, ""), bg_color=TOOLTIP_MENU_BG, text_color="#dddddd")
                         row += 1
                         flac_label_text = "FLAC Compression Level"
                         flac_full_key = "advanced.conversion_flags.flac.compression_level"
@@ -12025,7 +12841,7 @@ Unnecessary Lossless-to-Lossless""",
                         flac_slider_widget = customtkinter.CTkSlider(flac_slider_frame, from_=0, to=8, number_of_steps=8, command=_update_flac_slider_display)
                         flac_slider_widget.set(flac_current_val)
                         flac_slider_widget.grid(row=0, column=0, sticky="ew")
-                        CTkToolTip(flac_slider_frame, message=tooltip_texts.get(flac_full_key, ""), bg_color="#1D1E1E", text_color="#dddddd")
+                        CTkToolTip(flac_slider_frame, message=tooltip_texts.get(flac_full_key, ""), bg_color=TOOLTIP_MENU_BG, text_color="#dddddd")
                         row += 1
                         mp3_label_text = "MP3 Encoding"
                         mp3_setting_key = "advanced.conversion_flags.mp3.setting"
@@ -12065,7 +12881,7 @@ Unnecessary Lossless-to-Lossless""",
                         mp3_slider_widget.set(mp3_slider_pos)
                         mp3_slider_widget.grid(row=0, column=0, sticky="ew")
                         tooltip_mp3_text = tooltip_texts.get("advanced.conversion_flags.mp3.setting", "MP3 Encoding Settings:\n128k-320k are Constant Bitrate (CBR).\nVBR -V0 uses qscale:a 0 for highest variable bitrate quality.")
-                        CTkToolTip(mp3_slider_frame, message=tooltip_mp3_text, bg_color="#1D1E1E", text_color="#dddddd")
+                        CTkToolTip(mp3_slider_frame, message=tooltip_mp3_text, bg_color=TOOLTIP_MENU_BG, text_color="#dddddd")
                         row += 1
                         continue
                     label_widget = customtkinter.CTkLabel(global_settings_frame, text=field.replace("_", " ").title())
@@ -12362,7 +13178,7 @@ Unnecessary Lossless-to-Lossless""",
 
                     tooltip_text = tooltip_texts.get(full_key)
                     if tooltip_text and widget:
-                         CTkToolTip(widget, message=tooltip_text, bg_color="#1D1E1E", text_color="#dddddd")
+                         CTkToolTip(widget, message=tooltip_text, bg_color=TOOLTIP_MENU_BG, text_color="#dddddd")
 
                     row += 1
         credential_keys_for_settings_tabs = [pk for pk in installed_platform_keys if pk != "Musixmatch"]        
