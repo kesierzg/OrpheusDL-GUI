@@ -756,12 +756,19 @@ _pulse_state = False  # Track current pulse state (bright/dim)
 _loading_after_id = None  # Track the after() ID for loading dots animation
 _loading_dot_position = 0  # Track current position in walking dots animation (0-2)
 _loading_animation_iid = None  # Track which item is currently showing loading animation
+# Long expand message: show after 8s when opening playlist/artist/album via ≡ icon
+_expand_long_loading_after_id = None  # 8s delayed show of "Fetching all data... (this can take up to ~1 minute)"
+_expand_loading_dots_after_id = None  # Walking dots animation for that message
+_expand_loading_dots_position = 0
 _expanded_album_playlist_iids = set()  # Tree iids of expanded album/playlist rows (show tracks as children)
 # When viewing an album's tracks in the list view (instead of inline expand), holds saved search state for "Back"
-_album_track_list_context = None  # None = normal search view; else {"saved_data": [...], "title": "Album: ..."}
+_album_track_list_context = None  # None or list of {"saved_data": [...], "title": "..."}; stack for Back navigation
+_current_results_header_title = None  # Full title (e.g. "Artist: Name") for current view; used when pushing album track list
 # Bordered pill badge showing content type (Album / Playlist / Artist) in results header; created in search tab setup
 _content_type_badge = None
 _content_type_badge_label = None
+# Label shown after 8s when expand takes long: "Fetching all data... (this can take up to ~1 minute)"
+_expand_loading_label = None
 
 # Preview button styling
 # Note: ttk.Treeview doesn't support per-cell coloring, only per-row via tags
@@ -1750,6 +1757,58 @@ def _stop_loading_animation():
         except:
             pass
 
+def _clear_expand_long_loading_message():
+    """Cancel 8s delayed message and hide 'Fetching all data... ' label."""
+    global _expand_long_loading_after_id, _expand_loading_dots_after_id
+    if _expand_long_loading_after_id is not None and 'app' in globals() and app and app.winfo_exists():
+        try:
+            app.after_cancel(_expand_long_loading_after_id)
+        except Exception:
+            pass
+        _expand_long_loading_after_id = None
+    if _expand_loading_dots_after_id is not None and 'app' in globals() and app and app.winfo_exists():
+        try:
+            app.after_cancel(_expand_loading_dots_after_id)
+        except Exception:
+            pass
+        _expand_loading_dots_after_id = None
+    if '_expand_loading_label' in globals() and _expand_loading_label and _expand_loading_label.winfo_exists():
+        try:
+            _expand_loading_label.pack_forget()
+        except Exception:
+            pass
+
+def _expand_loading_dots_tick():
+    """Update walking dots in 'Fetching all data... (this can take up to ~1 minute)' message."""
+    global _expand_loading_dots_after_id, _expand_loading_dots_position
+    if '_expand_loading_label' not in globals() or not _expand_loading_label:
+        return
+    if not _expand_loading_label.winfo_ismapped():
+        return
+    try:
+        dots = LOADING_ANIMATION_FRAMES[_expand_loading_dots_position]
+        _expand_loading_label.configure(text=f"Fetching all data{dots} (this can take up to ~1 minute)")
+        _expand_loading_dots_position = (_expand_loading_dots_position + 1) % len(LOADING_ANIMATION_FRAMES)
+    except Exception:
+        pass
+    if 'app' in globals() and app and app.winfo_exists():
+        _expand_loading_dots_after_id = app.after(300, _expand_loading_dots_tick)
+
+def _show_expand_long_loading_message():
+    """Show 'Fetching all data... (this can take up to ~1 minute)' with walking dots (called after 8s)."""
+    global _expand_long_loading_after_id, _expand_loading_dots_after_id, _expand_loading_dots_position
+    _expand_long_loading_after_id = None  # already fired
+    if '_expand_loading_label' not in globals() or not _expand_loading_label:
+        return
+    try:
+        _expand_loading_dots_position = 0
+        _expand_loading_label.configure(text="Fetching all data" + LOADING_ANIMATION_FRAMES[0] + " (this can take up to ~1 minute)")
+        _expand_loading_label.pack(side="left", anchor="w", padx=(12, 0), pady=0)
+        if 'app' in globals() and app and app.winfo_exists():
+            _expand_loading_dots_after_id = app.after(300, _expand_loading_dots_tick)
+    except Exception:
+        pass
+
 def toggle_preview_playback(item_iid, preview_url=None):
     """
     Toggle audio preview playback for a tree item.
@@ -2421,8 +2480,8 @@ def _get_fullsize_cover_url(thumbnail_url, platform_name, raw_result=None):
         # Fallback to original URL
         return thumbnail_url
 
-def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_result=None):
-    """Show a pop-up window with the full-size album cover image."""
+def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_result=None, fallback_cover_url=None):
+    """Show a pop-up window with the full-size album cover image. If full-size fails, fallback_cover_url (e.g. small thumbnail) is used."""
     global app, orpheus_instance
     
     # For Tidal artists, if we don't have a cover URL, try to fetch it lazily
@@ -2677,8 +2736,8 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                 print(f"Error saving image: {e}")
                 tkinter.messagebox.showerror("Error", f"Failed to save image: {e}", parent=popup)
         
-        # Load image asynchronously (use original cover_url as fallback when fullsize fails)
-        original_cover_url = cover_url
+        # Load image asynchronously (use fallback_cover_url or original cover_url when fullsize fails)
+        original_cover_url = fallback_cover_url if fallback_cover_url else cover_url
 
         def _load_fullsize_image():
             nonlocal fullsize_url  # Allow modification of outer scope variable
@@ -2727,6 +2786,26 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                     except Exception as e:
                         if debug_mode:
                             print(f"[{platform_display} Cover Popup] Fallback request failed: {e}")
+                
+                # YouTube: if maxresdefault returned 404, try hqdefault/mqdefault/default (many videos don't have maxres)
+                yt_platform = (platform_name or '').lower() == 'youtube'
+                if response.status_code != 200 and yt_platform and fullsize_url and 'maxresdefault.jpg' in fullsize_url and 'i.ytimg.com/vi/' in fullsize_url:
+                    for yt_quality in ('hqdefault.jpg', 'mqdefault.jpg', 'default.jpg'):
+                        yt_fallback = fullsize_url.replace('maxresdefault.jpg', yt_quality)
+                        if yt_fallback == fullsize_url:
+                            continue
+                        try:
+                            yt_resp = requests.get(yt_fallback, timeout=10, headers=headers)
+                            if debug_mode:
+                                print(f"[{platform_display} Cover Popup] YouTube fallback ({yt_quality}) response: HTTP {yt_resp.status_code}")
+                            if yt_resp.status_code == 200:
+                                fullsize_url = yt_fallback
+                                response = yt_resp
+                                break
+                        except Exception as e:
+                            if debug_mode:
+                                print(f"[{platform_display} Cover Popup] YouTube fallback ({yt_quality}) failed: {e}")
+                            continue
                 
                 # Apple Music: 1400x1400 may 403 in some contexts (e.g. playlist tracklist); try smaller size
                 am_platform = (platform_name or '').lower().replace(' ', '')
@@ -3082,7 +3161,8 @@ def on_tree_click(event):
                 artist = item_data.get('artist', '')
                 platform_name = item_data.get('platform', '')
                 raw_result = item_data.get('raw_result')
-                show_cover_popup(cover_url, title, artist, platform_name, raw_result)
+                fallback_url = item_data.get('thumbnail_url')  # e.g. YouTube small thumbnail when full-size fails
+                show_cover_popup(cover_url, title, artist, platform_name, raw_result, fallback_cover_url=fallback_url)
             return
         
         # Preview column: only the ≡/▶ column (not the whole row) for play/expand
@@ -3093,12 +3173,15 @@ def on_tree_click(event):
         if region == "heading":
             return
         
-        # Preview column click: album/playlist → show tracks; artist → show albums
-        if item_data.get('is_album_playlist'):
-            _fetch_and_expand_album_playlist(item_iid, item_data)
+        # Preview column click: label/artist → show releases/albums (or tracks); album/playlist → show tracks
+        if (item_data.get('type') or '').lower() == 'label':
+            _fetch_and_show_artist_albums(item_iid, item_data)
             return
         if item_data.get('is_artist'):
             _fetch_and_show_artist_albums(item_iid, item_data)
+            return
+        if item_data.get('is_album_playlist'):
+            _fetch_and_expand_album_playlist(item_iid, item_data)
             return
         # Track row (root or child): YouTube open in browser or play preview
         current_platform = item_data.get('platform', '').lower() if item_data.get('platform') else ''
@@ -3148,35 +3231,35 @@ def _track_to_result_entry(track, index, parent_data, parent_iid, platform_str):
     if is_plain_id:
         tid = str(track) if isinstance(track, (str, int)) else str(track.get('id', ''))
         name = f"Track {index}"
-        artist_str = (parent_data.get('artist') or parent_data.get('title') or '-').strip() or '-'
-        duration_str = year_str = '-'
+        artist_str = (parent_data.get('artist') or parent_data.get('title') or '').strip() or ''
+        duration_str = year_str = ''
         explicit_str = ''
         cover_url = ''
         preview_url = None
         raw = track
     else:
         tid = getattr(track, 'id', None) or (track.get('id') if isinstance(track, dict) else None) or ''
-        name = getattr(track, 'name', None) or (track.get('name') if isinstance(track, dict) else None) or (track.get('title') if isinstance(track, dict) else None) or 'N/A'
+        name = getattr(track, 'name', None) or (track.get('name') if isinstance(track, dict) else None) or (track.get('title') if isinstance(track, dict) else None) or ''
         artists = getattr(track, 'artists', None) or (track.get('artists') if isinstance(track, dict) else []) or []
-        artist_str = ', '.join([str(a) for a in artists]) if artists else '-'
+        artist_str = ', '.join([str(a) for a in artists]) if artists else ''
         dur = getattr(track, 'duration', None) or (track.get('duration') if isinstance(track, dict) else None)
-        duration_str = beauty_format_seconds(dur) if dur is not None else '-'
+        duration_str = beauty_format_seconds(dur) if dur is not None else ''
         year = getattr(track, 'release_year', None) or (track.get('release_year') if isinstance(track, dict) else None)
-        year_str = str(year) if year is not None else '-'
+        year_str = '' if year is None or str(year) == 'None' else str(year)
         explicit = getattr(track, 'explicit', False) or (track.get('explicit') if isinstance(track, dict) else False)
-        explicit_str = 'Y' if explicit else ''
+        explicit_str = '🅴' if explicit else ''
         cover_url = getattr(track, 'cover_url', None) or (track.get('cover_url') if isinstance(track, dict) else None) or ''
         preview_url = getattr(track, 'preview_url', None) if hasattr(track, 'preview_url') else (track.get('preview_url') if isinstance(track, dict) else None)
         raw = track if not isinstance(track, dict) else track
         # Fallback to parent when track has no title/artist (e.g. partial metadata)
-        if not name or name == 'N/A':
+        if not name:
             name = f"Track {index}"
-        if not artist_str or artist_str == '-':
-            artist_str = (parent_data.get('artist') or '-').strip() or '-'
+        if not artist_str:
+            artist_str = (parent_data.get('artist') or '').strip() or ''
     child_iid = f"{parent_iid}_t{index}"
     return {
         "id": str(tid), "number": str(index), "title": name, "artist": artist_str,
-        "duration": duration_str, "year": year_str, "additional": "-", "explicit": explicit_str,
+        "duration": duration_str, "year": year_str, "additional": "", "explicit": explicit_str,
         "platform": platform_str, "type": "track", "raw_result": raw, "tree_iid": child_iid,
         "preview_url": preview_url, "cover_url": cover_url, "parent_iid": parent_iid
     }
@@ -3222,14 +3305,17 @@ def _insert_album_playlist_children(parent_iid, parent_data, track_entries):
 
 def _fetch_and_expand_album_playlist(parent_iid, item_data):
     """Fetch album/playlist tracks in a background thread and expand the row on the main thread."""
-    global orpheus_instance, app, tree, _expanded_album_playlist_iids
+    global orpheus_instance, app, tree, _expanded_album_playlist_iids, _expand_long_loading_after_id
     try:
         if 'orpheus_instance' not in globals() or not orpheus_instance or 'app' not in globals() or not app or not app.winfo_exists():
             return
         platform_name = (item_data.get('platform') or '').lower()
         item_type = (item_data.get('type') or '').lower()
         res_id = item_data.get('id')
-        if not platform_name or item_type not in ('album', 'playlist') or not res_id:
+        # Allow album, playlist, or YouTube channel (channel expand shows uploads as tracks)
+        if not platform_name or not res_id:
+            return
+        if item_type not in ('album', 'playlist') and not (platform_name == 'youtube' and item_type == 'channel'):
             return
         # Show animated loading dots while fetching (same as preview lazy-load)
         if tree and tree.winfo_exists() and tree.exists(parent_iid):
@@ -3238,6 +3324,9 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                 current_values[0] = LOADING_ANIMATION_FRAMES[0]
                 tree.item(parent_iid, values=tuple(current_values))
             _start_loading_animation(parent_iid)
+        # After 8s show "Fetching all data... (this can take up to ~1 minute)" with walking dots
+        if app and app.winfo_exists():
+            _expand_long_loading_after_id = app.after(8000, _show_expand_long_loading_message)
         def worker():
             track_entries = []
             try:
@@ -3251,10 +3340,18 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                     else:
                         info = module_instance.get_playlist_info(res_id, data) if (hasattr(module_instance, 'get_playlist_info') and data) else None
                 else:
+                    # For playlist, pass extra_kwargs from search result (e.g. Beatport is_chart=True for charts)
+                    playlist_kwargs = {}
+                    raw = item_data.get('raw_result')
+                    if item_type == 'playlist' and raw is not None:
+                        if hasattr(raw, 'extra_kwargs') and isinstance(getattr(raw, 'extra_kwargs'), dict):
+                            playlist_kwargs = {k: v for k, v in getattr(raw, 'extra_kwargs').items() if k != 'raw_result'}
+                        elif isinstance(raw, dict) and isinstance(raw.get('extra_kwargs'), dict):
+                            playlist_kwargs = {k: v for k, v in raw.get('extra_kwargs', {}).items() if k != 'raw_result'}
                     if item_type == 'album':
                         info = module_instance.get_album_info(res_id) if hasattr(module_instance, 'get_album_info') else None
                     else:
-                        info = module_instance.get_playlist_info(res_id) if hasattr(module_instance, 'get_playlist_info') else None
+                        info = module_instance.get_playlist_info(res_id, **playlist_kwargs) if hasattr(module_instance, 'get_playlist_info') else None
                 if not info or not getattr(info, 'tracks', None):
                     return
                 tracks = info.tracks
@@ -3317,12 +3414,16 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                         pass
                 for idx, track in enumerate(resolved, start=1):
                     entry = _track_to_result_entry(track, idx, item_data, parent_iid, platform_name)
+                    # Hide entries with no duration (e.g. YouTube live streams)
+                    if not entry.get('duration') and not entry.get('duration_seconds'):
+                        continue
                     track_entries.append(entry)
             except Exception as e:
                 if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                     print(f"[Expand] Error fetching album/playlist tracks: {e}")
                 track_entries = []
             def on_done():
+                _clear_expand_long_loading_message()
                 _stop_loading_animation()
                 if track_entries:
                     _show_album_track_list_view(item_data, track_entries)
@@ -3343,7 +3444,7 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
 
 def _fetch_and_show_artist_albums(parent_iid, item_data):
     """Fetch artist's albums and show them in the list view (like album track list). One get_artist_info call when module returns full album data."""
-    global orpheus_instance, app, tree
+    global orpheus_instance, app, tree, _expand_long_loading_after_id
     try:
         if 'orpheus_instance' not in globals() or not orpheus_instance or 'app' not in globals() or not app or not app.winfo_exists():
             return
@@ -3357,12 +3458,16 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                 current_values[0] = LOADING_ANIMATION_FRAMES[0]
                 tree.item(parent_iid, values=tuple(current_values))
             _start_loading_animation(parent_iid)
+        if app and app.winfo_exists():
+            _expand_long_loading_after_id = app.after(8000, _show_expand_long_loading_message)
         def worker():
             album_entries = []
+            context_kind = "Label" if (item_data.get('type') or '').lower() == 'label' else "Artist"
             def on_done():
+                _clear_expand_long_loading_message()
                 _stop_loading_animation()
                 if album_entries:
-                    _show_artist_albums_view(item_data, album_entries)
+                    _show_artist_albums_view(item_data, album_entries, context_kind)
                 else:
                     if tree and tree.winfo_exists() and tree.exists(parent_iid):
                         current_values = list(tree.item(parent_iid, 'values'))
@@ -3383,6 +3488,149 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                         pass
             try:
                 module_instance = orpheus_instance.load_module(platform_name)
+                # Label (Beatport/Beatsource): get_label_info -> releases + tracks
+                if item_data.get('type') == 'label':
+                    if not hasattr(module_instance, 'get_label_info'):
+                        schedule_done()
+                        return
+                    try:
+                        info = module_instance.get_label_info(res_id, **{})
+                    except Exception as e:
+                        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                            print(f"[Label] Error get_label_info: {e}")
+                        schedule_done()
+                        return
+                    if not info:
+                        schedule_done()
+                        return
+                    albums = getattr(info, 'albums', None) or []
+                    tracks = getattr(info, 'tracks', None) or []
+                    label_name = getattr(info, 'name', '') or item_data.get('title') or item_data.get('artist') or 'Label'
+                    album_extra = getattr(info, 'album_extra_kwargs', None) or {}
+                    track_extra = getattr(info, 'track_extra_kwargs', None) or {}
+                    album_data_dict = album_extra.get('data') if isinstance(album_extra, dict) else {}
+                    track_data_dict = track_extra.get('data') if isinstance(track_extra, dict) else {}
+                    platform_str = item_data.get('platform', 'Unknown')
+                    if not albums and tracks and track_data_dict:
+                        try:
+                            quality_tier = codec_options = None
+                            try:
+                                from utils.models import QualityEnum, CodecOptions
+                                g = current_settings.get("globals", {}).get("general", {})
+                                q = (g.get("quality") or g.get("download_quality") or "high").upper()
+                                quality_tier = getattr(QualityEnum, q, QualityEnum.HIGH)
+                                c = current_settings.get("globals", {}).get("codecs", {})
+                                codec_options = CodecOptions(proprietary_codecs=c.get("proprietary_codecs", False), spatial_codecs=c.get("spatial_codecs", True))
+                            except Exception:
+                                pass
+                            resolved = []
+                            for i, t in enumerate(tracks):
+                                tid = str(t) if isinstance(t, (str, int)) else str(t.get('id', '')) if isinstance(t, dict) else ''
+                                track_dict = track_data_dict.get(t) or track_data_dict.get(str(t)) or (track_data_dict.get(int(t)) if isinstance(t, str) and t.isdigit() else None)
+                                if quality_tier and codec_options and hasattr(module_instance, 'get_track_info') and tid:
+                                    try:
+                                        tr = module_instance.get_track_info(tid, quality_tier, codec_options, **{'data': track_data_dict})
+                                        resolved.append(tr if tr is not None else track_dict or t)
+                                    except Exception:
+                                        resolved.append(track_dict or t)
+                                else:
+                                    resolved.append(track_dict or t)
+                            synthetic_label = dict(item_data)
+                            synthetic_label['title'] = label_name
+                            synthetic_label['type'] = 'label'
+                            track_entries = [_track_to_result_entry(track, idx, synthetic_label, parent_iid, platform_name) for idx, track in enumerate(resolved, start=1)]
+                            def on_done_label_tracks():
+                                _clear_expand_long_loading_message()
+                                _stop_loading_animation()
+                                if track_entries:
+                                    _show_album_track_list_view(synthetic_label, track_entries)
+                                elif tree and tree.winfo_exists() and tree.exists(parent_iid):
+                                    current_values = list(tree.item(parent_iid, 'values'))
+                                    if current_values:
+                                        current_values[0] = PREVIEW_EXPAND_COLLAPSED
+                                        tree.item(parent_iid, values=tuple(current_values))
+                            if app and app.winfo_exists():
+                                app.after(0, on_done_label_tracks)
+                        except Exception as e:
+                            if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                                print(f"[Label] Error showing label tracks: {e}")
+                        return
+                    if not albums:
+                        schedule_done()
+                        return
+                    display_idx = 0
+                    for album in albums:
+                        album_dict = None
+                        if isinstance(album, dict):
+                            album_dict = album
+                        else:
+                            aid = album
+                            album_dict = album_data_dict.get(aid) or album_data_dict.get(str(aid)) or (album_data_dict.get(int(aid)) if str(aid).isdigit() else None)
+                        if album_dict and isinstance(album_dict, dict):
+                            title = album_dict.get('title') or album_dict.get('name', 'Unknown Release')
+                            artist_raw = (album_dict.get('artists') or [{}])[0] if album_dict.get('artists') else {}
+                            artist = artist_raw.get('name', 'Unknown') if isinstance(artist_raw, dict) else str(artist_raw)
+                            cover_uri = (album_dict.get('image') or {}).get('dynamic_uri') if isinstance(album_dict.get('image'), dict) else None
+                            if cover_uri and platform_name == 'beatport':
+                                from modules.beatport.interface import ModuleInterface as _BPI
+                                cover_url = _BPI._generate_artwork_url(cover_uri, 56)
+                            elif cover_uri and platform_name == 'beatsource':
+                                from modules.beatsource.interface import ModuleInterface as _BSI
+                                cover_url = _BSI._generate_artwork_url(cover_uri, 56)
+                            else:
+                                cover_url = item_data.get('cover_url') or ''
+                            year = ''
+                            if album_dict.get('publish_date') and len(str(album_dict.get('publish_date'))) >= 4:
+                                year = str(album_dict.get('publish_date'))[:4]
+                            # Skip releases with no track count (hide them from the list)
+                            tc = album_dict.get('track_count') or album_dict.get('tracks_count')
+                            if tc is None:
+                                continue
+                            display_idx += 1
+                            # Additional: track count and (Beatport) catalog number, like Album search
+                            additional_parts = []
+                            additional_parts.append(f"1 track" if tc == 1 else f"{tc} tracks")
+                            if platform_name and platform_name.lower() == 'beatport' and album_dict.get('catalog_number'):
+                                additional_parts.append(f"Cat: {album_dict['catalog_number']}")
+                            additional_str = ", ".join(additional_parts) if additional_parts else ""
+                            # Duration if release has total length (seconds or ms); format like album search
+                            duration_str = ""
+                            sec = None
+                            if album_dict.get('duration') is not None:
+                                try:
+                                    sec = int(album_dict.get('duration'))
+                                except (TypeError, ValueError):
+                                    pass
+                            elif album_dict.get('length_ms') is not None:
+                                try:
+                                    sec = int(album_dict.get('length_ms')) // 1000
+                                except (TypeError, ValueError):
+                                    pass
+                            if sec is not None and 'beauty_format_seconds' in globals() and callable(beauty_format_seconds):
+                                duration_str = beauty_format_seconds(sec)
+                            elif sec is not None:
+                                duration_str = str(sec)
+                            entry = {
+                                "tree_iid": f"label_release_{display_idx}",
+                                "title": title,
+                                "artist": artist,
+                                "cover_url": cover_url,
+                                "id": str(album_dict.get('id', album)),
+                                "platform": platform_str,
+                                "type": "album",
+                                "is_album_playlist": True,
+                                "number": str(display_idx),
+                                "year": year,
+                                "duration": duration_str,
+                                "additional": additional_str,
+                                "explicit": "",
+                                "parent_iid": None,
+                                "raw_result": album_dict,
+                            }
+                            album_entries.append(entry)
+                    context_kind = "Label"
+                    schedule_done()
+                    return
                 if not hasattr(module_instance, 'get_artist_info'):
                     schedule_done()
                     return
@@ -3415,8 +3663,8 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                 track_extra = getattr(info, 'track_extra_kwargs', None) or {}
                 album_data_dict = album_extra.get('data') if isinstance(album_extra, dict) else {}
                 track_data_dict = track_extra.get('data') if isinstance(track_extra, dict) else {}
-                # No albums but has tracks: show tracks in tracklist view (e.g. SoundCloud artist with only tracks)
-                if not albums and tracks and track_data_dict and platform_name == 'soundcloud':
+                # No albums but has tracks: show tracks in tracklist view (e.g. SoundCloud artist, Beatport artist)
+                if not albums and tracks and track_data_dict:
                     try:
                         quality_tier = codec_options = None
                         try:
@@ -3429,7 +3677,10 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                         except Exception:
                             pass
                         resolved = []
-                        for t in tracks:
+                        total = len(tracks)
+                        for i, t in enumerate(tracks):
+                            if total > 20 and (i + 1) % 50 == 0 and i + 1 < total:
+                                print(f"[Artist] Resolving tracks {i + 1}/{total}...", flush=True)
                             tid = str(t) if isinstance(t, (str, int)) else str(t.get('id', '')) if isinstance(t, dict) else ''
                             track_dict = track_data_dict.get(t) or track_data_dict.get(str(t)) or (track_data_dict.get(int(t)) if isinstance(t, str) and t.isdigit() else None)
                             if quality_tier and codec_options and hasattr(module_instance, 'get_track_info') and tid:
@@ -3441,12 +3692,13 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                             else:
                                 resolved.append(track_dict or t)
                         synthetic_album = dict(item_data)
-                        synthetic_album['title'] = f"Tracks by {artist_name}"
-                        synthetic_album['type'] = 'playlist'
+                        synthetic_album['title'] = artist_name
+                        synthetic_album['type'] = 'artist'
                         track_entries = []
                         for idx, track in enumerate(resolved, start=1):
                             track_entries.append(_track_to_result_entry(track, idx, synthetic_album, parent_iid, platform_name))
                         def on_done_tracks():
+                            _clear_expand_long_loading_message()
                             _stop_loading_animation()
                             if track_entries:
                                 _show_album_track_list_view(synthetic_album, track_entries)
@@ -3476,7 +3728,7 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                     if album_dict and isinstance(album_dict, dict):
                         # Use full album metadata (SoundCloud: title, duration in ms, release_date/display_date/created_at; others: name, release_year, etc.)
                         dur = album_dict.get('duration')
-                        duration_str = '-'
+                        duration_str = ''
                         if dur is not None:
                             try:
                                 sec = int(dur)
@@ -3497,13 +3749,13 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                                 cover_url = f'https://resources.tidal.com/images/{str(cover_id).replace("-", "/")}/750x750.jpg'
                         if cover_url and '-large' in cover_url:
                             cover_url = cover_url.replace('-large', '-t200x200')
-                        year = '-'
+                        year = ''
                         for key in ('release_date', 'display_date', 'created_at', 'releaseDate', 'streamStartDate'):
                             val = album_dict.get(key)
                             if val and isinstance(val, str) and len(val) >= 4:
                                 year = val[:4]
                                 break
-                        if year == '-' and album_dict.get('release_year'):
+                        if not year and album_dict.get('release_year'):
                             year = str(album_dict.get('release_year'))
                         entry = {
                             "tree_iid": f"artist_album_{idx}",
@@ -3517,7 +3769,7 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                             "number": str(idx),
                             "year": year,
                             "duration": duration_str,
-                            "additional": album_dict.get('additional') or album_dict.get('genre') or '-',
+                            "additional": album_dict.get('additional') or album_dict.get('genre') or '',
                             "explicit": "",
                             "parent_iid": None,
                             "raw_result": album_dict,
@@ -3533,9 +3785,9 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                             "type": "album",
                             "is_album_playlist": True,
                             "number": str(idx),
-                            "year": "-",
-                            "duration": "-",
-                            "additional": "-",
+                            "year": "",
+                            "duration": "",
+                            "additional": "",
                             "explicit": "",
                             "parent_iid": None,
                         }
@@ -3553,15 +3805,16 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
         if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
             print(f"[Artist] Error starting artist albums fetch: {e}")
 
-def _show_artist_albums_view(artist_item_data, album_entries):
-    """Show an artist's albums in the results list (each row is an album; click ≡ on a row to see its tracks). Call on main thread."""
+def _show_artist_albums_view(artist_item_data, album_entries, context_kind="Artist"):
+    """Show an artist's or label's albums/releases in the results list. context_kind is 'Artist' or 'Label'. Call on main thread."""
     global search_results_data, tree, app, _album_track_list_context, results_label, _back_to_search_button, _expanded_album_playlist_iids
     try:
         if 'tree' not in globals() or not tree or not tree.winfo_exists():
             return
-        _album_track_list_context = {"saved_data": list(search_results_data), "title": None}
-        artist_name = artist_item_data.get('artist') or artist_item_data.get('title') or 'Artist'
-        _album_track_list_context["title"] = f"Artist: {artist_name}"
+        # Stack: each level stores saved_data to restore and the header title when we back to that level (RESULTS for search list)
+        _album_track_list_context = [{"saved_data": list(search_results_data), "title": "RESULTS"}]
+        name = artist_item_data.get('artist') or artist_item_data.get('title') or (context_kind if context_kind == "Label" else "Artist")
+        artist_view_title = f"{context_kind}: {name}"
         platform_str = artist_item_data.get('platform', 'Unknown')
         _expanded_album_playlist_iids.clear()
         clear_treeview()
@@ -3573,24 +3826,30 @@ def _show_artist_albums_view(artist_item_data, album_entries):
                 item_data.get('number', ''),
                 item_data.get('title', ''),
                 item_data.get('artist', ''),
-                item_data.get('duration', '-'),
-                item_data.get('year', '-'),
-                item_data.get('additional', '-'),
+                item_data.get('duration', ''),
+                item_data.get('year', ''),
+                item_data.get('additional', ''),
                 item_data.get('explicit', ''),
                 item_data.get('id', '')
             )
             row_tag = "oddrow" if (idx % 2 == 1) else "evenrow"
             tree.insert("", "end", iid=tree_iid, values=values, tags=(row_tag,))
+        # When showing albums list (artist or label), 4th column is Artist; ensure heading says "Artist"
+        try:
+            if 'tree' in globals() and tree and tree.winfo_exists():
+                tree.heading("Artist", text="Artist")
+        except (tkinter.TclError, Exception):
+            pass
         _update_preview_column_heading(True)  # ≡ for artist albums list
         if '_back_to_search_button' in globals() and _back_to_search_button and _back_to_search_button.winfo_exists():
             if results_label and results_label.winfo_exists():
                 results_label.pack_forget()
             _back_to_search_button.pack(side="left", anchor="w", padx=(6, 12), pady=0)
-            _update_results_header_context(_album_track_list_context["title"])
+            _update_results_header_context(artist_view_title)
             if results_label and results_label.winfo_exists():
                 results_label.pack(side="left", anchor="w", padx=6, pady=0)
         elif 'results_label' in globals() and results_label and results_label.winfo_exists():
-            results_label.configure(text=_album_track_list_context["title"])
+            results_label.configure(text=artist_view_title)
         if 'app' in globals() and app and app.winfo_exists():
             app.after(100, lazy_load_visible_covers)
             app.after(50, lambda: _check_and_toggle_scrollbar(tree, scrollbar) if 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists() else None)
@@ -3609,14 +3868,30 @@ def _show_album_track_list_view(album_item_data, track_entries):
             stop_audio()
             _currently_playing_preview_iid = None
             hide_volume_control()
-        # Save current search state so we can go back
-        _album_track_list_context = {
+        # Stack: push current view (artist albums) so Back restores it with correct header (badge + name)
+        parent_title = (_current_results_header_title or "") if '_current_results_header_title' in globals() else ""
+        if not isinstance(_album_track_list_context, list):
+            _album_track_list_context = [_album_track_list_context] if _album_track_list_context else []
+        _album_track_list_context.append({
             "saved_data": list(search_results_data),
-            "title": None
-        }
-        title = album_item_data.get('title') or album_item_data.get('name') or 'Album'
-        kind = "Playlist" if (album_item_data.get('type') or '').lower() == 'playlist' else "Album"
-        _album_track_list_context["title"] = f"{kind}: {title}"
+            "title": parent_title
+        })
+        item_type = (album_item_data.get('type') or '').lower()
+        platform_key = (album_item_data.get('platform') or '').lower()
+        if platform_key == 'youtube' and item_type == 'channel':
+            kind = "Channel"
+            title = album_item_data.get('artist') or album_item_data.get('title') or album_item_data.get('name') or 'Channel'
+        else:
+            title = album_item_data.get('title') or album_item_data.get('name') or 'Album'
+            if item_type == 'artist':
+                kind = "Artist"
+            elif item_type == 'label':
+                kind = "Label"
+            elif item_type == 'playlist':
+                kind = "Playlist"
+            else:
+                kind = "Album"
+        album_view_title = f"{kind}: {title}"
         platform_str = album_item_data.get('platform', 'Unknown')
         album_cover_url = album_item_data.get('cover_url') or ''
         platforms_with_preview = ('qobuz', 'soundcloud', 'spotify', 'tidal', 'youtube', 'deezer', 'applemusic')
@@ -3667,11 +3942,11 @@ def _show_album_track_list_view(album_item_data, track_entries):
             if results_label and results_label.winfo_exists():
                 results_label.pack_forget()
             _back_to_search_button.pack(side="left", anchor="w", padx=(6, 12), pady=0)
-            _update_results_header_context(_album_track_list_context["title"])
+            _update_results_header_context(album_view_title)
             if results_label and results_label.winfo_exists():
                 results_label.pack(side="left", anchor="w", padx=6, pady=0)
         elif 'results_label' in globals() and results_label and results_label.winfo_exists():
-            results_label.configure(text=_album_track_list_context["title"])
+            results_label.configure(text=album_view_title)
         if 'app' in globals() and app and app.winfo_exists():
             app.after(100, lazy_load_visible_covers)
             app.after(50, lambda: _check_and_toggle_scrollbar(tree, scrollbar) if 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists() else None)
@@ -3681,7 +3956,8 @@ def _show_album_track_list_view(album_item_data, track_entries):
 
 def _update_results_header_context(full_title):
     """Update results header with optional content-type badge (Album/Playlist/Artist) and title. full_title=None means normal RESULTS view."""
-    global results_label, _content_type_badge, _content_type_badge_label
+    global results_label, _content_type_badge, _content_type_badge_label, _current_results_header_title
+    _current_results_header_title = full_title
     if full_title is None:
         if '_content_type_badge' in globals() and _content_type_badge and _content_type_badge.winfo_exists():
             _content_type_badge.pack_forget()
@@ -3699,8 +3975,16 @@ def _update_results_header_context(full_title):
     elif full_title.startswith("Artist: "):
         type_str = "artist"
         rest = full_title[8:]
+    elif full_title.startswith("Label: "):
+        type_str = "label"
+        rest = full_title[7:]
+    elif full_title.startswith("Channel: "):
+        type_str = "channel"
+        rest = full_title[9:]
     if type_str and '_content_type_badge' in globals() and _content_type_badge and _content_type_badge_label and _content_type_badge_label.winfo_exists():
         _content_type_badge_label.configure(text=type_str)
+        # Slightly wider badge for "Channel" only; keep default width for Album/Playlist/Artist
+        _content_type_badge.configure(width=60 if type_str == "channel" else 50)
         _content_type_badge.pack(side="left", anchor="w", padx=(0, 8), pady=0)
     if 'results_label' in globals() and results_label and results_label.winfo_exists():
         results_label.configure(text=rest)
@@ -3712,8 +3996,14 @@ def _back_to_search_results():
     try:
         if _album_track_list_context is None:
             return
-        saved = _album_track_list_context.get("saved_data") or []
-        _album_track_list_context = None
+        # Support both stack (list) and legacy single dict
+        if isinstance(_album_track_list_context, dict):
+            _album_track_list_context = [_album_track_list_context]
+        if not _album_track_list_context:
+            return
+        context = _album_track_list_context.pop()
+        saved = context.get("saved_data") or []
+        restore_title = context.get("title")
         _expanded_album_playlist_iids.clear()
         # Restoring to artist albums view? Then keep artist_album_* in caches so their covers still show.
         restoring_to_artist_albums = any(
@@ -3776,9 +4066,18 @@ def _back_to_search_results():
             item.get('is_artist') or item.get('is_album_playlist') for item in saved
         )
         _update_preview_column_heading(show_expand_in_header)
-        _update_results_header_context(None)
-        if '_back_to_search_button' in globals() and _back_to_search_button and _back_to_search_button.winfo_exists():
-            _back_to_search_button.pack_forget()
+        # Restore column header to "Label" when going back to label search results
+        try:
+            if saved and len(saved) > 0 and (saved[0].get('type') or '').lower() == 'label' and 'tree' in globals() and tree and tree.winfo_exists():
+                tree.heading("Artist", text="Label")
+        except (tkinter.TclError, Exception):
+            pass
+        # Restore header for this level (e.g. "Artist: Name" when going back from album tracks)
+        _update_results_header_context(restore_title if (restore_title and restore_title != "RESULTS") else None)
+        if not _album_track_list_context:
+            _update_results_header_context(None)
+            if '_back_to_search_button' in globals() and _back_to_search_button and _back_to_search_button.winfo_exists():
+                _back_to_search_button.pack_forget()
         if 'app' in globals() and app and app.winfo_exists() and 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists():
             app.after(50, lambda: _check_and_toggle_scrollbar(tree, scrollbar))
     except Exception as e:
@@ -8054,6 +8353,38 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                     except Exception as e:
                         oprinter.oprint(f"Artist download failed: {str(e)}")
                         download_exception_occurred = True
+            elif media_type == DownloadTypeEnum.label:
+                _current_download_context = DownloadTypeEnum.label
+                if stop_event.is_set():
+                    is_cancelled = True
+                    print("|GRAY|Stop requested. Cancelling before label download.|RESET|")
+                else:
+                    try:
+                        if hasattr(downloader, 'extra_kwargs') and downloader.extra_kwargs:
+                            run_interruptible_download(
+                                downloader.download_label,
+                                stop_event,
+                                media_id,
+                                extra_kwargs=downloader.extra_kwargs
+                            )
+                        else:
+                            run_interruptible_download(
+                                downloader.download_label,
+                                stop_event,
+                                media_id
+                            )
+                        yield_to_gui()
+                    except DownloadCancelledError:
+                        is_cancelled = True
+                        try:
+                            print(f"=== ❌ Label {media_id} cancelled ===")
+                        except UnicodeEncodeError:
+                            print(f"=== X Label {media_id} cancelled ===")
+                        print()
+                        print("|GRAY|Stop requested. Cancelling during label download.|RESET|")
+                    except Exception as e:
+                        oprinter.oprint(f"Label download failed: {str(e)}")
+                        download_exception_occurred = True
             else: print(f"ERROR: Unknown media type '{media_type.name if hasattr(media_type, 'name') else media_type}' encountered.")
 
             if is_cancelled: print("\nDownload Cancelled.")
@@ -8397,11 +8728,15 @@ def on_platform_change(*args):
 
 def update_search_types(platform):
     global type_var, type_combo
+    # Only Beatport and Beatsource support label search; others get track/artist/playlist/album (or platform-specific)
     platform_types = {
-        "YouTube": ["track", "playlist", "channel"]
+        "YouTube": ["track", "playlist", "channel"],
+        "Beatport": ["track", "artist", "playlist", "album", "label"],
+        "Beatsource": ["track", "artist", "playlist", "album", "label"],
+        "Qobuz": ["track", "artist", "playlist", "album"],
     }
-    all_search_types = sorted(["track", "artist", "playlist", "album"])
-    available_types = sorted(platform_types.get(platform, all_search_types))
+    default_types = sorted(["track", "artist", "playlist", "album"])
+    available_types = sorted(platform_types.get(platform, default_types))
     try:
         if 'type_var' in globals() and type_var and 'type_combo' in globals() and type_combo and type_combo.winfo_exists():
             current_type = type_var.get(); type_combo.configure(values=available_types)
@@ -8491,25 +8826,49 @@ def display_results(results):
         current_platform_str = "Unknown"
     current_search_type_lower = (current_search_type_str or "track").lower()
 
+    # Show "Label" or "Channel" instead of "Artist" in the column header when searching by Label or YouTube Channel
+    try:
+        if 'tree' in globals() and tree and tree.winfo_exists():
+            if current_search_type_lower == "label":
+                artist_col_text = "Label"
+            elif current_platform_str and current_platform_str.lower() == "youtube":
+                artist_col_text = "Channel"
+            else:
+                artist_col_text = "Artist"
+            tree.heading("Artist", text=artist_col_text)
+    except (NameError, tkinter.TclError, Exception):
+        pass
+
     for result in results:
         res_id = result.get('id', f'sim_{item_number}')
-        name = result.get('title', 'N/A')
-        artist_str = result.get('artist', 'N/A')
-        duration_str = result.get('duration', '-')
-        year = str(result.get('year', '-'))
+        _y = result.get('year')
+        _y = '' if _y is None or str(_y) == 'None' else str(_y)
+        name = result.get('title') or ''
+        artist_str = result.get('artist') or ''
+        duration_str = result.get('duration') or ''
+        year = _y
         explicit = result.get('explicit', '')
-        additional_str = result.get('quality', 'N/A')
+        additional_str = result.get('quality') or ''
         unique_tree_iid = f"item_{item_number}"
         
         # Get preview URL and cover URL from the result if available
         preview_url = result.get('preview_url', None)
         cover_url = result.get('cover_url', None)
-        
+        thumbnail_url = None  # Small/original thumbnail for fallback when full-size fails (e.g. YouTube)
+        if current_platform_str.lower() == 'youtube' and cover_url:
+            thumbnail_url = cover_url
         # For YouTube, upgrade thumbnail URL to full-size if available
         if current_platform_str.lower() == 'youtube' and cover_url:
             raw_result = result.get('raw_result')
             cover_url = _get_fullsize_cover_url(cover_url, current_platform_str, raw_result)
         
+        # Use duration_seconds when provided; otherwise parse duration string so Time column sorts (e.g. YouTube playlist/channel)
+        dur_sec = result.get('duration_seconds')
+        if dur_sec is None and (result.get('duration') or duration_str):
+            dur_sec = _parse_duration_str_to_seconds(result.get('duration') or duration_str)
+        # Hide entries that have no Time/Duration when we expect it (track search, or channel/playlist video list)
+        if current_search_type_lower == "track" and not duration_str and dur_sec is None:
+            continue
         result_entry = {
             "id": res_id, "number": str(item_number), "title": name,
             "artist": artist_str, "duration": duration_str, "year": year,
@@ -8518,14 +8877,28 @@ def display_results(results):
             "raw_result": result.get('raw_result'),
             "tree_iid": unique_tree_iid,
             "preview_url": preview_url,
-            "cover_url": cover_url
+            "cover_url": cover_url,
+            "duration_seconds": dur_sec
         }
+        if thumbnail_url:
+            result_entry["thumbnail_url"] = thumbnail_url
         if current_search_type_lower == "artist":
             result_entry["title"] = ""
             result_entry["artist"] = name
             result_entry["is_artist"] = True
+        if current_search_type_lower == "label":
+            result_entry["title"] = ""
+            result_entry["artist"] = artist_str or name  # Label name in Label column only
         if current_search_type_lower in ("album", "playlist"):
             result_entry["is_album_playlist"] = True
+        # YouTube channel: expand to show channel's videos (uploads)
+        if current_platform_str.lower() == "youtube" and current_search_type_lower == "channel":
+            result_entry["is_album_playlist"] = True
+        # Beatport/Beatsource label: expand to show releases and tracks
+        if current_search_type_lower == "label":
+            result_entry["is_album_playlist"] = True
+            if result.get("label_slug"):
+                result_entry["label_slug"] = result.get("label_slug")
 
         search_results_data.append(result_entry)
 
@@ -8542,18 +8915,18 @@ def display_results(results):
                 can_lazy_load_preview = (current_platform_str.lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal')) and is_track_search
                 # YouTube tracks always show play icon (opens in browser)
                 is_youtube_track = (current_platform_str.lower() == 'youtube') and is_track_search
-                # Album/playlist/artist: show ≡ so user can open track list or artist albums; track type: show ▶ or ·
-                is_album_playlist = current_search_type_lower in ("album", "playlist")
+                # Album/playlist/artist/channel: show ≡ so user can open track list or artist albums or channel videos; track type: show ▶ or ·
+                is_album_playlist = current_search_type_lower in ("album", "playlist") or (current_platform_str.lower() == "youtube" and current_search_type_lower == "channel") or current_search_type_lower == "label"
                 is_artist = current_search_type_lower == "artist"
                 preview_icon = (PREVIEW_EXPAND_COLLAPSED if (is_album_playlist or is_artist) else
                     (PREVIEW_PLAY_ICON if (preview_url or can_lazy_load_preview or is_youtube_track) else PREVIEW_UNAVAILABLE))
                 
-                if current_search_type_lower == "artist":
+                if current_search_type_lower in ("artist", "label"):
                     values = (
                         preview_icon,  # Preview column (first)
                         str(item_number),  # # column
                         "",
-                        name,
+                        result_entry["artist"],  # Label/Artist column (label name or artist name)
                         "",
                         "",
                         additional_str,
@@ -8599,7 +8972,7 @@ def display_results(results):
             if not getattr(sys, 'frozen', False):
                 print(f"Error inserting into treeview: {e}", file=sys.__stderr__)
     
-    _update_preview_column_heading(current_search_type_lower in ("album", "playlist", "artist"))
+    _update_preview_column_heading(current_search_type_lower in ("album", "playlist", "artist", "label") or (current_platform_str.lower() == "youtube" and current_search_type_lower == "channel"))
     try:
         if 'app' in globals() and app and app.winfo_exists() and 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists():
             app.after(50, lambda: _check_and_toggle_scrollbar(tree, scrollbar))
@@ -8649,7 +9022,7 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
         search_limit = gui_settings.get("globals", {}).get("general", {}).get("search_limit", 25)
         try: search_limit = int(search_limit)
         except (ValueError, TypeError): search_limit = 25
-        search_type_map = { "track": local_DownloadTypeEnum.track, "album": local_DownloadTypeEnum.album, "artist": local_DownloadTypeEnum.artist, "playlist": local_DownloadTypeEnum.playlist, "channel": local_DownloadTypeEnum.artist }
+        search_type_map = { "track": local_DownloadTypeEnum.track, "album": local_DownloadTypeEnum.album, "artist": local_DownloadTypeEnum.artist, "playlist": local_DownloadTypeEnum.playlist, "channel": local_DownloadTypeEnum.artist, "label": local_DownloadTypeEnum.label }
         query_type = search_type_map.get(search_type_str.lower())
         if not query_type: raise ValueError(f"Invalid search type: {search_type_str}")
         # Use auto-auth patcher for Tidal to handle TV login automatically
@@ -8661,6 +9034,11 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
         search_results = module_instance.search(query_type, query, limit=search_limit)
         formatted_results = []
         for result in search_results:
+            # Skip album/playlist results with 0 tracks (they are empty and not useful)
+            if search_type_str and search_type_str.lower() in ('album', 'playlist'):
+                addl = getattr(result, 'additional', None) or []
+                if '0 tracks' in addl:
+                    continue
             # Extract raw_result from extra_kwargs if available (for full-size cover URL generation)
             raw_result = None
             extra_kwargs = getattr(result, 'extra_kwargs', {})
@@ -8683,18 +9061,48 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
             if platform_name.lower() == 'youtube' and cover_url:
                 cover_url = _get_fullsize_cover_url(cover_url, platform_name, raw_result)
             
-            formatted_result = { 
-                'id': str(getattr(result, 'result_id', '')), 
-                'title': str(getattr(result, 'name', 'N/A')), 
-                'artist': ', '.join([str(a) for a in getattr(result, 'artists', [])]) if getattr(result, 'artists', []) else '-', 
-                'duration': beauty_format_seconds(getattr(result, 'duration', None)) if getattr(result, 'duration', None) else '-', 
-                'year': str(getattr(result, 'year', '-')), 
-                'quality': ', '.join([str(q) for q in getattr(result, 'additional', [])]) if getattr(result, 'additional', []) else 'N/A', 
-                'explicit': 'Y' if getattr(result, 'explicit', False) else '', 
+            _yr = getattr(result, 'year', None)
+            _yr_str = '' if _yr is None or str(_yr) == 'None' else str(_yr)
+            raw_duration_seconds = getattr(result, 'duration', None)
+            # Normalize to int seconds so duration_seconds is always set when duration exists (enables Time column sort)
+            if raw_duration_seconds is not None:
+                if isinstance(raw_duration_seconds, str):
+                    raw_duration_seconds = _parse_duration_str_to_seconds(raw_duration_seconds)
+                try:
+                    raw_duration_seconds = int(raw_duration_seconds) if raw_duration_seconds is not None else None
+                except (TypeError, ValueError):
+                    raw_duration_seconds = None
+            _name = str(getattr(result, 'name', '') or '')
+            _artists_str = ', '.join([str(a) for a in getattr(result, 'artists', []) or []]) or ''
+            quality_str = ', '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
+            # Fallback: show playlist/album track count from raw result when module didn't set additional (e.g. API shape)
+            if not quality_str and search_type_str and search_type_str.lower() in ('album', 'playlist') and raw_result and isinstance(raw_result, dict):
+                t = (raw_result.get('tracks') or {}).get('total')  # Spotify
+                if t is not None and t > 0:
+                    quality_str = "1 track" if t == 1 else f"{t} tracks"
+                else:
+                    tc = (raw_result.get('attributes') or {}).get('trackCount')  # Apple Music
+                    if tc is not None and tc > 0:
+                        quality_str = "1 track" if tc == 1 else f"{tc} tracks"
+            formatted_result = {
+                'id': str(getattr(result, 'result_id', '')),
+                'title': _name,
+                'artist': _artists_str,
+                'duration': beauty_format_seconds(raw_duration_seconds) if raw_duration_seconds is not None else '',
+                'duration_seconds': raw_duration_seconds,
+                'year': _yr_str,
+                'quality': quality_str,
+                'explicit': '🅴' if getattr(result, 'explicit', False) else '',
                 'preview_url': getattr(result, 'preview_url', None),
                 'cover_url': cover_url,
-                'raw_result': raw_result 
+                'raw_result': raw_result
             }
+            # Label: show name only in Label column, not in Title (same as Artist view)
+            if search_type_str and search_type_str.lower() == 'label':
+                formatted_result['title'] = ''
+                formatted_result['artist'] = _name
+            if isinstance(extra_kwargs, dict) and extra_kwargs.get('label_slug'):
+                formatted_result['label_slug'] = extra_kwargs['label_slug']
             formatted_results.append(formatted_result)
         results = formatted_results
     except TypeError as e:
@@ -9565,11 +9973,11 @@ def build_url_from_result(result_data):
 
     base_urls = { "qobuz": "https://open.qobuz.com", "tidal": "https://listen.tidal.com", "deezer": "https://www.deezer.com", "beatport": "https://www.beatport.com", "beatsource": "https://www.beatsource.com", "napster": "https://web.napster.com", "idagio": "https://app.idagio.com", "spotify": "https://open.spotify.com", "applemusic": "https://music.apple.com" }
     type_paths = { 
-        "qobuz": {"track": "track", "album": "album", "artist": "artist", "playlist": "playlist"},
+        "qobuz": {"track": "track", "album": "album", "artist": "artist", "playlist": "playlist", "label": "label"},
         "tidal": {"track": "track", "album": "album", "artist": "artist", "playlist": "playlist"},
         "deezer": {"track": "track", "album": "album", "artist": "artist", "playlist": "playlist"},
-        "beatport": {"track": "track", "album": "release", "artist": "artist", "playlist": "chart"},
-        "beatsource": {"track": "track", "album": "release", "artist": "artist", "playlist": "playlist"},
+        "beatport": {"track": "track", "album": "release", "artist": "artist", "playlist": "chart", "label": "label"},
+        "beatsource": {"track": "track", "album": "release", "artist": "artist", "playlist": "playlist", "label": "label"},
         "napster": {"track": "track", "album": "album", "artist": "artist", "playlist": "playlist"},
         "idagio": {"track": "recording", "album": "album", "artist": "artist"},
         "spotify": {"track": "track", "album": "album", "artist": "artist", "playlist": "playlist"},
@@ -9626,9 +10034,9 @@ def build_url_from_result(result_data):
                 print(f"[URL Build - Beatport] Using attribute permalink/url: {permalink}")
                 return permalink
 
-            slug = getattr(raw_result_obj, 'slug', None)
+            slug = getattr(raw_result_obj, 'slug', None) if not isinstance(raw_result_obj, dict) else raw_result_obj.get('slug')
             if not slug:
-                name_for_slug = getattr(raw_result_obj, 'name', None)
+                name_for_slug = getattr(raw_result_obj, 'name', None) if not isinstance(raw_result_obj, dict) else raw_result_obj.get('name') or raw_result_obj.get('title')
                 if name_for_slug:
                     derived_slug = _simple_slugify(name_for_slug)
                     if derived_slug:
@@ -9638,6 +10046,13 @@ def build_url_from_result(result_data):
                         print(f"[URL Build - Beatport] Could not derive a valid slug from name: '{name_for_slug}'.")
                 else:
                     print(f"[URL Build - Beatport] No 'name' attribute to derive slug from.")
+
+            # Fallback for release/album: derive slug from result_data title (e.g. rows from label releases view)
+            if not slug and t_lower == 'album' and result_data.get('title'):
+                derived_slug = _simple_slugify(result_data.get('title'))
+                if derived_slug:
+                    print(f"[URL Build - Beatport] Derived slug '{derived_slug}' from result_data title '{result_data.get('title')}'.")
+                    slug = derived_slug
 
             if slug and item_id and t_lower in type_paths.get(p_lower, {}):
                 url_path_segment = type_paths[p_lower][t_lower]
@@ -9705,33 +10120,41 @@ def build_url_from_result(result_data):
         return apple_music_url
     
     elif p_lower == "beatsource":
-        # Beatsource requires slug in URL for artists (like Beatport)
+        # Beatsource requires slug in URL (e.g. /track/jacky/8124762); URL without slug returns 404
         slug = None
         
         if raw_result_obj:
-            permalink = getattr(raw_result_obj, 'permalink_url', None)
-            if not permalink:
+            permalink = getattr(raw_result_obj, 'permalink_url', None) if not isinstance(raw_result_obj, dict) else raw_result_obj.get('permalink_url')
+            if not permalink and not isinstance(raw_result_obj, dict):
                 permalink = getattr(raw_result_obj, 'url', None)
-            
-            if permalink:
+            if not permalink and isinstance(raw_result_obj, dict):
+                permalink = raw_result_obj.get('url')
+            # Only use if it's the website URL; API URLs (api.beatsource.com) must not be used for "Open link"
+            if permalink and 'www.beatsource.com' in permalink and 'api.beatsource.com' not in permalink:
                 print(f"[URL Build - Beatsource] Using attribute permalink/url: {permalink}")
                 return permalink
 
-            slug = getattr(raw_result_obj, 'slug', None)
+            slug = getattr(raw_result_obj, 'slug', None) if not isinstance(raw_result_obj, dict) else raw_result_obj.get('slug')
             if not slug:
                 # Check extra_kwargs for artist_slug (stored during search)
-                extra_kwargs = getattr(raw_result_obj, 'extra_kwargs', {})
+                extra_kwargs = getattr(raw_result_obj, 'extra_kwargs', {}) if not isinstance(raw_result_obj, dict) else raw_result_obj.get('extra_kwargs') or {}
                 if isinstance(extra_kwargs, dict):
-                    slug = extra_kwargs.get('artist_slug')
+                    slug = extra_kwargs.get('artist_slug') or extra_kwargs.get('track_slug')
             if not slug:
-                name_for_slug = getattr(raw_result_obj, 'name', None)
+                name_for_slug = getattr(raw_result_obj, 'name', None) if not isinstance(raw_result_obj, dict) else (raw_result_obj.get('name') or raw_result_obj.get('title'))
                 if name_for_slug:
                     derived_slug = _simple_slugify(name_for_slug)
                     if derived_slug:
                         print(f"[URL Build - Beatsource] Derived slug '{derived_slug}' from name '{name_for_slug}'.")
                         slug = derived_slug
-        
-        # Fallback: try to derive slug from result_data artist name (for artist searches)
+
+        # Fallback: derive slug from result_data (e.g. release rows from label view)
+        if not slug and t_lower == 'album' and result_data.get('title'):
+            derived_slug = _simple_slugify(result_data.get('title'))
+            if derived_slug:
+                print(f"[URL Build - Beatsource] Derived slug '{derived_slug}' from result_data title '{result_data.get('title')}'.")
+                slug = derived_slug
+        # Fallback: derive slug from result_data (title for tracks, artist/title for artists)
         if not slug and t_lower == 'artist':
             artist_name = result_data.get('artist') or result_data.get('title')
             if artist_name:
@@ -9739,6 +10162,22 @@ def build_url_from_result(result_data):
                 if derived_slug:
                     print(f"[URL Build - Beatsource] Derived slug '{derived_slug}' from result_data artist/title '{artist_name}'.")
                     slug = derived_slug
+        if not slug and t_lower == 'track':
+            title = result_data.get('title') or result_data.get('name')
+            if title:
+                derived_slug = _simple_slugify(title)
+                if derived_slug:
+                    print(f"[URL Build - Beatsource] Derived slug '{derived_slug}' from result_data title '{title}'.")
+                    slug = derived_slug
+        if not slug and t_lower == 'label':
+            slug = result_data.get('label_slug')
+            if not slug:
+                label_name = result_data.get('artist') or result_data.get('title')
+                if label_name:
+                    derived_slug = _simple_slugify(label_name)
+                    if derived_slug:
+                        print(f"[URL Build - Beatsource] Derived slug '{derived_slug}' from result_data (label) '{label_name}'.")
+                        slug = derived_slug
 
         if slug and item_id and t_lower in type_paths.get(p_lower, {}):
             url_path_segment = type_paths[p_lower][t_lower]
@@ -9847,16 +10286,105 @@ def download_selected():
     except tkinter.TclError as e: print(f"TclError in download_selected (widget destroyed?): {e}")
     except Exception as e: print(f"Unexpected error in download_selected: {e}")
 
+def _parse_duration_str_to_seconds(s):
+    """Parse displayed duration string (e.g. '1:23:45', '45:30', '90') to integer seconds, or None."""
+    if s is None: return None
+    if isinstance(s, (int, float)):
+        try: return int(s)
+        except (TypeError, ValueError): return None
+    s = str(s).strip()
+    if not s: return None
+    try:
+        parts = [p.strip() for p in s.split(":")]
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        if len(parts) == 2:
+            return int(parts[0]) * 60 + int(parts[1])
+        if len(parts) == 1 and parts[0].isdigit():
+            return int(parts[0])
+    except (ValueError, TypeError):
+        pass
+    return None
+
+def _parse_additional_track_count(s):
+    """Extract track count from Additional string (e.g. '50 tracks', '1 track', '8 tracks, Cat: X') for numeric sort. Returns (number, original_string) so we can sort by number then by string."""
+    if s is None or not str(s).strip():
+        return (None, str(s) if s is not None else "")
+    s = str(s).strip()
+    # Match "N track" or "N tracks" (optional comma and rest like ", Cat: XYZ")
+    m = re.search(r"(\d+)\s*tracks?", s, re.IGNORECASE)
+    if m:
+        try:
+            return (int(m.group(1)), s)
+        except (ValueError, TypeError):
+            pass
+    return (None, s)
+
+def _parse_additional_quality(s):
+    """Parse quality from Additional string for sort: Qobuz 'XkHz/Ybit', Tidal 'HiFi'/'MQA'/'360 Reality Audio'/'Dolby Atmos'. Returns (numeric_score, True) if parsed else (None, False). Higher score = better quality."""
+    if s is None:
+        return (None, False)
+    if isinstance(s, list):
+        s = (s[0] if s else '') or ''
+    s = str(s).strip()
+    if not s:
+        return (None, False)
+    # Qobuz: "44.1kHz/24bit", "96kHz/24bit", "192kHz/24bit"
+    m = re.search(r"(\d+(?:\.\d+)?)\s*kHz(?:\s*/\s*(\d+)\s*bit)?", s, re.IGNORECASE)
+    if m:
+        try:
+            sr = float(m.group(1))
+            bd = int(m.group(2)) if m.group(2) else 0
+            return (sr * 1000 + bd, True)
+        except (ValueError, TypeError):
+            pass
+    # Tidal: fixed labels (order = quality tier, higher = better)
+    tidal_order = (
+        ("dolby atmos", 100004),
+        ("360 reality audio", 100003),
+        ("mqa", 100002),
+        ("hifi", 100001),
+    )
+    lower = s.lower()
+    for label, score in tidal_order:
+        if label in lower:
+            return (score, True)
+    return (None, False)
+
 def sort_results(column):
     global sort_states, search_results_data, tree, _currently_playing_preview_iid, _cover_hover_cache, _cover_hover_iid, _expanded_album_playlist_iids
     try:
         if 'tree' not in globals() or not tree or not tree.winfo_exists(): return
         is_numeric = column in ["#", "Year"]; is_reverse = sort_states.get(column, False)
+        is_duration = column == "Duration"
 
         def sort_key(item):
             key_map = {"#": "number", "Year": "year", "Title": "title", "Artist": "artist", "Duration": "duration", "Additional": "additional", "Explicit": "explicit", "ID": "id"}
             dict_key = key_map.get(column, column); value = item.get(dict_key, "")
             if value is None: value = ""
+            if is_duration:
+                sec = item.get("duration_seconds")
+                if sec is None:
+                    sec = _parse_duration_str_to_seconds(item.get("duration"))
+                try:
+                    return int(sec) if sec is not None else 0
+                except (TypeError, ValueError):
+                    return 0
+            if column == "Additional":
+                # Normalize: value may be string or list (e.g. from module)
+                val_str = (value[0] if isinstance(value, list) and value else value) or ''
+                if val_str is not value and not isinstance(val_str, str):
+                    val_str = str(val_str) if val_str else ''
+                else:
+                    val_str = str(val_str) if val_str else ''
+                num, _ = _parse_additional_track_count(val_str)
+                if num is not None:
+                    return (0, num)  # track count: sort by count
+                quality_score, ok = _parse_additional_quality(val_str)
+                if ok:
+                    return (1, quality_score)  # quality: sort by score (Qobuz kHz/bit, Tidal tier)
+                # Unknown text (e.g. Apple Music "clean"): put non-empty at one end, empty at the other
+                return (2, 1 if val_str.strip() else 0)
             if is_numeric: return int(value) if str(value).isdigit() else 0
             else: return str(value).lower()
         # Sort only root-level items; keep children attached to their parent
@@ -12560,6 +13088,9 @@ if __name__ == "__main__":
         _back_to_search_button.pack(side="left", anchor="w", padx=(6, 12), pady=0)
         _back_to_search_button.pack_forget()  # Hidden until user opens an album/playlist track list
         results_label = customtkinter.CTkLabel(results_header_frame, text="RESULTS", text_color="#898c8d", font=("Segoe UI", 11)); results_label.pack(side="left", anchor="w", padx=6, pady=0)
+        # Label shown after 8s when expand takes long (walking dots + "(this can take up to ~1 minute)")
+        globals()["_expand_loading_label"] = customtkinter.CTkLabel(results_header_frame, text="", text_color="#898c8d", font=("Segoe UI", 11))
+        _expand_loading_label.pack_forget()
         # Content-type badge (Album / Playlist / Artist) with border; tight padding so border sits close to text
         _content_type_badge = customtkinter.CTkFrame(results_header_frame, fg_color="transparent", border_width=1, border_color="#565B5E", corner_radius=6, width=50, height=22)
         try:
@@ -12652,7 +13183,7 @@ if __name__ == "__main__":
         # Configure tree column (#0) for cover images (tight fit, left-aligned)
         tree.column("#0", width=COVER_SIZE + 6, minwidth=COVER_SIZE + 6, stretch=False, anchor="w")
         tree.heading("#0", text="", anchor="center")
-        col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Preview": {"text": "▶", "width": 56, "anchor": "center"}, "Title": {"text": "Title", "width": 300, "anchor": "w"}, "Artist": {"text": "Artist", "width": 200, "anchor": "w"}, "Duration": {"text": "Duration", "width": 80, "anchor": "center"}, "Year": {"text": "Year", "width": 60, "anchor": "center"}, "Additional": {"text": "Additional", "width": 120, "anchor": "w"}, "Explicit": {"text": "E", "width": 30, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
+        col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Preview": {"text": "▶", "width": 56, "anchor": "center"}, "Title": {"text": "Title", "width": 300, "anchor": "w"}, "Artist": {"text": "Artist", "width": 200, "anchor": "w"}, "Duration": {"text": "Time", "width": 65, "anchor": "center"}, "Year": {"text": "Year", "width": 60, "anchor": "center"}, "Additional": {"text": "Additional", "width": 120, "anchor": "w"}, "Explicit": {"text": "🅴", "width": 30, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
         for col in columns: cfg = col_configs[col]; tree.heading(col, text=cfg["text"], anchor=cfg["anchor"], command=lambda c=col: sort_results(c) if c not in ("Preview",) else None); tree.column(col, width=cfg["width"], anchor=cfg["anchor"], stretch=False)
         tree.column("Title", stretch=True); tree.column("Artist", stretch=True)
         # Custom scroll handler to trigger lazy loading
