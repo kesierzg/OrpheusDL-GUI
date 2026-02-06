@@ -24,6 +24,14 @@ additional_datas = [
     ('update_checker.py', '.'),
 ]
 
+# Include platforms folder (platform icons)
+PLATFORMS_DIR = os.path.join(SPEC_DIR, 'platforms')
+if os.path.isdir(PLATFORMS_DIR):
+    platform_files = [f for f in os.listdir(PLATFORMS_DIR) if os.path.isfile(os.path.join(PLATFORMS_DIR, f))]
+    for f in platform_files:
+        additional_datas.append((os.path.join(PLATFORMS_DIR, f), 'platforms'))
+    print(f"[PyInstaller] Including platforms folder with {len(platform_files)} files")
+
 # Include each module subfolder explicitly as (src, dest) 2-tuples so no module (e.g. youtube) is omitted.
 # Tree() returns 3-tuple TOC entries; Analysis(datas=...) expects 2-tuples, so we build the list manually.
 if os.path.isdir(MODULES_SRC):
