@@ -92,7 +92,7 @@ import tkinter.filedialog
 import tkinter.messagebox
 import shutil
 from CTkToolTip import CTkToolTip
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageTk
 from pathlib import Path
 from tkinter import ttk
 from tqdm import tqdm
@@ -756,10 +756,11 @@ _pulse_state = False  # Track current pulse state (bright/dim)
 _loading_after_id = None  # Track the after() ID for loading dots animation
 _loading_dot_position = 0  # Track current position in walking dots animation (0-2)
 _loading_animation_iid = None  # Track which item is currently showing loading animation
-# Long expand message: show after 8s when opening playlist/artist/album via ≡ icon
-_expand_long_loading_after_id = None  # 8s delayed show of "Fetching all data... (this can take up to ~1 minute)"
+# Long expand message: show after 8s when opening playlist/artist/album via ≡ icon (or when "All" search runs)
+_expand_long_loading_after_id = None  # 8s delayed show of message with "(this can take up to ~1 minute)"
 _expand_loading_dots_after_id = None  # Walking dots animation for that message
 _expand_loading_dots_position = 0
+_expand_loading_message_prefix = "Fetching all data"  # Or "Searching all platforms" for All search
 _expanded_album_playlist_iids = set()  # Tree iids of expanded album/playlist rows (show tracks as children)
 # When viewing an album's tracks in the list view (instead of inline expand), holds saved search state for "Back"
 _album_track_list_context = None  # None or list of {"saved_data": [...], "title": "..."}; stack for Back navigation
@@ -816,6 +817,122 @@ TOOLTIP_MENU_BG = "#222323"
 
 # Content width for download log, search results, and platform help sections (kept in sync)
 HELP_CONTENT_WIDTH = 920
+
+# Platform icons on cover in column #0 (loaded from local "platforms" folder)
+PLATFORM_ICON_NAMES = ("AppleMusic", "Beatport", "Beatsource", "Deezer", "Qobuz", "SoundCloud", "Spotify", "Tidal", "YouTube")
+PLATFORM_ICON_SIZE = 16  # Size of platform icon in the overlay (compact so it doesn’t dominate the row)
+_platform_icon_cache = {}  # platform_name -> PhotoImage (keep references)
+_platform_icon_cache_lock = threading.Lock()
+_platform_icon_photo_refs = []  # Unused (platform icons drawn on cover in column #0)
+
+def _platform_icon_path(platform_name):
+    """Return path to platform icon file in application_path/platforms, or None if not found."""
+    if not platform_name:
+        return None
+    base = os.path.join(application_path, "platforms")
+    for name in (platform_name, platform_name.replace(" ", ""), platform_name.lower().replace(" ", "")):
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            p = os.path.join(base, name + ext)
+            if os.path.isfile(p):
+                return p
+    return None
+
+def _load_platform_icon_sync(platform_name):
+    """Load platform icon from local platforms folder and return a small PhotoImage; cache it."""
+    with _platform_icon_cache_lock:
+        if platform_name in _platform_icon_cache:
+            return _platform_icon_cache[platform_name]
+    path = _platform_icon_path(platform_name)
+    if not path:
+        return None
+    try:
+        img = Image.open(path)
+        img = img.convert("RGBA")
+        size = PLATFORM_ICON_SIZE
+        img = img.resize((size, size), Image.Resampling.LANCZOS)
+        with _platform_icon_cache_lock:
+            if platform_name in _platform_icon_cache:
+                return _platform_icon_cache[platform_name]
+            photo = ImageTk.PhotoImage(img)
+            _platform_icon_cache[platform_name] = photo
+            return photo
+    except Exception as e:
+        if not getattr(sys, 'frozen', False):
+            print(f"[Platform icon] Failed to load {platform_name} from {path}: {e}")
+        return None
+
+def _load_platform_icon_pil(platform_name):
+    """Load platform icon from local platforms folder and return a small PIL Image (RGBA), or None."""
+    path = _platform_icon_path(platform_name)
+    if not path:
+        return None
+    try:
+        img = Image.open(path)
+        img = img.convert("RGBA")
+        return img.resize((PLATFORM_ICON_SIZE, PLATFORM_ICON_SIZE), Image.Resampling.LANCZOS)
+    except Exception:
+        return None
+
+def _composite_platform_icon_on_cover(pil_cover, platform_name, cover_size=COVER_SIZE):
+    """Paste platform icon onto bottom-right of cover; return new PIL Image. pil_cover must be RGBA."""
+    icon_pil = _load_platform_icon_pil(platform_name)
+    if not icon_pil:
+        return pil_cover
+    if pil_cover.mode != "RGBA":
+        pil_cover = pil_cover.convert("RGBA")
+    out = pil_cover.copy()
+    pad = 2
+    x = cover_size - PLATFORM_ICON_SIZE - pad
+    y = cover_size - PLATFORM_ICON_SIZE - pad
+    out.paste(icon_pil, (x, y), icon_pil)
+    return out
+
+def get_searchable_platforms(settings, installed_platform_keys, app_path):
+    """Return list of platform names that can be searched: YouTube always; Apple Music if cookies.txt exists; others if credentials are set."""
+    base = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
+    platforms_with_optional_credentials = ["YouTube"]
+    configured = []
+    creds = (settings or {}).get("credentials", {})
+    try:
+        default_creds = (DEFAULT_SETTINGS or {}).get("credentials", {})
+    except NameError:
+        default_creds = {}
+    for platform_name in base:
+        if platform_name in platforms_with_optional_credentials:
+            configured.append(platform_name)
+            continue
+        if platform_name == "AppleMusic":
+            cookies_path = (creds.get("AppleMusic") or {}).get("cookies_path", "./config/cookies.txt")
+            if not os.path.isabs(cookies_path):
+                cookies_path = os.path.join(app_path, cookies_path)
+            if os.path.isfile(cookies_path):
+                configured.append(platform_name)
+            continue
+        default_platform_fields = (default_creds or {}).get(platform_name, {})
+        if not default_platform_fields:
+            configured.append(platform_name)
+            continue
+        current_platform_creds = creds.get(platform_name, {})
+        if platform_name == "Qobuz":
+            has_email_pass = bool(str(current_platform_creds.get("username", "") or "").strip() and str(current_platform_creds.get("password", "") or "").strip())
+            has_id_token = bool(str(current_platform_creds.get("user_id", "") or "").strip() and str(current_platform_creds.get("auth_token", "") or "").strip())
+            is_fully_filled = has_email_pass or has_id_token
+        elif platform_name == "Deezer":
+            has_email_pass = bool(str(current_platform_creds.get("email", "") or "").strip() and str(current_platform_creds.get("password", "") or "").strip())
+            has_arl = bool(str(current_platform_creds.get("arl", "") or "").strip())
+            is_fully_filled = has_email_pass or has_arl
+        else:
+            is_fully_filled = True
+            for field_key in default_platform_fields.keys():
+                v = current_platform_creds.get(field_key, "")
+                if isinstance(default_platform_fields.get(field_key), bool):
+                    pass
+                elif not str(v).strip():
+                    is_fully_filled = False
+                    break
+        if is_fully_filled:
+            configured.append(platform_name)
+    return sorted(configured)
 
 def round_corners(image, radius):
     """Add rounded corners to an image using a mask."""
@@ -1059,13 +1176,21 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None, apply_to_iids=None)
     If apply_to_iids is a list, the same image is applied to all those item_iids (e.g. album track list).
     """
     def _apply_cover_on_main(img, darkened_img, item_iid, apply_to_iids=None):
-        """Create Tk PhotoImages and update tree on main thread (PIL/Tk must not run in worker)."""
-        global tree, app, _cover_image_cache, _cover_hover_cache, _cover_hover_iid, _cover_fade_in_progress_count
+        """Create Tk PhotoImages and update tree on main thread (PIL/Tk must not run in worker). Composites platform icon onto cover when available."""
+        global tree, app, _cover_image_cache, _cover_hover_cache, _cover_hover_iid, _cover_fade_in_progress_count, search_results_data
         try:
             from PIL import ImageTk
+            iids_to_apply = list(apply_to_iids) if apply_to_iids else ([item_iid] if item_iid else [])
+            primary_iid = item_iid or (iids_to_apply[0] if iids_to_apply else None)
+            platform_name = None
+            if primary_iid and "search_results_data" in globals():
+                item_data = next((d for d in search_results_data if str(d.get("tree_iid")) == str(primary_iid)), None)
+                platform_name = (item_data or {}).get("platform") or None
+            if platform_name:
+                img = _composite_platform_icon_on_cover(img, platform_name, size)
+                darkened_img = _composite_platform_icon_on_cover(darkened_img, platform_name, size)
             photo = ImageTk.PhotoImage(img)
             hover_photo = ImageTk.PhotoImage(darkened_img)
-            iids_to_apply = list(apply_to_iids) if apply_to_iids else ([item_iid] if item_iid else [])
             for iid in iids_to_apply:
                 _cover_image_cache[iid] = photo
                 _cover_hover_cache[iid] = hover_photo
@@ -1074,7 +1199,6 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None, apply_to_iids=None)
                         tree.item(iid, image=photo)
                 except Exception:
                     pass
-            primary_iid = item_iid or (iids_to_apply[0] if iids_to_apply else None)
 
             def _update_tree_with_fade():
                 try:
@@ -1779,15 +1903,16 @@ def _clear_expand_long_loading_message():
             pass
 
 def _expand_loading_dots_tick():
-    """Update walking dots in 'Fetching all data... (this can take up to ~1 minute)' message."""
-    global _expand_loading_dots_after_id, _expand_loading_dots_position
+    """Update walking dots in the long-loading message (e.g. 'Fetching all data...' or 'Searching all platforms...')."""
+    global _expand_loading_dots_after_id, _expand_loading_dots_position, _expand_loading_message_prefix
     if '_expand_loading_label' not in globals() or not _expand_loading_label:
         return
     if not _expand_loading_label.winfo_ismapped():
         return
     try:
+        prefix = _expand_loading_message_prefix if '_expand_loading_message_prefix' in globals() else "Fetching all data"
         dots = LOADING_ANIMATION_FRAMES[_expand_loading_dots_position]
-        _expand_loading_label.configure(text=f"Fetching all data{dots} (this can take up to ~1 minute)")
+        _expand_loading_label.configure(text=f"{prefix}{dots} (this can take up to ~1 minute)")
         _expand_loading_dots_position = (_expand_loading_dots_position + 1) % len(LOADING_ANIMATION_FRAMES)
     except Exception:
         pass
@@ -1795,14 +1920,15 @@ def _expand_loading_dots_tick():
         _expand_loading_dots_after_id = app.after(300, _expand_loading_dots_tick)
 
 def _show_expand_long_loading_message():
-    """Show 'Fetching all data... (this can take up to ~1 minute)' with walking dots (called after 8s)."""
-    global _expand_long_loading_after_id, _expand_loading_dots_after_id, _expand_loading_dots_position
+    """Show long-loading message with walking dots (called after 8s). Uses _expand_loading_message_prefix."""
+    global _expand_long_loading_after_id, _expand_loading_dots_after_id, _expand_loading_dots_position, _expand_loading_message_prefix
     _expand_long_loading_after_id = None  # already fired
     if '_expand_loading_label' not in globals() or not _expand_loading_label:
         return
     try:
+        prefix = _expand_loading_message_prefix if '_expand_loading_message_prefix' in globals() else "Fetching all data"
         _expand_loading_dots_position = 0
-        _expand_loading_label.configure(text="Fetching all data" + LOADING_ANIMATION_FRAMES[0] + " (this can take up to ~1 minute)")
+        _expand_loading_label.configure(text=prefix + LOADING_ANIMATION_FRAMES[0] + " (this can take up to ~1 minute)")
         _expand_loading_label.pack(side="left", anchor="w", padx=(12, 0), pady=0)
         if 'app' in globals() and app and app.winfo_exists():
             _expand_loading_dots_after_id = app.after(300, _expand_loading_dots_tick)
@@ -3283,8 +3409,8 @@ def _insert_album_playlist_children(parent_iid, parent_data, track_entries):
             preview_icon = PREVIEW_PLAY_ICON if (has_preview or can_lazy or is_yt) else PREVIEW_UNAVAILABLE
             values = (
                 preview_icon, entry.get('number', ''),
-                entry.get('title', ''), entry.get('artist', ''), entry.get('duration', ''),
-                entry.get('year', ''), entry.get('additional', ''), entry.get('explicit', ''),
+                entry.get('title', ''), entry.get('artist', ''),
+                entry.get('duration', ''), entry.get('year', ''), entry.get('additional', ''), entry.get('explicit', ''),
                 entry.get('id', '')
             )
             row_tag = "oddrow" if (int(entry.get('number', 0) or 0) % 2 == 1) else "evenrow"
@@ -3938,6 +4064,11 @@ def _show_album_track_list_view(album_item_data, track_entries):
                 _cover_load_requested.add(iid)
             load_cover_from_url(album_cover_url, size=COVER_SIZE, item_iid=flat[0]["tree_iid"], apply_to_iids=all_iids)
         _update_preview_column_heading(False)  # ▶ for track list
+        try:
+            if 'tree' in globals() and tree and tree.winfo_exists():
+                tree.heading("Artist", text="Artist")  # Track list always shows Artist, not Channel
+        except (NameError, tkinter.TclError, Exception):
+            pass
         if '_back_to_search_button' in globals() and _back_to_search_button and _back_to_search_button.winfo_exists():
             if results_label and results_label.winfo_exists():
                 results_label.pack_forget()
@@ -8718,6 +8849,9 @@ def stop_download():
     stop_event.set()
     output_queue.put("|GRAY|Download stop requested... Please wait.|RESET|\n")
 
+# Omit ID from displaycolumns so the theme never draws a zero-width slot (avoids right-edge artifact)
+_TREE_DISPLAYCOLUMNS = ("Preview", "#", "Title", "Artist", "Duration", "Year", "Additional", "Explicit")
+
 def on_platform_change(*args):
     global platform_var
     try:
@@ -8729,7 +8863,9 @@ def on_platform_change(*args):
 def update_search_types(platform):
     global type_var, type_combo
     # Only Beatport and Beatsource support label search; others get track/artist/playlist/album (or platform-specific)
+    # "All" uses default types (track, artist, playlist, album) so all platforms can participate
     platform_types = {
+        "All": sorted(["track", "artist", "playlist", "album"]),
         "YouTube": ["track", "playlist", "channel"],
         "Beatport": ["track", "artist", "playlist", "album", "label"],
         "Beatsource": ["track", "artist", "playlist", "album", "label"],
@@ -8826,12 +8962,12 @@ def display_results(results):
         current_platform_str = "Unknown"
     current_search_type_lower = (current_search_type_str or "track").lower()
 
-    # Show "Label" or "Channel" instead of "Artist" in the column header when searching by Label or YouTube Channel
+    # Show "Label" or "Channel" instead of "Artist" only when searching by Label or YouTube Channel (not for playlist/album/track)
     try:
         if 'tree' in globals() and tree and tree.winfo_exists():
             if current_search_type_lower == "label":
                 artist_col_text = "Label"
-            elif current_platform_str and current_platform_str.lower() == "youtube":
+            elif current_platform_str and current_platform_str.lower() == "youtube" and current_search_type_lower == "channel":
                 artist_col_text = "Channel"
             else:
                 artist_col_text = "Artist"
@@ -8850,17 +8986,19 @@ def display_results(results):
         explicit = result.get('explicit', '')
         additional_str = result.get('quality') or ''
         unique_tree_iid = f"item_{item_number}"
+        # Per-result platform (for cover icon and API calls); fallback to current dropdown selection
+        row_platform = result.get('platform') or current_platform_str
         
         # Get preview URL and cover URL from the result if available
         preview_url = result.get('preview_url', None)
         cover_url = result.get('cover_url', None)
         thumbnail_url = None  # Small/original thumbnail for fallback when full-size fails (e.g. YouTube)
-        if current_platform_str.lower() == 'youtube' and cover_url:
+        if (row_platform or '').lower() == 'youtube' and cover_url:
             thumbnail_url = cover_url
         # For YouTube, upgrade thumbnail URL to full-size if available
-        if current_platform_str.lower() == 'youtube' and cover_url:
+        if (row_platform or '').lower() == 'youtube' and cover_url:
             raw_result = result.get('raw_result')
-            cover_url = _get_fullsize_cover_url(cover_url, current_platform_str, raw_result)
+            cover_url = _get_fullsize_cover_url(cover_url, row_platform or current_platform_str, raw_result)
         
         # Use duration_seconds when provided; otherwise parse duration string so Time column sorts (e.g. YouTube playlist/channel)
         dur_sec = result.get('duration_seconds')
@@ -8873,7 +9011,7 @@ def display_results(results):
             "id": res_id, "number": str(item_number), "title": name,
             "artist": artist_str, "duration": duration_str, "year": year,
             "additional": additional_str, "explicit": explicit,
-            "platform": current_platform_str, "type": current_search_type_str,
+            "platform": row_platform, "type": current_search_type_str,
             "raw_result": result.get('raw_result'),
             "tree_iid": unique_tree_iid,
             "preview_url": preview_url,
@@ -8912,21 +9050,21 @@ def display_results(results):
                 # YouTube: clicking play icon opens video in browser instead of playing preview
                 # Only tracks can be previewed, not albums/playlists/artists
                 is_track_search = current_search_type_str.lower() == "track"
-                can_lazy_load_preview = (current_platform_str.lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal')) and is_track_search
+                can_lazy_load_preview = ((row_platform or '').lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal')) and is_track_search
                 # YouTube tracks always show play icon (opens in browser)
-                is_youtube_track = (current_platform_str.lower() == 'youtube') and is_track_search
+                is_youtube_track = ((row_platform or '').lower() == 'youtube') and is_track_search
                 # Album/playlist/artist/channel: show ≡ so user can open track list or artist albums or channel videos; track type: show ▶ or ·
-                is_album_playlist = current_search_type_lower in ("album", "playlist") or (current_platform_str.lower() == "youtube" and current_search_type_lower == "channel") or current_search_type_lower == "label"
+                is_album_playlist = current_search_type_lower in ("album", "playlist") or ((row_platform or '').lower() == "youtube" and current_search_type_lower == "channel") or current_search_type_lower == "label"
                 is_artist = current_search_type_lower == "artist"
                 preview_icon = (PREVIEW_EXPAND_COLLAPSED if (is_album_playlist or is_artist) else
                     (PREVIEW_PLAY_ICON if (preview_url or can_lazy_load_preview or is_youtube_track) else PREVIEW_UNAVAILABLE))
                 
                 if current_search_type_lower in ("artist", "label"):
                     values = (
-                        preview_icon,  # Preview column (first)
-                        str(item_number),  # # column
+                        preview_icon,
+                        str(item_number),
                         "",
-                        result_entry["artist"],  # Label/Artist column (label name or artist name)
+                        result_entry["artist"],
                         "",
                         "",
                         additional_str,
@@ -8935,8 +9073,8 @@ def display_results(results):
                     )
                 else:
                     values = (
-                        preview_icon,  # Preview column (first)
-                        str(item_number),  # # column
+                        preview_icon,
+                        str(item_number),
                         name,
                         artist_str,
                         duration_str,
@@ -8988,6 +9126,170 @@ def display_results(results):
     except:
         pass
 
+def _run_single_platform_search(orpheus, platform_name, search_type_str, query, search_limit, output_queue=None):
+    """Run search on one platform. Returns (list of formatted result dicts, error_message or None)."""
+    local_DownloadTypeEnum = DownloadTypeEnum
+    search_type_map = {"track": local_DownloadTypeEnum.track, "album": local_DownloadTypeEnum.album, "artist": local_DownloadTypeEnum.artist, "playlist": local_DownloadTypeEnum.playlist, "channel": local_DownloadTypeEnum.artist, "label": local_DownloadTypeEnum.label}
+    query_type = search_type_map.get((search_type_str or "").lower())
+    if not query_type:
+        return [], f"Invalid search type: {search_type_str}"
+    try:
+        if platform_name.lower() == 'tidal' and output_queue:
+            with TidalAutoAuthPatcher(output_queue):
+                module_instance = orpheus.load_module(platform_name.lower())
+        else:
+            module_instance = orpheus.load_module(platform_name.lower())
+        search_results = module_instance.search(query_type, query, limit=search_limit)
+    except Exception as e:
+        return [], f"Error during search ({platform_name}): {str(e)}"
+    formatted_results = []
+    for result in search_results:
+        if search_type_str and search_type_str.lower() in ('album', 'playlist'):
+            addl = getattr(result, 'additional', None) or []
+            if '0 tracks' in addl:
+                continue
+        raw_result = None
+        extra_kwargs = getattr(result, 'extra_kwargs', {})
+        if isinstance(extra_kwargs, dict):
+            raw_result = extra_kwargs.get('raw_result')
+            if raw_result is None and isinstance(extra_kwargs.get('data'), dict):
+                data = extra_kwargs['data']
+                rid = getattr(result, 'result_id', '')
+                rid_str = str(rid)
+                raw_result = data.get(rid) or data.get(rid_str) or (data.get(int(rid)) if (rid_str.isdigit()) else None)
+                if raw_result is None and data:
+                    raw_result = next(iter(data.values()))
+        if raw_result is None:
+            raw_result = result
+        cover_url = getattr(result, 'image_url', None)
+        if platform_name.lower() == 'youtube' and cover_url:
+            cover_url = _get_fullsize_cover_url(cover_url, platform_name, raw_result)
+        _yr = getattr(result, 'year', None)
+        _yr_str = '' if _yr is None or str(_yr) == 'None' else str(_yr)
+        raw_duration_seconds = getattr(result, 'duration', None)
+        if raw_duration_seconds is not None:
+            if isinstance(raw_duration_seconds, str):
+                raw_duration_seconds = _parse_duration_str_to_seconds(raw_duration_seconds)
+            try:
+                raw_duration_seconds = int(raw_duration_seconds) if raw_duration_seconds is not None else None
+            except (TypeError, ValueError):
+                raw_duration_seconds = None
+        _name = str(getattr(result, 'name', '') or '')
+        _artists_str = ', '.join([str(a) for a in getattr(result, 'artists', []) or []]) or ''
+        quality_str = ', '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
+        if not quality_str and search_type_str and search_type_str.lower() in ('album', 'playlist') and raw_result and isinstance(raw_result, dict):
+            t = (raw_result.get('tracks') or {}).get('total')
+            if t is not None and t > 0:
+                quality_str = "1 track" if t == 1 else f"{t} tracks"
+            else:
+                tc = (raw_result.get('attributes') or {}).get('trackCount')
+                if tc is not None and tc > 0:
+                    quality_str = "1 track" if tc == 1 else f"{tc} tracks"
+        formatted_result = {
+            'id': str(getattr(result, 'result_id', '')),
+            'title': _name,
+            'artist': _artists_str,
+            'duration': beauty_format_seconds(raw_duration_seconds) if raw_duration_seconds is not None else '',
+            'duration_seconds': raw_duration_seconds,
+            'year': _yr_str,
+            'quality': quality_str,
+            'explicit': '🅴' if getattr(result, 'explicit', False) else '',
+            'preview_url': getattr(result, 'preview_url', None),
+            'cover_url': cover_url,
+            'raw_result': raw_result,
+            'platform': platform_name,
+        }
+        if search_type_str and search_type_str.lower() == 'label':
+            formatted_result['title'] = ''
+            formatted_result['artist'] = _name
+        if isinstance(extra_kwargs, dict) and extra_kwargs.get('label_slug'):
+            formatted_result['label_slug'] = extra_kwargs['label_slug']
+        formatted_results.append(formatted_result)
+    return formatted_results, None
+
+
+def _relevance_score(query, result):
+    """Score how well a result matches the search query (higher = better match). Used to sort by best match."""
+    if not query or not isinstance(result, dict):
+        return 0.0
+    q = query.lower().strip()
+    title = (result.get('title') or '').lower().strip()
+    artist = (result.get('artist') or '').lower().strip()
+    combined = f"{title} {artist}"
+    score = 0.0
+    if q == title:
+        score += 1000.0
+    elif q in title:
+        score += 500.0
+    elif title and title in q:
+        score += 300.0
+    elif q in combined:
+        score += 200.0
+    q_words = [w for w in q.replace('-', ' ').split() if len(w) > 1]
+    for w in q_words:
+        if w in title:
+            score += 20.0
+        if w in artist:
+            score += 5.0
+    if title.startswith(q[:min(len(q), 20)].strip()) or q.startswith(title[:min(len(title), 20)].strip()):
+        score += 50.0
+    return score
+
+
+def _sort_results_by_relevance(query, results):
+    """Sort results list in place by relevance to query (best match first)."""
+    if not query or not results:
+        return
+    results.sort(key=lambda r: _relevance_score(query, r), reverse=True)
+
+
+def run_search_all_platforms_target(orpheus, platforms_list, search_type_str, query, gui_settings):
+    """Run search on all given platforms and merge results; update UI on main thread."""
+    global search_process_active, app, output_queue
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    dummy_stderr = DummyStderr()
+    queue_writer = QueueWriter(output_queue) if output_queue else None
+    if queue_writer:
+        sys.stdout = queue_writer
+        sys.stderr = dummy_stderr
+    try:
+        search_limit = gui_settings.get("globals", {}).get("general", {}).get("search_limit", 25)
+        try:
+            search_limit = int(search_limit)
+        except (ValueError, TypeError):
+            search_limit = 25
+        combined = []
+        for platform_name in platforms_list:
+            results, err = _run_single_platform_search(orpheus, platform_name, search_type_str, query, search_limit, output_queue)
+            if err and not results:
+                continue  # Skip platform on error, continue with others
+            for r in results:
+                r['platform'] = platform_name
+                combined.append(r)
+        def _update_ui():
+            global search_process_active
+            if '_clear_expand_long_loading_message' in globals() and callable(_clear_expand_long_loading_message):
+                _clear_expand_long_loading_message()
+            if '_expand_loading_message_prefix' in globals():
+                globals()["_expand_loading_message_prefix"] = "Fetching all data"
+            set_ui_state_searching(False)
+            search_process_active = False
+            if not combined:
+                show_centered_messagebox("No Results", "The search completed successfully, but found no results matching your query on any platform.", dialog_type="info")
+                display_results([])
+            else:
+                _sort_results_by_relevance(query, combined)
+                display_results(combined)
+        if app and app.winfo_exists():
+            app.after(0, _update_ui)
+        else:
+            search_process_active = False
+    finally:
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+
+
 def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui_settings):
     """Runs the search using the provided global Orpheus instance."""
     global search_process_active, app, output_queue, DEFAULT_SETTINGS
@@ -9022,99 +9324,12 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
         search_limit = gui_settings.get("globals", {}).get("general", {}).get("search_limit", 25)
         try: search_limit = int(search_limit)
         except (ValueError, TypeError): search_limit = 25
-        search_type_map = { "track": local_DownloadTypeEnum.track, "album": local_DownloadTypeEnum.album, "artist": local_DownloadTypeEnum.artist, "playlist": local_DownloadTypeEnum.playlist, "channel": local_DownloadTypeEnum.artist, "label": local_DownloadTypeEnum.label }
-        query_type = search_type_map.get(search_type_str.lower())
-        if not query_type: raise ValueError(f"Invalid search type: {search_type_str}")
-        # Use auto-auth patcher for Tidal to handle TV login automatically
-        if platform_name.lower() == 'tidal':
-            with TidalAutoAuthPatcher(output_queue):
-                module_instance = orpheus.load_module(platform_name.lower())
-        else:
-            module_instance = orpheus.load_module(platform_name.lower())
-        search_results = module_instance.search(query_type, query, limit=search_limit)
-        formatted_results = []
-        for result in search_results:
-            # Skip album/playlist results with 0 tracks (they are empty and not useful)
-            if search_type_str and search_type_str.lower() in ('album', 'playlist'):
-                addl = getattr(result, 'additional', None) or []
-                if '0 tracks' in addl:
-                    continue
-            # Extract raw_result from extra_kwargs if available (for full-size cover URL generation)
-            raw_result = None
-            extra_kwargs = getattr(result, 'extra_kwargs', {})
-            if isinstance(extra_kwargs, dict):
-                raw_result = extra_kwargs.get('raw_result')
-                # SoundCloud (and similar) pass entity dict in extra_kwargs['data']; use it so expand tracklist/artist albums can pass it to get_album_info/get_playlist_info/get_artist_info
-                if raw_result is None and isinstance(extra_kwargs.get('data'), dict):
-                    data = extra_kwargs['data']
-                    rid = getattr(result, 'result_id', '')
-                    rid_str = str(rid)
-                    raw_result = data.get(rid) or data.get(rid_str) or (data.get(int(rid)) if (rid_str.isdigit()) else None)
-                    if raw_result is None and data:
-                        raw_result = next(iter(data.values()))
-            # Fallback to the SearchResult object itself if no raw_result in extra_kwargs
-            if raw_result is None:
-                raw_result = result
-            
-            cover_url = getattr(result, 'image_url', None)
-            # For YouTube, upgrade thumbnail URL to full-size if available
-            if platform_name.lower() == 'youtube' and cover_url:
-                cover_url = _get_fullsize_cover_url(cover_url, platform_name, raw_result)
-            
-            _yr = getattr(result, 'year', None)
-            _yr_str = '' if _yr is None or str(_yr) == 'None' else str(_yr)
-            raw_duration_seconds = getattr(result, 'duration', None)
-            # Normalize to int seconds so duration_seconds is always set when duration exists (enables Time column sort)
-            if raw_duration_seconds is not None:
-                if isinstance(raw_duration_seconds, str):
-                    raw_duration_seconds = _parse_duration_str_to_seconds(raw_duration_seconds)
-                try:
-                    raw_duration_seconds = int(raw_duration_seconds) if raw_duration_seconds is not None else None
-                except (TypeError, ValueError):
-                    raw_duration_seconds = None
-            _name = str(getattr(result, 'name', '') or '')
-            _artists_str = ', '.join([str(a) for a in getattr(result, 'artists', []) or []]) or ''
-            quality_str = ', '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
-            # Fallback: show playlist/album track count from raw result when module didn't set additional (e.g. API shape)
-            if not quality_str and search_type_str and search_type_str.lower() in ('album', 'playlist') and raw_result and isinstance(raw_result, dict):
-                t = (raw_result.get('tracks') or {}).get('total')  # Spotify
-                if t is not None and t > 0:
-                    quality_str = "1 track" if t == 1 else f"{t} tracks"
-                else:
-                    tc = (raw_result.get('attributes') or {}).get('trackCount')  # Apple Music
-                    if tc is not None and tc > 0:
-                        quality_str = "1 track" if tc == 1 else f"{tc} tracks"
-            formatted_result = {
-                'id': str(getattr(result, 'result_id', '')),
-                'title': _name,
-                'artist': _artists_str,
-                'duration': beauty_format_seconds(raw_duration_seconds) if raw_duration_seconds is not None else '',
-                'duration_seconds': raw_duration_seconds,
-                'year': _yr_str,
-                'quality': quality_str,
-                'explicit': '🅴' if getattr(result, 'explicit', False) else '',
-                'preview_url': getattr(result, 'preview_url', None),
-                'cover_url': cover_url,
-                'raw_result': raw_result
-            }
-            # Label: show name only in Label column, not in Title (same as Artist view)
-            if search_type_str and search_type_str.lower() == 'label':
-                formatted_result['title'] = ''
-                formatted_result['artist'] = _name
-            if isinstance(extra_kwargs, dict) and extra_kwargs.get('label_slug'):
-                formatted_result['label_slug'] = extra_kwargs['label_slug']
-            formatted_results.append(formatted_result)
-        results = formatted_results
-    except TypeError as e:
-        if "'NoneType' object is not iterable" in str(e):
-            error_message = f"Search Error ({platform_name}): Module returned no iterable results. This might be an API issue with the service or a module bug."
-            results = [] 
-        else:
-            error_message = f"Type Error during search: {str(e)}"
-            results = []
+        results, error_message = _run_single_platform_search(orpheus, platform_name, search_type_str, query, search_limit, output_queue)
+        if results:
+            error_message = None
     except Exception as e:
-         error_message = f"Error during search: {str(e)}"
-         results = []
+        error_message = f"Error during search: {str(e)}"
+        results = []
     finally:
         # Restore original stdout/stderr
         sys.stdout = original_stdout
@@ -9133,6 +9348,7 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
                 set_ui_state_searching(False)
                 show_centered_messagebox("No Results", "The search completed successfully, but found no results matching your query.", dialog_type="info"); display_results([])
             else: 
+                _sort_results_by_relevance(query, results)
                 display_results(results)
                 set_ui_state_searching(False)  # Stop progress bar AFTER results are displayed
             search_process_active = False
@@ -9148,7 +9364,7 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
 
 def start_search():
     """Validates input and starts the search process in a separate thread using the global Orpheus instance."""
-    global search_process_active, current_settings, orpheus_instance, search_entry, platform_var, type_var
+    global search_process_active, current_settings, orpheus_instance, search_entry, platform_var, type_var, installed_platform_keys
 
     if orpheus_instance is None:
         show_centered_messagebox("Error", "Orpheus library not initialized. Cannot start search.", dialog_type="error")
@@ -9165,7 +9381,7 @@ def start_search():
         if not platform_name: show_centered_messagebox("Info", "Please select a platform.", dialog_type="warning"); return
         if not search_type_str: show_centered_messagebox("Info", "Please select a search type.", dialog_type="warning"); return
         if search_process_active: show_centered_messagebox("Busy", "A search is already in progress!", dialog_type="warning"); return
-        # Spotify: require username, client ID, and client secret before search/download
+        # Spotify: require username, client ID, and client secret before search/download (single-platform only)
         if platform_name == "Spotify":
             spotify_creds = (current_settings.get("credentials") or {}).get("Spotify") or {}
             username = (spotify_creds.get("username") or "").strip()
@@ -9178,7 +9394,19 @@ def start_search():
         clear_search_ui()
         set_ui_state_searching(True)
         search_process_active = True
-        search_thread = threading.Thread(target=run_search_thread_target, args=(orpheus_instance, platform_name, search_type_str, query, current_settings), daemon=True)        
+        if platform_name == "All":
+            platforms_list = get_searchable_platforms(current_settings, installed_platform_keys or [], application_path)
+            if not platforms_list:
+                set_ui_state_searching(False)
+                search_process_active = False
+                show_centered_messagebox("No Platforms", "No platforms are configured for search. Add credentials (or cookies for Apple Music) for at least one platform in Settings.", dialog_type="warning")
+                return
+            globals()["_expand_loading_message_prefix"] = "Searching all platforms"
+            if 'app' in globals() and app and app.winfo_exists():
+                globals()["_expand_long_loading_after_id"] = app.after(8000, _show_expand_long_loading_message)
+            search_thread = threading.Thread(target=run_search_all_platforms_target, args=(orpheus_instance, platforms_list, search_type_str, query, current_settings), daemon=True)
+        else:
+            search_thread = threading.Thread(target=run_search_thread_target, args=(orpheus_instance, platform_name, search_type_str, query, current_settings), daemon=True)
         search_thread.start()
     except NameError as e:
         print(f"Error starting search (widgets not ready?): {e}")
@@ -12284,7 +12512,7 @@ def update_search_platform_dropdown():
             if is_fully_filled:
                 configured_platforms.append(platform_name_iter)
         
-        platforms_to_show = sorted(configured_platforms)
+        platforms_to_show = ["All"] + sorted(configured_platforms)
         
         current_selection = platform_var.get()
         platform_combo.configure(values=platforms_to_show)
@@ -13186,12 +13414,18 @@ if __name__ == "__main__":
         col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Preview": {"text": "▶", "width": 56, "anchor": "center"}, "Title": {"text": "Title", "width": 300, "anchor": "w"}, "Artist": {"text": "Artist", "width": 200, "anchor": "w"}, "Duration": {"text": "Time", "width": 65, "anchor": "center"}, "Year": {"text": "Year", "width": 60, "anchor": "center"}, "Additional": {"text": "Additional", "width": 120, "anchor": "w"}, "Explicit": {"text": "🅴", "width": 30, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
         for col in columns: cfg = col_configs[col]; tree.heading(col, text=cfg["text"], anchor=cfg["anchor"], command=lambda c=col: sort_results(c) if c not in ("Preview",) else None); tree.column(col, width=cfg["width"], anchor=cfg["anchor"], stretch=False)
         tree.column("Title", stretch=True); tree.column("Artist", stretch=True)
-        # Custom scroll handler to trigger lazy loading
+        # Omit ID from display so theme never draws zero-width slot (avoids right-edge streak)
+        tree["displaycolumns"] = _TREE_DISPLAYCOLUMNS
+        # Custom scroll handler to trigger lazy loading and refresh platform icon overlay
         def tree_scroll_handler(*args):
             tree.yview(*args)
             on_tree_scroll()  # Trigger lazy loading
         scrollbar = customtkinter.CTkScrollbar(treeview_container, command=tree_scroll_handler); tree.configure(yscrollcommand=scrollbar.set)
-        tree.bind("<<TreeviewSelect>>", on_tree_select); tree.bind("<Configure>", lambda event: _check_and_toggle_scrollbar(tree, scrollbar) if 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists() else None)
+        def _on_tree_configure_refresh(event=None):
+            if 'tree' not in globals() or not tree or not tree.winfo_exists():
+                return
+            _check_and_toggle_scrollbar(tree, scrollbar) if 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists() else None
+        tree.bind("<<TreeviewSelect>>", on_tree_select); tree.bind("<Configure>", _on_tree_configure_refresh)
         # Bind mousewheel for lazy loading on scroll
         tree.bind("<MouseWheel>", lambda e: on_tree_scroll())  # Windows
         tree.bind("<Button-4>", lambda e: on_tree_scroll())    # Linux scroll up
@@ -14195,6 +14429,8 @@ Unnecessary Lossless-to-Lossless""",
                 if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                     print("  -> Calling _update_settings_tab_widgets()")
                 _update_settings_tab_widgets()
+                if 'update_search_platform_dropdown' in globals() and callable(update_search_platform_dropdown):
+                    update_search_platform_dropdown()
                 if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                     print("[DEBUG] _initial_ui_update finished.")
             except Exception as e_init_update:
