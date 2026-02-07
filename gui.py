@@ -6194,11 +6194,13 @@ def _add_clear_session_icon(parent_frame, platform_name):
     clear_icon.place(relx=1.0, rely=1.0, anchor="se", x=-15, y=-15)
     clear_icon.bind("<Button-1>", lambda e, p=platform_name: _clear_platform_session(p))
     default_icon_color = clear_icon.cget("text_color")
-    hover_red = "#E53935"
+    is_macos = platform.system() == "Darwin"
+    dimmed_color = "#888888"  # simulates transparency when not hovered; full opacity on hover
 
     def _set_hover(hovering):
         try:
-            clear_icon.configure(text_color=hover_red if hovering else default_icon_color)
+            color = default_icon_color if hovering else dimmed_color
+            clear_icon.configure(text_color=color)
             clear_icon.update_idletasks()
         except tkinter.TclError:
             pass
@@ -6209,12 +6211,13 @@ def _add_clear_session_icon(parent_frame, platform_name):
     def _on_leave(_e):
         _set_hover(False)
 
-    # Enter/Leave work on Windows/Linux; on macOS they often don't fire for CTkLabel in tabs
+    clear_icon.configure(text_color=dimmed_color)  # start dimmed
     clear_icon.bind("<Enter>", _on_enter)
     clear_icon.bind("<Leave>", _on_leave)
 
-    if platform.system() == "Darwin":
-        _trash_hover_state = [False]  # mutable so closure can update
+    if is_macos:
+        # Enter/Leave often don't fire for CTkLabel in tabs on macOS; use Motion as fallback
+        _trash_hover_state = [False]
 
         def _motion_hover(x_root, y_root):
             try:
@@ -6223,7 +6226,7 @@ def _add_clear_session_icon(parent_frame, platform_name):
                 ix, iy = clear_icon.winfo_rootx(), clear_icon.winfo_rooty()
                 iw, ih = clear_icon.winfo_width(), clear_icon.winfo_height()
                 if iw <= 0 or ih <= 0:
-                    iw, ih = 28, 28  # fallback hit area before layout
+                    iw, ih = 28, 28
                 inside = ix <= x_root < ix + iw and iy <= y_root < iy + ih
                 if inside != _trash_hover_state[0]:
                     _trash_hover_state[0] = inside
@@ -6235,10 +6238,9 @@ def _add_clear_session_icon(parent_frame, platform_name):
             _motion_hover(e.x_root, e.y_root)
 
         parent_frame.bind("<Motion>", _motion_ev)
-        # Also bind on the icon so we get motion when moving over it (Enter/Leave may still not fire)
         clear_icon.bind("<Motion>", _motion_ev)
 
-    CTkToolTip(clear_icon, message="Clear stored session\n(use after switching accounts or expired subscription)", bg_color=TOOLTIP_MENU_BG, text_color="#dddddd", x_offset=-150, y_offset=-50)
+    CTkToolTip(clear_icon, message="Clear stored session\n(use after switching accounts or expired subscription)", bg_color=TOOLTIP_MENU_BG, text_color="#dddddd", x_offset=-162, y_offset=-55)
 
 def start_login_thread(platform_name):
     """Starts the login process in a separate thread."""
@@ -12860,7 +12862,26 @@ def _on_gui_exit():
             print(f"[Instance Check] Error releasing mutex: {e}")
 
     if 'app' in globals() and app and app.winfo_exists():
-        app.destroy()
+        # On macOS, CustomTkinter CTkLabels fire _update_dimensions_event during destroy;
+        # their canvases may already be gone, causing "invalid command name" TclError.
+        # Suppress those callback exceptions during shutdown.
+        if platform.system() == "Darwin":
+            def _silence_shutdown_callbacks(exc_type, exc_val, exc_tb):
+                if exc_type is tkinter.TclError and "invalid command name" in str(exc_val):
+                    return  # expected during teardown
+                # re-raise or use default handler for unexpected errors
+                import traceback
+                traceback.print_exception(exc_type, exc_val, exc_tb)
+            app.report_callback_exception = _silence_shutdown_callbacks
+        try:
+            app.withdraw()  # hide first to reduce Configure events
+            app.update_idletasks()
+        except tkinter.TclError:
+            pass
+        try:
+            app.destroy()
+        except tkinter.TclError:
+            pass
     print("[Exit] Application shutdown complete.")
     os._exit(0)
 
