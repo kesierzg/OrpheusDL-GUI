@@ -40,7 +40,7 @@
 | Platform     | Tested | Platform     | Tested | Platform     | Tested | Platform     | Tested |
 |--------------|--------|--------------|--------|--------------|--------|--------------|--------|
 | Apple Music  | ✅     | Beatport     | ✅     | Beatsource   | ✅     | Bugs         | \*     |
-| Deezer       | ✅     | Genius       | \*     | Idagio       | \*     | JioSaavn     | ✅     |
+| Deezer       | ✅     | Genius       | \*     | Idagio       | \*     | ~~JioSaavn~~ | ❌     |
 | KKBOX        | \*     | Musixmatch   | \*     | Napster      | \*     | Nugs.net     | \*     |
 | Qobuz        | ✅     | SoundCloud   | ✅     | Spotify      | ✅     | Tidal        | ✅     |
 | YouTube      | ✅     |              |        |              |        |              |        |

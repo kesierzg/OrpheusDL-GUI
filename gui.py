@@ -97,6 +97,7 @@ from pathlib import Path
 from tkinter import ttk
 from tqdm import tqdm
 from urllib.parse import urlparse
+import pickle
 import traceback
 import logging
 import webbrowser
@@ -181,7 +182,6 @@ _DATA_DIR = None
 
 SERVICE_COLORS = {
     "tidal": "#33ffe7",
-    "jiosaavn": "#1eccb0",
     "apple music": "#FA586A",
     "beatport": "#00ff89",
     "beatsource": "#16a8f4",
@@ -199,7 +199,6 @@ SERVICE_COLORS = {
 
 SERVICE_DISPLAY_NAMES = {
     "tidal": "TIDAL",
-    "jiosaavn": "JioSaavn",
     "apple music": "Apple Music",
     "beatport": "Beatport",
     "beatsource": "Beatsource",
@@ -887,8 +886,31 @@ def _composite_platform_icon_on_cover(pil_cover, platform_name, cover_size=COVER
     out.paste(icon_pil, (x, y), icon_pil)
     return out
 
+def _tidal_has_saved_sessions(app_path):
+    """Return True if Tidal has saved OAuth sessions (user has logged in before). Tidal requires interactive login;
+    without saved sessions, loading the module opens the browser. Exclude Tidal from 'All' until user has logged in."""
+    try:
+        storage_path = os.path.join(app_path, 'config', 'loginstorage.bin')
+        if not os.path.isfile(storage_path):
+            return False
+        with open(storage_path, 'rb') as f:
+            data = pickle.load(f)
+        modules = data.get('modules', {})
+        tidal_mod = modules.get('tidal', {})
+        if not tidal_mod:
+            return False
+        sessions = tidal_mod.get('sessions', {})
+        selected = tidal_mod.get('selected', 'default')
+        session_data = sessions.get(selected, {})
+        custom_data = session_data.get('custom_data', {})
+        tidal_sessions = custom_data.get('sessions', {})
+        return bool(tidal_sessions)
+    except Exception:
+        return False
+
 def get_searchable_platforms(settings, installed_platform_keys, app_path):
-    """Return list of platform names that can be searched: YouTube always; Apple Music if cookies.txt exists; others if credentials are set."""
+    """Return list of platform names that can be searched: YouTube always; Apple Music if cookies.txt exists; others if credentials are set.
+    Tidal is excluded until the user has successfully logged in (saved sessions exist), since loading it without sessions opens the browser."""
     base = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
     platforms_with_optional_credentials = ["YouTube"]
     configured = []
@@ -930,6 +952,10 @@ def get_searchable_platforms(settings, installed_platform_keys, app_path):
                 elif not str(v).strip():
                     is_fully_filled = False
                     break
+        # Tidal: only include if user has saved sessions (has logged in before).
+        # Without sessions, loading Tidal opens the browser for OAuth - skip for users without a Tidal account.
+        if platform_name == "Tidal" and is_fully_filled and not _tidal_has_saved_sessions(app_path):
+            is_fully_filled = False
         if is_fully_filled:
             configured.append(platform_name)
     return sorted(configured)
@@ -6059,6 +6085,119 @@ def run_login_in_thread(orpheus, platform_name, gui_settings):
             app.after(0, lambda: _update_settings_tab_widgets())
             
 
+def _clear_platform_session(platform_name):
+    """Clear stored session for platforms that use loginstorage.bin or config/spotify. Use when switching accounts or after expired subscription.
+    Next search/download will trigger fresh login with credentials from Settings."""
+    from utils.utils import set_temporary_setting
+    try:
+        if platform_name == "Spotify":
+            spotify_dir = os.path.join(application_path, 'config', 'spotify')
+            creds_files = ['credentials.json', 'credentials_webapi.json']
+            removed = []
+            for f in creds_files:
+                p = os.path.join(spotify_dir, f)
+                if os.path.isfile(p):
+                    try:
+                        os.remove(p)
+                        removed.append(f)
+                    except OSError as e:
+                        show_centered_messagebox("Error", f"Could not remove {f}: {e}", dialog_type="error")
+                        return
+            if removed:
+                show_centered_messagebox("Session Cleared", f"Spotify stored session has been cleared ({', '.join(removed)}).\n\nNext search or download will log in with your credentials from above.", dialog_type="info")
+            else:
+                show_centered_messagebox("No Session", "No stored Spotify credentials found. You can search or download to log in.", dialog_type="info")
+            return
+        if platform_name == "YouTube":
+            cookies_path = (current_settings.get("credentials") or {}).get("YouTube", {}).get("cookies_path", "") or "./config/youtube-cookies.txt"
+            if not os.path.isabs(cookies_path):
+                cookies_path = os.path.normpath(os.path.join(application_path, cookies_path.replace("./", "").replace(".\\", "")))
+            else:
+                cookies_path = os.path.normpath(cookies_path)
+            if not os.path.isfile(cookies_path):
+                show_centered_messagebox("No Session", "No youtube-cookies.txt found. You can export cookies to log in.", dialog_type="info")
+                return
+            if not show_centered_confirm("Confirm", "Are you sure you want to delete youtube-cookies.txt?"):
+                return
+            try:
+                os.remove(cookies_path)
+                show_centered_messagebox("Session Cleared", "youtube-cookies.txt has been deleted.\n\nNext search or download will require exporting cookies again.", dialog_type="info")
+            except OSError as e:
+                show_centered_messagebox("Error", f"Could not delete file: {e}", dialog_type="error")
+            return
+        if platform_name == "AppleMusic":
+            cookies_path = (current_settings.get("credentials") or {}).get("AppleMusic", {}).get("cookies_path", "") or "./config/cookies.txt"
+            if not os.path.isabs(cookies_path):
+                cookies_path = os.path.normpath(os.path.join(application_path, cookies_path.replace("./", "").replace(".\\", "")))
+            else:
+                cookies_path = os.path.normpath(cookies_path)
+            if not os.path.isfile(cookies_path):
+                show_centered_messagebox("No Session", "No cookies.txt found. You can export cookies to log in.", dialog_type="info")
+                return
+            if not show_centered_confirm("Confirm", "Are you sure you want to delete cookies.txt?"):
+                return
+            try:
+                os.remove(cookies_path)
+                show_centered_messagebox("Session Cleared", "cookies.txt has been deleted.\n\nNext search or download will require exporting cookies again.", dialog_type="info")
+            except OSError as e:
+                show_centered_messagebox("Error", f"Could not delete file: {e}", dialog_type="error")
+            return
+        if platform_name == "SoundCloud":
+            if not show_centered_confirm("Confirm", "Are you sure you want to clear the SoundCloud token?"):
+                return
+            try:
+                if "credentials" not in current_settings:
+                    current_settings["credentials"] = {}
+                if "SoundCloud" not in current_settings["credentials"]:
+                    current_settings["credentials"]["SoundCloud"] = {}
+                current_settings["credentials"]["SoundCloud"]["web_access_token"] = ""
+                if "settings_vars" in globals() and settings_vars.get("credentials", {}).get("SoundCloud", {}).get("web_access_token"):
+                    settings_vars["credentials"]["SoundCloud"]["web_access_token"].set("")
+                save_settings(show_confirmation=False)
+                show_centered_messagebox("Session Cleared", "SoundCloud token has been cleared.\n\nPaste a new token above to use a different account or refresh your session.", dialog_type="info")
+            except Exception as e:
+                show_centered_messagebox("Error", f"Could not clear token: {e}", dialog_type="error")
+            return
+        storage_path = os.path.join(application_path, 'config', 'loginstorage.bin')
+        module_key = platform_name.lower()
+        if not os.path.isfile(storage_path):
+            show_centered_messagebox("No Session", f"No stored session found for {platform_name}. You can search or download to log in.", dialog_type="info")
+            return
+        if platform_name in ("Beatport", "Beatsource"):
+            set_temporary_setting(storage_path, module_key, 'custom_data', 'access_token', None)
+            set_temporary_setting(storage_path, module_key, 'custom_data', 'refresh_token', None)
+            set_temporary_setting(storage_path, module_key, 'custom_data', 'expires', None)
+        elif platform_name == "Tidal":
+            set_temporary_setting(storage_path, module_key, 'custom_data', 'sessions', {})
+        elif platform_name == "Qobuz":
+            set_temporary_setting(storage_path, module_key, 'custom_data', 'token', None)
+        elif platform_name == "Deezer":
+            set_temporary_setting(storage_path, module_key, 'custom_data', 'arl', None)
+        if platform_name == "Tidal":
+            show_centered_messagebox("Session Cleared", "Tidal stored session has been cleared.\n\nNext search or download will open a browser window where you can log in with your Tidal account (email & password) to link your device.", dialog_type="info")
+        else:
+            show_centered_messagebox("Session Cleared", f"{platform_name} stored session has been cleared.\n\nNext search or download will log in with your credentials from above.", dialog_type="info")
+    except Exception as e:
+        if "Module does not use" in str(e) or "does not exist" in str(e).lower():
+            show_centered_messagebox("No Session", f"No stored session found for {platform_name}. You can search or download to log in.", dialog_type="info")
+        else:
+            show_centered_messagebox("Error", f"Could not clear session: {e}", dialog_type="error")
+
+def _add_clear_session_icon(parent_frame, platform_name):
+    """Add a trashcan icon in bottom-right corner of parent_frame. Click clears stored session for platform."""
+    clear_icon = customtkinter.CTkLabel(
+        parent_frame,
+        text="\U0001F5D1",  # trash can emoji
+        font=("Segoe UI", 20),
+        cursor=HAND_CURSOR,
+    )
+    clear_icon.place(relx=1.0, rely=1.0, anchor="se", x=-15, y=-15)
+    clear_icon.bind("<Button-1>", lambda e, p=platform_name: _clear_platform_session(p))
+    default_icon_color = clear_icon.cget("text_color")
+    clear_icon.bind("<Enter>", lambda e: clear_icon.configure(text_color="#E53935"))
+    clear_icon.bind("<Leave>", lambda e: clear_icon.configure(text_color=default_icon_color))
+    CTkToolTip(clear_icon, message="Clear stored session\n(use after switching accounts or expired subscription)", bg_color=TOOLTIP_MENU_BG, text_color="#dddddd", x_offset=-150, y_offset=-50)
+
 def start_login_thread(platform_name):
     """Starts the login process in a separate thread."""
     global orpheus_instance, current_settings, app
@@ -6210,6 +6349,72 @@ def show_centered_messagebox(title, message, dialog_type="info", parent=None):
     message_label = customtkinter.CTkLabel(dialog, text=message, wraplength=400, justify="left"); message_label.pack(pady=(20, 10), padx=20, expand=True, fill="both")
     ok_button = customtkinter.CTkButton(dialog, text="OK", command=dialog.destroy, width=100); ok_button.pack(pady=(0, 20)); ok_button.focus_set(); dialog.bind("<Return>", lambda event: ok_button.invoke())
     dialog.grab_set(); dialog.wait_window()
+
+def show_centered_confirm(title, message, parent=None):
+    """Creates and displays a centered CTkToplevel confirmation dialog with Yes/No. Returns True if Yes, False if No."""
+    global app
+    if parent is None:
+        parent = app if 'app' in globals() and app else None
+        if parent is None:
+            print("ERROR: Cannot show confirm dialog, main app window not available.")
+            return False
+    result = [False]  # Use list to allow closure to mutate
+    def on_yes():
+        result[0] = True
+        dialog.destroy()
+    def on_no():
+        result[0] = False
+        dialog.destroy()
+    dialog = customtkinter.CTkToplevel(parent)
+    dialog.title(title)
+    dialog.geometry("450x150")
+    dialog.resizable(False, False)
+    dialog.attributes("-topmost", True)
+    dialog.transient(parent)
+    dialog.update_idletasks()
+    try:
+        if platform.system() != "Darwin":
+            ico_path = resource_path("icon.ico")
+            if ico_path and os.path.exists(ico_path):
+                icon_path_str = str(os.path.abspath(ico_path))
+                try:
+                    dialog.tk.call('wm', 'iconbitmap', dialog._w, icon_path_str)
+                except Exception:
+                    try:
+                        dialog.iconbitmap(icon_path_str)
+                    except Exception:
+                        png_path = resource_path("icon.png")
+                        if png_path and os.path.exists(png_path):
+                            from tkinter import PhotoImage
+                            icon_image = PhotoImage(file=str(os.path.abspath(png_path)))
+                            dialog.iconphoto(True, icon_image)
+                            if not hasattr(dialog, '_icon_ref'):
+                                dialog._icon_ref = icon_image
+    except Exception:
+        pass
+    parent_width = parent.winfo_width()
+    parent_height = parent.winfo_height()
+    parent_x = parent.winfo_x()
+    parent_y = parent.winfo_y()
+    dialog_width = dialog.winfo_width()
+    dialog_height = dialog.winfo_height()
+    center_x = parent_x + (parent_width // 2) - (dialog_width // 2)
+    center_y = parent_y + (parent_height // 2) - (dialog_height // 2)
+    dialog.geometry(f"+{center_x}+{center_y}")
+    message_label = customtkinter.CTkLabel(dialog, text=message, wraplength=400, justify="left")
+    message_label.pack(pady=(20, 10), padx=20, expand=True, fill="both")
+    btn_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
+    btn_frame.pack(pady=(0, 20))
+    yes_btn = customtkinter.CTkButton(btn_frame, text="Yes", command=on_yes, width=100, fg_color="#343638", hover_color="#1F6AA5")
+    yes_btn.pack(side="left", padx=(0, 10))
+    no_btn = customtkinter.CTkButton(btn_frame, text="No", command=on_no, width=100, fg_color="#343638", hover_color="#1F6AA5")
+    no_btn.pack(side="left")
+    yes_btn.focus_set()
+    dialog.bind("<Return>", lambda e: on_yes())
+    dialog.bind("<Escape>", lambda e: on_no())
+    dialog.grab_set()
+    dialog.wait_window()
+    return result[0]
 
 def show_log_viewer(title="Application Logs", parent=None):
     """Display captured logs in a scrollable dialog for debugging."""
@@ -6587,10 +6792,6 @@ def _clean_ansi_and_process_markers(text):
     import re
     platform_patterns = {
         r'Platform: \033\[96m(TIDAL)\033\[0m': 'tidal',
-        r'Platform: \x1b\[96m(JioSaavn)\033\[0m': 'jiosaavn',
-        r'Platform: \033\[96m(JioSaavn)\033\[0m': 'jiosaavn',
-        r'Platform: \x1b\[96m(Jiosaavn)\033\[0m': 'jiosaavn',
-        r'Platform: \033\[96m(Jiosaavn)\033\[0m': 'jiosaavn',
         r'Platform: \033\[91m(Apple Music)\033\[0m': 'apple music',
         r'Platform: \033\[92m(Beatport)\033\[0m': 'beatport',
         r'Platform: \033\[94m(Beatsource)\033\[0m': 'beatsource',
@@ -8301,9 +8502,6 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
             else:
                 media_id = None
                 media_type = None
-                if module_name == 'jiosaavn' and len(components) > 2 and components[1] == 'song':
-                    media_type = DownloadTypeEnum.track
-                    media_id = components[-1]
                 if media_id is None or media_type is None:
                     if not components or len(components) <= 2:
                          if len(components) == 2 and components[1]: raise ValueError(f"Could not determine media type from short URL path: {parsed_url.path}")
@@ -8432,7 +8630,7 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                                 extra_kwargs=downloader.extra_kwargs
                             )
                         else:
-                            extra_kwargs = {} if downloader.service_name in ['deezer', 'jiosaavn'] else None
+                            extra_kwargs = {} if downloader.service_name == 'deezer' else None
                             run_interruptible_download(
                                 downloader.download_album,
                                 stop_event,
@@ -11163,35 +11361,23 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
                 # For Apple Music and YouTube cookies_path, add Open button like Browse in Global settings
                 def open_cookies_folder():
-                    """Open the cookies folder in file explorer."""
-                    cookies_path = var.get()
-                    if cookies_path:
-                        # Get the directory from the path
-                        cookies_dir = os.path.dirname(os.path.abspath(cookies_path))
-                        if not os.path.exists(cookies_dir):
-                            # If directory doesn't exist, try to create it
-                            try:
-                                os.makedirs(cookies_dir, exist_ok=True)
-                            except Exception as e:
-                                show_centered_messagebox("Error", f"Could not create cookies directory:\n{e}", dialog_type="error")
-                                return
+                    """Open the config folder in file explorer."""
+                    config_dir = os.path.join(application_path, 'config')
+                    if not os.path.exists(config_dir):
                         try:
-                            if platform.system() == "Windows":
-                                os.startfile(cookies_dir)
-                            elif platform.system() == "Darwin":  # macOS
-                                subprocess.run(["open", cookies_dir])
-                            else:  # Linux
-                                subprocess.run(["xdg-open", cookies_dir])
+                            os.makedirs(config_dir, exist_ok=True)
                         except Exception as e:
-                            show_centered_messagebox("Error", f"Could not open cookies folder:\n{e}", dialog_type="error")
-                    else:
-                         # If no path set, open config folder
-                        config_dir = os.path.abspath("config")
-                        if os.path.exists(config_dir):
-                            if os.name == 'nt':
-                                os.startfile(config_dir)
-                            elif os.name == 'posix':
-                                subprocess.call(('open', config_dir) if sys.platform == 'darwin' else ('xdg-open', config_dir))
+                            show_centered_messagebox("Error", f"Could not create config directory:\n{e}", dialog_type="error")
+                            return
+                    try:
+                        if platform.system() == "Windows":
+                            os.startfile(config_dir)
+                        elif platform.system() == "Darwin":  # macOS
+                            subprocess.run(["open", config_dir])
+                        else:  # Linux
+                            subprocess.run(["xdg-open", config_dir])
+                    except Exception as e:
+                        show_centered_messagebox("Error", f"Could not open config folder:\n{e}", dialog_type="error")
 
                 open_button = customtkinter.CTkButton(
                     grid_parent,
@@ -11228,27 +11414,23 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     # Use padx=(10, 5) to align left with other fields (10) and spacing for button
                     widget.grid(row=i, column=1, sticky="ew", padx=(10, 5), pady=pady_config)
                     def open_cookies_folder():
-                        """Open the cookies folder in file explorer."""
-                        cookies_path = var.get()
-                        if cookies_path:
-                            # Get the directory from the path
-                            cookies_dir = os.path.dirname(os.path.abspath(cookies_path))
-                            if not os.path.exists(cookies_dir):
-                                # If directory doesn't exist, try to create it
-                                try:
-                                    os.makedirs(cookies_dir, exist_ok=True)
-                                except Exception as e:
-                                    show_centered_messagebox("Error", f"Could not create cookies directory:\n{e}", dialog_type="error")
-                                    return
+                        """Open the config folder in file explorer."""
+                        config_dir = os.path.join(application_path, 'config')
+                        if not os.path.exists(config_dir):
                             try:
-                                if platform.system() == "Windows":
-                                    os.startfile(cookies_dir)
-                                elif platform.system() == "Darwin":  # macOS
-                                    subprocess.run(["open", cookies_dir])
-                                else:  # Linux
-                                    subprocess.run(["xdg-open", cookies_dir])
+                                os.makedirs(config_dir, exist_ok=True)
                             except Exception as e:
-                                show_centered_messagebox("Error", f"Could not open cookies folder:\n{e}", dialog_type="error")
+                                show_centered_messagebox("Error", f"Could not create config directory:\n{e}", dialog_type="error")
+                                return
+                        try:
+                            if platform.system() == "Windows":
+                                os.startfile(config_dir)
+                            elif platform.system() == "Darwin":  # macOS
+                                subprocess.run(["open", config_dir])
+                            else:  # Linux
+                                subprocess.run(["xdg-open", config_dir])
+                        except Exception as e:
+                            show_centered_messagebox("Error", f"Could not open config folder:\n{e}", dialog_type="error")
                     
                     open_button = customtkinter.CTkButton(
                         grid_parent,
@@ -11349,15 +11531,15 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step1_text_frame, text="Open ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
             
-            dashboard_link = customtkinter.CTkLabel(step1_text_frame, text="Spotify Developer Dashboard", font=("Consolas", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            dashboard_link = customtkinter.CTkLabel(step1_text_frame, text="Spotify Dashboard", font=("Consolas", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             dashboard_link.pack(side="left")
             dashboard_link.bind("<Button-1>", lambda e: webbrowser.open("https://developer.spotify.com/dashboard"))
             dashboard_link.bind("<Enter>", lambda e: dashboard_link.configure(text_color=LINK_HOVER_COLOR))
             dashboard_link.bind("<Leave>", lambda e: dashboard_link.configure(text_color=LINK_COLOR))
             
-            customtkinter.CTkLabel(step1_text_frame, text=" & log in", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text=" (active Premium subscription required)", font=("Segoe UI", 12), text_color="gray").pack(side="left")
             
             # Step 2
             step2_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
@@ -11413,7 +11595,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step5_text_frame = customtkinter.CTkFrame(step5_frame, fg_color="transparent")
             step5_text_frame.pack(side="left", anchor="w")
             # Use anchor="s" so Consolas and Segoe UI labels share the same baseline (avoids vertical drift)
-            customtkinter.CTkLabel(step5_text_frame, text="Save. Copy Client ID + Secret, paste them above", font=("Segoe UI", 12), text_color="gray").pack(side="left", anchor="s")            
+            customtkinter.CTkLabel(step5_text_frame, text="Save. Copy Client ID + Secret, paste them above", font=("Segoe UI", 12), text_color="gray").pack(side="left", anchor="s")
+            
+            _add_clear_session_icon(help_frame, "Spotify")
         
         # Add help text for Apple Music module
         if platform_name == "AppleMusic":
@@ -11506,6 +11690,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step3_path_frame, text="", width=35).pack(side="left") # Indent
             customtkinter.CTkLabel(step3_path_frame, text="Path: ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
             customtkinter.CTkLabel(step3_path_frame, text="./config/cookies.txt", font=("Consolas", 12), text_color="gray").pack(side="left")
+            
+            _add_clear_session_icon(help_frame, "AppleMusic")
         
         # Add help text for YouTube module
         if platform_name == "YouTube":
@@ -11692,8 +11878,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             # x=-15, y=15 gives it some padding from the top-right corner
             demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
 
-
-
+            _add_clear_session_icon(help_frame, "YouTube")
 
         # Add help text for Deezer module
         if platform_name == "Deezer":
@@ -11863,7 +12048,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             create_value_row(right_col, "client_id", "447462")
             create_value_row(right_col, "client_secret", "a83bf7f38ad2f137e444727cfc3775cf")
             create_value_row(right_col, "bf_secret", "g4el58wc0zvf9na1")
-            
+            _add_clear_session_icon(help_frame, "Deezer")
 
         
         # Add help text for Qobuz module
@@ -12038,6 +12223,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 right_col_idtoken.grid_remove()
                 right_col.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
                 qobuz_see_demo_btn.place_forget()
+            _add_clear_session_icon(help_frame, "Qobuz")
 
         
         # Add help text for SoundCloud module
@@ -12124,6 +12310,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step5_frame, text="5.", font=("Segoe UI", 12, "bold"), text_color="gray", width=35).pack(side="left", anchor="n")
             customtkinter.CTkLabel(step5_frame, text="Copy & paste above", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            
+            _add_clear_session_icon(help_frame, "SoundCloud")
         
         # Add help text for Tidal module
         if platform_name == "Tidal":
@@ -12255,6 +12443,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             create_value_row(right_col, "tv_atmos_secret", "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=")
             create_value_row(right_col, "mobile_atmos_hires_token", "km8T1xS355y7dd3H")
             create_value_row(right_col, "mobile_hires_token", "6BDSRdpK9hqEBTgU")
+            _add_clear_session_icon(help_frame, "Tidal")
 
         # Add help text for Beatport module
         if platform_name == "Beatport":
@@ -12309,6 +12498,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             note_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(note_frame, text="", width=35).pack(side="left") # Indent
             customtkinter.CTkLabel(note_frame, text="(active Beatport Pro subscription required)", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            _add_clear_session_icon(help_frame, "Beatport")
 
         # Add help text for Beatsource module
         if platform_name == "Beatsource":
@@ -12363,6 +12553,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             note_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(note_frame, text="", width=35).pack(side="left") # Indent
             customtkinter.CTkLabel(note_frame, text="(active Beatsource Pro subscription required)", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            _add_clear_session_icon(help_frame, "Beatsource")
 
         # --- "See demo" button for ALL platforms ---
         # Positioned in the top-right corner of the help section.
@@ -12508,6 +12699,11 @@ def update_search_platform_dropdown():
                     elif not str(field_value).strip():
                         is_fully_filled = False
                         break
+
+            # Tidal: only include if user has saved sessions (has logged in before).
+            # Without sessions, loading Tidal opens the browser for OAuth - skip for users without a Tidal account.
+            if platform_name_iter == "Tidal" and is_fully_filled and not _tidal_has_saved_sessions(application_path):
+                is_fully_filled = False
 
             if is_fully_filled:
                 configured_platforms.append(platform_name_iter)
