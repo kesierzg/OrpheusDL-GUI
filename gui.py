@@ -6193,17 +6193,50 @@ def _add_clear_session_icon(parent_frame, platform_name):
     clear_icon.place(relx=1.0, rely=1.0, anchor="se", x=-15, y=-15)
     clear_icon.bind("<Button-1>", lambda e, p=platform_name: _clear_platform_session(p))
     default_icon_color = clear_icon.cget("text_color")
+    hover_red = "#E53935"
+
+    def _set_hover(hovering):
+        try:
+            clear_icon.configure(text_color=hover_red if hovering else default_icon_color)
+            clear_icon.update_idletasks()
+        except tkinter.TclError:
+            pass
 
     def _on_enter(_e):
-        clear_icon.configure(text_color="#E53935")
-        clear_icon.update_idletasks()
+        _set_hover(True)
 
     def _on_leave(_e):
-        clear_icon.configure(text_color=default_icon_color)
-        clear_icon.update_idletasks()
+        _set_hover(False)
 
+    # Enter/Leave work on Windows/Linux; on macOS they often don't fire for CTkLabel in tabs
     clear_icon.bind("<Enter>", _on_enter)
     clear_icon.bind("<Leave>", _on_leave)
+
+    if platform.system() == "Darwin":
+        _trash_hover_state = [False]  # mutable so closure can update
+
+        def _motion_hover(x_root, y_root):
+            try:
+                if not clear_icon.winfo_exists():
+                    return
+                ix, iy = clear_icon.winfo_rootx(), clear_icon.winfo_rooty()
+                iw, ih = clear_icon.winfo_width(), clear_icon.winfo_height()
+                if iw <= 0 or ih <= 0:
+                    iw, ih = 28, 28  # fallback hit area before layout
+                inside = ix <= x_root < ix + iw and iy <= y_root < iy + ih
+                if inside != _trash_hover_state[0]:
+                    _trash_hover_state[0] = inside
+                    _set_hover(inside)
+            except tkinter.TclError:
+                pass
+
+        def _motion_ev(e):
+            _motion_hover(e.x_root, e.y_root)
+
+        parent_frame.bind("<Motion>", _motion_ev)
+        # Also bind on the icon so we get motion when moving over it (Enter/Leave may still not fire)
+        clear_icon.bind("<Motion>", _motion_ev)
+
     CTkToolTip(clear_icon, message="Clear stored session\n(use after switching accounts or expired subscription)", bg_color=TOOLTIP_MENU_BG, text_color="#dddddd", x_offset=-150, y_offset=-50)
 
 def start_login_thread(platform_name):
@@ -7367,14 +7400,27 @@ def open_download_path():
     try:
         if 'path_var_main' not in globals() or not path_var_main: return
 
-        path_to_open = path_var_main.get()
-        if os.path.isdir(path_to_open):
+        path_to_open = (path_var_main.get() or "").strip()
+        if not path_to_open:
+            show_centered_messagebox("Warning", "Output path is empty.", dialog_type="warning")
+            return
+        # Resolve to absolute path so Windows os.startfile() works (it can fail with relative paths like ./downloads/)
+        path_abs = os.path.abspath(os.path.normpath(path_to_open))
+        if not os.path.isdir(path_abs):
             try:
-                if platform.system() == "Windows": os.startfile(path_to_open)
-                elif platform.system() == "Darwin": subprocess.Popen(["open", path_to_open])
-                else: subprocess.Popen(["xdg-open", path_to_open])
-            except Exception as e: show_centered_messagebox("Error", f"Could not open path: {e}", dialog_type="error")
-        else: show_centered_messagebox("Warning", "Output path does not exist.", dialog_type="warning")
+                os.makedirs(path_abs, exist_ok=True)
+            except Exception as e:
+                show_centered_messagebox("Error", f"Output path does not exist and could not be created: {e}", dialog_type="error")
+                return
+        try:
+            if platform.system() == "Windows":
+                os.startfile(path_abs)
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", path_abs])
+            else:
+                subprocess.Popen(["xdg-open", path_abs])
+        except Exception as e:
+            show_centered_messagebox("Error", f"Could not open path: {e}", dialog_type="error")
     except NameError: pass
     except Exception as e: print(f"Error opening download path: {e}")
 
