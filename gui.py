@@ -4139,8 +4139,9 @@ def _update_results_header_context(full_title):
         rest = full_title[9:]
     if type_str and '_content_type_badge' in globals() and _content_type_badge and _content_type_badge_label and _content_type_badge_label.winfo_exists():
         _content_type_badge_label.configure(text=type_str)
-        # Slightly wider badge for "Channel" only; keep default width for Album/Playlist/Artist
-        _content_type_badge.configure(width=60 if type_str == "channel" else 50)
+        # Slightly wider badge for "Channel"; on macOS "Playlist" also needs 60 (same as channel) to avoid truncation
+        badge_width = 60 if type_str == "channel" or (platform.system() == "Darwin" and type_str == "playlist") else 50
+        _content_type_badge.configure(width=badge_width)
         _content_type_badge.pack(side="left", anchor="w", padx=(0, 8), pady=0)
     if 'results_label' in globals() and results_label and results_label.winfo_exists():
         results_label.configure(text=rest)
