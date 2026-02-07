@@ -887,8 +887,9 @@ def _composite_platform_icon_on_cover(pil_cover, platform_name, cover_size=COVER
     return out
 
 def _tidal_has_saved_sessions(app_path):
-    """Return True if Tidal has saved OAuth sessions (user has logged in before). Tidal requires interactive login;
-    without saved sessions, loading the module opens the browser. Exclude Tidal from 'All' until user has logged in."""
+    """Return True only if Tidal has at least one saved session with a valid refresh_token (user has logged in successfully).
+    Tidal requires interactive login; without valid sessions, loading the module can open the browser or block.
+    Exclude Tidal from 'All' until user has completed login so 'Search All' never hangs on Tidal."""
     try:
         storage_path = os.path.join(app_path, 'config', 'loginstorage.bin')
         if not os.path.isfile(storage_path):
@@ -904,7 +905,12 @@ def _tidal_has_saved_sessions(app_path):
         session_data = sessions.get(selected, {})
         custom_data = session_data.get('custom_data', {})
         tidal_sessions = custom_data.get('sessions', {})
-        return bool(tidal_sessions)
+        if not tidal_sessions:
+            return False
+        for _name, storage in tidal_sessions.items():
+            if isinstance(storage, dict) and str(storage.get('refresh_token') or '').strip():
+                return True
+        return False
     except Exception:
         return False
 
@@ -912,7 +918,7 @@ def get_searchable_platforms(settings, installed_platform_keys, app_path):
     """Return list of platform names that can be searched: YouTube, Apple Music, and Deezer always (optional credentials); others if credentials are set.
     Tidal is excluded until the user has successfully logged in (saved sessions exist), since loading it without sessions opens the browser."""
     base = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
-    platforms_with_optional_credentials = ["YouTube", "AppleMusic", "Deezer"]
+    platforms_with_optional_credentials = ["YouTube", "AppleMusic", "Deezer", "Qobuz"]
     configured = []
     creds = (settings or {}).get("credentials", {})
     try:
@@ -9461,9 +9467,21 @@ def run_search_all_platforms_target(orpheus, platforms_list, search_type_str, qu
             search_limit = int(search_limit)
         except (ValueError, TypeError):
             search_limit = 25
+        _search_all_timeout_sec = 60  # per platform; avoids infinite hang if one platform blocks (e.g. Tidal auth)
         combined = []
         for platform_name in platforms_list:
-            results, err = _run_single_platform_search(orpheus, platform_name, search_type_str, query, search_limit, output_queue)
+            out = []
+            def _one_platform():
+                r, e = _run_single_platform_search(orpheus, platform_name, search_type_str, query, search_limit, output_queue)
+                out.append((r, e))
+            t = threading.Thread(target=_one_platform, daemon=True)
+            t.start()
+            t.join(timeout=_search_all_timeout_sec)
+            if t.is_alive():
+                # Platform did not return in time (e.g. Tidal waiting for login) – skip it
+                results, err = [], f"{platform_name} timed out (skipped)"
+            else:
+                results, err = out[0] if out else ([], "No result")
             if err and not results:
                 continue  # Skip platform on error, continue with others
             for r in results:
@@ -12671,7 +12689,7 @@ def update_search_platform_dropdown():
         configured_platforms = []
 
         # Platforms where credentials are completely optional (work without any credentials)
-        platforms_with_optional_credentials = ["YouTube", "AppleMusic", "Deezer"]
+        platforms_with_optional_credentials = ["YouTube", "AppleMusic", "Deezer", "Qobuz"]
 
         for platform_name_iter in base_available_platforms:
             # YouTube, Apple Music, Deezer (public API) always show - no credential check
