@@ -909,10 +909,10 @@ def _tidal_has_saved_sessions(app_path):
         return False
 
 def get_searchable_platforms(settings, installed_platform_keys, app_path):
-    """Return list of platform names that can be searched: YouTube always; Apple Music if cookies.txt exists; others if credentials are set.
+    """Return list of platform names that can be searched: YouTube, Apple Music, and Deezer always (optional credentials); others if credentials are set.
     Tidal is excluded until the user has successfully logged in (saved sessions exist), since loading it without sessions opens the browser."""
     base = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
-    platforms_with_optional_credentials = ["YouTube"]
+    platforms_with_optional_credentials = ["YouTube", "AppleMusic", "Deezer"]
     configured = []
     creds = (settings or {}).get("credentials", {})
     try:
@@ -922,13 +922,6 @@ def get_searchable_platforms(settings, installed_platform_keys, app_path):
     for platform_name in base:
         if platform_name in platforms_with_optional_credentials:
             configured.append(platform_name)
-            continue
-        if platform_name == "AppleMusic":
-            cookies_path = (creds.get("AppleMusic") or {}).get("cookies_path", "./config/cookies.txt")
-            if not os.path.isabs(cookies_path):
-                cookies_path = os.path.join(app_path, cookies_path)
-            if os.path.isfile(cookies_path):
-                configured.append(platform_name)
             continue
         default_platform_fields = (default_creds or {}).get(platform_name, {})
         if not default_platform_fields:
@@ -3544,7 +3537,7 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                                     url = public[tid]['preview']
                                     if isinstance(t, dict):
                                         t['preview_url'] = url
-                                    else:
+                                    elif not isinstance(t, (str, int)):
                                         setattr(t, 'preview_url', url)
                     except Exception:
                         pass
@@ -6194,8 +6187,17 @@ def _add_clear_session_icon(parent_frame, platform_name):
     clear_icon.place(relx=1.0, rely=1.0, anchor="se", x=-15, y=-15)
     clear_icon.bind("<Button-1>", lambda e, p=platform_name: _clear_platform_session(p))
     default_icon_color = clear_icon.cget("text_color")
-    clear_icon.bind("<Enter>", lambda e: clear_icon.configure(text_color="#E53935"))
-    clear_icon.bind("<Leave>", lambda e: clear_icon.configure(text_color=default_icon_color))
+
+    def _on_enter(_e):
+        clear_icon.configure(text_color="#E53935")
+        clear_icon.update_idletasks()
+
+    def _on_leave(_e):
+        clear_icon.configure(text_color=default_icon_color)
+        clear_icon.update_idletasks()
+
+    clear_icon.bind("<Enter>", _on_enter)
+    clear_icon.bind("<Leave>", _on_leave)
     CTkToolTip(clear_icon, message="Clear stored session\n(use after switching accounts or expired subscription)", bg_color=TOOLTIP_MENU_BG, text_color="#dddddd", x_offset=-150, y_offset=-50)
 
 def start_login_thread(platform_name):
@@ -7239,7 +7241,9 @@ def update_log_area():
                     continue
                 if '[CRITICAL]' in msg_strip and 'Librespot:Session' in msg_strip and 'Failed reading packet!' in msg_strip:
                     continue
-                if 'Could not get track info for' in msg_strip:
+                if ('Could not get track info for' in msg_strip or 'Could not get album info for' in msg_strip
+                        or 'Could not get playlist info for' in msg_strip or 'Could not get artist info for' in msg_strip):
+                    log_to_textbox(f"{msg_strip}\n", error=True)
                     continue
                 if 'Download stop requested...' in msg_strip:
                     log_to_textbox("|GRAY|Download stop requested... Please wait.|RESET|\n")
@@ -12667,10 +12671,10 @@ def update_search_platform_dropdown():
         configured_platforms = []
 
         # Platforms where credentials are completely optional (work without any credentials)
-        platforms_with_optional_credentials = ["YouTube"]
-        
+        platforms_with_optional_credentials = ["YouTube", "AppleMusic", "Deezer"]
+
         for platform_name_iter in base_available_platforms:
-            # YouTube and similar platforms always show up - credentials are optional
+            # YouTube, Apple Music, Deezer (public API) always show - no credential check
             if platform_name_iter in platforms_with_optional_credentials:
                 configured_platforms.append(platform_name_iter)
                 continue
