@@ -6174,7 +6174,7 @@ def _clear_platform_session(platform_name):
         elif platform_name == "Deezer":
             set_temporary_setting(storage_path, module_key, 'custom_data', 'arl', None)
         if platform_name == "Tidal":
-            show_centered_messagebox("Session Cleared", "Tidal stored session has been cleared.\n\nNext search or download will open a browser window where you can log in with your Tidal account (email & password) to link your device.", dialog_type="info")
+            show_centered_messagebox("Session Cleared", "Tidal stored session has been cleared.\n\nNext search or download will open a browser window where you can log in with your Tidal account to link device.", dialog_type="info")
         else:
             show_centered_messagebox("Session Cleared", f"{platform_name} stored session has been cleared.\n\nNext search or download will log in with your credentials from above.", dialog_type="info")
     except Exception as e:
@@ -6184,13 +6184,14 @@ def _clear_platform_session(platform_name):
             show_centered_messagebox("Error", f"Could not clear session: {e}", dialog_type="error")
 
 def _add_clear_session_icon(parent_frame, platform_name):
-    """Add a square ↺ (clear session) button in bottom-right corner of parent_frame. Click clears stored session for platform."""
+    """Add a trashcan 🗑 (clear session) button in bottom-right corner of parent_frame. Click clears stored session for platform."""
+    _font_size = 10 if platform.system() == "Darwin" else 13
     clear_btn = customtkinter.CTkButton(
         parent_frame,
         text="🗑",
         width=24,
         height=24,
-        font=("Segoe UI", 14),
+        font=("Segoe UI", _font_size),
         fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
         hover_color="#E53935",
         command=lambda p=platform_name: _clear_platform_session(p),
