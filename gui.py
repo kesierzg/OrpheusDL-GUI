@@ -6184,63 +6184,21 @@ def _clear_platform_session(platform_name):
             show_centered_messagebox("Error", f"Could not clear session: {e}", dialog_type="error")
 
 def _add_clear_session_icon(parent_frame, platform_name):
-    """Add a trashcan icon in bottom-right corner of parent_frame. Click clears stored session for platform."""
-    clear_icon = customtkinter.CTkLabel(
+    """Add a square ↺ (clear session) button in bottom-right corner of parent_frame. Click clears stored session for platform."""
+    clear_btn = customtkinter.CTkButton(
         parent_frame,
-        text="\U0001F5D1",  # trash can emoji
-        font=("Segoe UI", 20),
-        cursor=HAND_CURSOR,
+        text="🗑",
+        width=24,
+        height=24,
+        font=("Segoe UI", 14),
+        fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
+        hover_color="#E53935",
+        command=lambda p=platform_name: _clear_platform_session(p),
     )
-    clear_icon.place(relx=1.0, rely=1.0, anchor="se", x=-15, y=-15)
-    clear_icon.bind("<Button-1>", lambda e, p=platform_name: _clear_platform_session(p))
-    default_icon_color = clear_icon.cget("text_color")
-    is_macos = platform.system() == "Darwin"
-    dimmed_color = "#888888"  # simulates transparency when not hovered; full opacity on hover
-
-    def _set_hover(hovering):
-        try:
-            color = default_icon_color if hovering else dimmed_color
-            clear_icon.configure(text_color=color)
-            clear_icon.update_idletasks()
-        except tkinter.TclError:
-            pass
-
-    def _on_enter(_e):
-        _set_hover(True)
-
-    def _on_leave(_e):
-        _set_hover(False)
-
-    clear_icon.configure(text_color=dimmed_color)  # start dimmed
-    clear_icon.bind("<Enter>", _on_enter)
-    clear_icon.bind("<Leave>", _on_leave)
-
-    if is_macos:
-        # Enter/Leave often don't fire for CTkLabel in tabs on macOS; use Motion as fallback
-        _trash_hover_state = [False]
-
-        def _motion_hover(x_root, y_root):
-            try:
-                if not clear_icon.winfo_exists():
-                    return
-                ix, iy = clear_icon.winfo_rootx(), clear_icon.winfo_rooty()
-                iw, ih = clear_icon.winfo_width(), clear_icon.winfo_height()
-                if iw <= 0 or ih <= 0:
-                    iw, ih = 28, 28
-                inside = ix <= x_root < ix + iw and iy <= y_root < iy + ih
-                if inside != _trash_hover_state[0]:
-                    _trash_hover_state[0] = inside
-                    _set_hover(inside)
-            except tkinter.TclError:
-                pass
-
-        def _motion_ev(e):
-            _motion_hover(e.x_root, e.y_root)
-
-        parent_frame.bind("<Motion>", _motion_ev)
-        clear_icon.bind("<Motion>", _motion_ev)
-
-    CTkToolTip(clear_icon, message="Clear stored session\n(use after switching accounts or expired subscription)", bg_color=TOOLTIP_MENU_BG, text_color="#dddddd", x_offset=-162, y_offset=-55)
+    clear_btn.place(relx=1.0, rely=1.0, anchor="se", x=-15, y=-15)
+    btn_bg = globals().get("BUTTON_COLOR", ("#E0E0E0", "#343638"))
+    tooltip_bg = btn_bg[1] if isinstance(btn_bg, (tuple, list)) else btn_bg
+    CTkToolTip(clear_btn, message="Clear stored session\n(use after switching accounts or expired subscription)", bg_color=tooltip_bg, text_color="#dddddd", x_offset=-162, y_offset=-55)
 
 def start_login_thread(platform_name):
     """Starts the login process in a separate thread."""
@@ -10123,6 +10081,7 @@ def _create_copy_icon(size=(16, 16), color="#AAAAAA"):
     )
     
     return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+
 
 def _create_save_icon(size=(16, 16), color="#AAAAAA"):
     """Creates a save icon (floppy disk)."""
