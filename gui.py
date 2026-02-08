@@ -11397,8 +11397,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
                 # For Apple Music and YouTube cookies_path, add Open button like Browse in Global settings
                 def open_cookies_folder():
-                    """Open the config folder in file explorer."""
-                    config_dir = os.path.join(application_path, 'config')
+                    """Open the config folder in file explorer (uses CONFIG_DIR so macOS opens Application Support, not .app bundle)."""
+                    config_dir = os.path.dirname(CONFIG_FILE_PATH)
                     if not os.path.exists(config_dir):
                         try:
                             os.makedirs(config_dir, exist_ok=True)
@@ -11450,8 +11450,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     # Use padx=(10, 5) to align left with other fields (10) and spacing for button
                     widget.grid(row=i, column=1, sticky="ew", padx=(10, 5), pady=pady_config)
                     def open_cookies_folder():
-                        """Open the config folder in file explorer."""
-                        config_dir = os.path.join(application_path, 'config')
+                        """Open the config folder in file explorer (uses CONFIG_DIR so macOS opens Application Support, not .app bundle)."""
+                        config_dir = os.path.dirname(CONFIG_FILE_PATH)
                         if not os.path.exists(config_dir):
                             try:
                                 os.makedirs(config_dir, exist_ok=True)
