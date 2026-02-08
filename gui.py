@@ -825,10 +825,15 @@ _platform_icon_cache_lock = threading.Lock()
 _platform_icon_photo_refs = []  # Unused (platform icons drawn on cover in column #0)
 
 def _platform_icon_path(platform_name):
-    """Return path to platform icon file in application_path/platforms, or None if not found."""
+    """Return path to platform icon file in application_path/platforms, or None if not found.
+    When frozen (e.g. macOS .app), bundled datas live in sys._MEIPASS, not next to the executable."""
     if not platform_name:
         return None
-    base = os.path.join(application_path, "platforms")
+    # Use _MEIPASS for bundled resources (macOS .app, Windows onefile); else use application_path
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        base = os.path.join(sys._MEIPASS, "platforms")
+    else:
+        base = os.path.join(application_path, "platforms")
     for name in (platform_name, platform_name.replace(" ", ""), platform_name.lower().replace(" ", "")):
         for ext in (".png", ".jpg", ".jpeg", ".webp"):
             p = os.path.join(base, name + ext)
