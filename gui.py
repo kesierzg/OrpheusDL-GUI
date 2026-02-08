@@ -12763,10 +12763,8 @@ def update_search_platform_dropdown():
                         is_fully_filled = False
                         break
 
-            # Tidal: only include if user has saved sessions (has logged in before).
-            # Without sessions, loading Tidal opens the browser for OAuth - skip for users without a Tidal account.
-            if platform_name_iter == "Tidal" and is_fully_filled and not _tidal_has_saved_sessions(application_path):
-                is_fully_filled = False
+            # Tidal: always show in dropdown so user can select and log in; session check only
+            # applies to "Search All" (get_searchable_platforms) so All doesn't hang on Tidal.
 
             if is_fully_filled:
                 configured_platforms.append(platform_name_iter)
