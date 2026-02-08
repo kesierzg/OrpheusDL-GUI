@@ -11256,11 +11256,12 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 chk_mobile = customtkinter.CTkCheckBox(container, text="Enable Mobile", variable=var_mobile)
                 chk_mobile.pack(side="left", padx=(0, 15))
                 
-                # Prefer Ac4
+                # Prefer Ac4 (unchecked = E-AC-3 JOC, plays in VLC/Audacity; checked = AC-4, may need special player)
                 val_ac4 = current_settings.get("credentials", {}).get(platform_name, {}).get("prefer_ac4", False)
                 var_ac4 = tkinter.BooleanVar(value=val_ac4)
                 chk_ac4 = customtkinter.CTkCheckBox(container, text="Prefer Ac4", variable=var_ac4)
                 chk_ac4.pack(side="left", padx=(0, 15))
+                CTkToolTip(chk_ac4, message="Unchecked: E-AC-3 JOC (Dolby Atmos), plays in VLC and Audacity.\nChecked: AC-4, may require a player with AC-4 support.", bg_color=TOOLTIP_MENU_BG, text_color=LIGHT_TEXT_COLOR)
                 
                 # Fix MQA
                 val_mqa = current_settings.get("credentials", {}).get(platform_name, {}).get("fix_mqa", True)
