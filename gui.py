@@ -9625,7 +9625,7 @@ def start_search():
         set_ui_state_searching(True)
         search_process_active = True
         if platform_name == "All":
-            platforms_list = get_searchable_platforms(current_settings, installed_platform_keys or [], application_path)
+            platforms_list = get_searchable_platforms(current_settings, installed_platform_keys or [], get_data_directory() or application_path)
             if not platforms_list:
                 set_ui_state_searching(False)
                 search_process_active = False
