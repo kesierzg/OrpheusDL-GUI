@@ -6099,19 +6099,14 @@ def _clear_platform_session(platform_name):
     try:
         if platform_name == "Spotify":
             spotify_dir = os.path.join(data_dir, 'config', 'spotify')
-            creds_files = ['credentials.json', 'credentials_webapi.json']
-            removed = []
-            for f in creds_files:
-                p = os.path.join(spotify_dir, f)
-                if os.path.isfile(p):
-                    try:
-                        os.remove(p)
-                        removed.append(f)
-                    except OSError as e:
-                        show_centered_messagebox("Error", f"Could not remove {f}: {e}", dialog_type="error")
-                        return
-            if removed:
-                show_centered_messagebox("Session Cleared", f"Spotify stored session has been cleared ({', '.join(removed)}).\n\nNext search or download will log in with your credentials from above.", dialog_type="info")
+            if os.path.isdir(spotify_dir):
+                if not show_centered_confirm("Confirm", "Are you sure you want to remove the Spotify session folder? This will delete all stored credentials."):
+                    return
+                try:
+                    shutil.rmtree(spotify_dir)
+                    show_centered_messagebox("Session Cleared", "Spotify stored session folder has been removed.\n\nNext search or download will log in with your credentials from above.", dialog_type="info")
+                except OSError as e:
+                    show_centered_messagebox("Error", f"Could not remove Spotify folder: {e}", dialog_type="error")
             else:
                 show_centered_messagebox("No Session", "No stored Spotify credentials found. You can search or download to log in.", dialog_type="info")
             return
