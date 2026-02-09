@@ -9082,12 +9082,14 @@ def update_search_types(platform):
     global type_var, type_combo
     # Only Beatport and Beatsource support label search; others get track/artist/playlist/album (or platform-specific)
     # "All" uses default types (track, artist, playlist, album) so all platforms can participate
+    # Tidal: add Explore Atmos (tracks/albums) options
     platform_types = {
         "All": sorted(["track", "artist", "playlist", "album"]),
         "YouTube": ["track", "playlist", "channel"],
         "Beatport": ["track", "artist", "playlist", "album", "label"],
         "Beatsource": ["track", "artist", "playlist", "album", "label"],
         "Qobuz": ["track", "artist", "playlist", "album"],
+        "Tidal": ["track", "artist", "playlist", "album", "album  ◗◖ ᴀᴛᴍᴏs", "track  ◗◖ ᴀᴛᴍᴏs", "playlist  ◗◖ ᴀᴛᴍᴏs"],
     }
     default_types = sorted(["track", "artist", "playlist", "album"])
     available_types = sorted(platform_types.get(platform, default_types))
@@ -9101,6 +9103,26 @@ def update_search_types(platform):
     except NameError: pass
     except tkinter.TclError as e: print(f"TclError updating search types (widget destroyed?): {e}")
     except Exception as e: print(f"Error updating search types: {e}")
+    _update_search_placeholder()
+
+def _update_search_placeholder(*args):
+    """Set search entry placeholder when Tidal + track/album (ATMOS) selected, else default."""
+    try:
+        if 'search_entry' not in globals() or not search_entry or not search_entry.winfo_exists():
+            return
+        if 'type_var' not in globals() or not type_var or 'platform_var' not in globals() or not platform_var:
+            return
+        platform = (platform_var.get() or "").strip()
+        search_type = (type_var.get() or "").strip()
+        # Normalize: strip emoji/pipe to get base type for comparison
+        normalized_type = search_type.replace("  ◗◖ ᴀᴛᴍᴏs", " (ATMOS)").replace("  ◗◖ ᴀᴛᴍᴏs", " (ATMOS)").replace("( ◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs)", "(ATMOS)").replace("(◗◖ atmos)", "(ATMOS)").replace("(◗◖ atmos )", "(ATMOS)").replace("(◗◖atmos )", "(ATMOS)").replace("(◗◖ATMOS )", "(ATMOS)").strip()
+        if platform.lower() == "tidal" and normalized_type in ("album (ATMOS)", "track (ATMOS)", "playlist (ATMOS)"):
+            placeholder = "Enter search query or hit Search to explore..."
+        else:
+            placeholder = "Enter search query..."
+        search_entry.configure(placeholder_text=placeholder)
+    except (NameError, tkinter.TclError, Exception):
+        pass
 
 def clear_treeview():
     global tree, scrollbar, app
@@ -9167,6 +9189,7 @@ def display_results(results):
         pass
     item_number = 1
     seen_ids = set()
+    has_album_or_playlist_results = False
     local_DownloadTypeEnum = DownloadTypeEnum
     try:
         current_search_type_str = type_var.get() if ('type_var' in globals() and type_var) else "track"
@@ -9222,14 +9245,19 @@ def display_results(results):
         dur_sec = result.get('duration_seconds')
         if dur_sec is None and (result.get('duration') or duration_str):
             dur_sec = _parse_duration_str_to_seconds(result.get('duration') or duration_str)
-        # Hide entries that have no Time/Duration when we expect it (track search, or channel/playlist video list)
-        if current_search_type_lower == "track" and not duration_str and dur_sec is None:
+        result_type = result.get('type', current_search_type_str) or current_search_type_str
+        # Normalize: strip emoji from inside parentheses if present for comparison
+        normalized_result_type = result_type.replace("  ◗◖ ᴀᴛᴍᴏs", " (ATMOS)").replace("  ◗◖ ᴀᴛᴍᴏs", " (ATMOS)").replace("( ◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs)", "(ATMOS)").replace("(◗◖ atmos)", "(ATMOS)").replace("(◗◖atmos)", "(ATMOS)").replace("(◗◖ATMOS)", "(ATMOS)").strip()
+        if normalized_result_type in ("track (ATMOS)", "album (ATMOS)"):
+            result_type = 'track' if 'track' in normalized_result_type.lower() else 'album'
+        # Hide entries that have no Time/Duration when we expect a track row
+        if result_type == "track" and not duration_str and dur_sec is None:
             continue
         result_entry = {
             "id": res_id, "number": str(item_number), "title": name,
             "artist": artist_str, "duration": duration_str, "year": year,
             "additional": additional_str, "explicit": explicit,
-            "platform": row_platform, "type": current_search_type_str,
+            "platform": row_platform, "type": result_type,
             "raw_result": result.get('raw_result'),
             "tree_iid": unique_tree_iid,
             "preview_url": preview_url,
@@ -9247,6 +9275,14 @@ def display_results(results):
             result_entry["artist"] = artist_str or name  # Label name in Label column only
         if current_search_type_lower in ("album", "playlist"):
             result_entry["is_album_playlist"] = True
+            has_album_or_playlist_results = True
+        # Tidal explore (and per-result type): album/playlist rows get ≡ to open track list; track rows get ▶ and lazy-load preview
+        if result_type == "album":
+            result_entry["is_album_playlist"] = True
+            has_album_or_playlist_results = True
+        if result_type == "playlist":
+            result_entry["is_album_playlist"] = True
+            has_album_or_playlist_results = True
         # YouTube channel: expand to show channel's videos (uploads)
         if current_platform_str.lower() == "youtube" and current_search_type_lower == "channel":
             result_entry["is_album_playlist"] = True
@@ -9260,21 +9296,14 @@ def display_results(results):
 
         try:
             if 'tree' in globals() and tree and tree.winfo_exists():
-                # Preview icon with distinct shapes for visual feedback
-                # ▶ for play, · for unavailable (no color - ttk.Treeview colors whole rows)
-                # For Qobuz/SoundCloud/Spotify/Tidal tracks, show play icon even without preview_url (supports lazy-loading)
-                # Spotify's API deprecated preview_url, so we lazy-load from embed page when clicked
-                # Tidal doesn't include preview URLs in search results, so we lazy-load using LOW quality stream
-                # YouTube: clicking play icon opens video in browser instead of playing preview
-                # Only tracks can be previewed, not albums/playlists/artists
-                is_track_search = current_search_type_str.lower() == "track"
-                can_lazy_load_preview = ((row_platform or '').lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal')) and is_track_search
-                # YouTube tracks always show play icon (opens in browser)
-                is_youtube_track = ((row_platform or '').lower() == 'youtube') and is_track_search
-                # Album/playlist/artist/channel: show ≡ so user can open track list or artist albums or channel videos; track type: show ▶ or ·
-                is_album_playlist = current_search_type_lower in ("album", "playlist") or ((row_platform or '').lower() == "youtube" and current_search_type_lower == "channel") or current_search_type_lower == "label"
-                is_artist = current_search_type_lower == "artist"
-                preview_icon = (PREVIEW_EXPAND_COLLAPSED if (is_album_playlist or is_artist) else
+                # Preview icon: ▶ for play (or lazy-load), ≡ for expand (album/playlist/artist)
+                # Use result_type so Tidal Explore track rows get ▶ and album rows get ≡
+                is_track_row = (current_search_type_str.lower() == "track") or (result_type == "track")
+                is_album_playlist_row = (current_search_type_lower in ("album", "playlist") or ((row_platform or '').lower() == "youtube" and current_search_type_lower == "channel") or current_search_type_lower == "label") or (result_type == "album") or (result_type == "playlist")
+                is_artist_row = current_search_type_lower == "artist"
+                can_lazy_load_preview = ((row_platform or '').lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal')) and is_track_row
+                is_youtube_track = ((row_platform or '').lower() == 'youtube') and is_track_row
+                preview_icon = (PREVIEW_EXPAND_COLLAPSED if (is_album_playlist_row or is_artist_row) else
                     (PREVIEW_PLAY_ICON if (preview_url or can_lazy_load_preview or is_youtube_track) else PREVIEW_UNAVAILABLE))
                 
                 if current_search_type_lower in ("artist", "label"):
@@ -9328,7 +9357,7 @@ def display_results(results):
             if not getattr(sys, 'frozen', False):
                 print(f"Error inserting into treeview: {e}", file=sys.__stderr__)
     
-    _update_preview_column_heading(current_search_type_lower in ("album", "playlist", "artist", "label") or (current_platform_str.lower() == "youtube" and current_search_type_lower == "channel"))
+    _update_preview_column_heading(has_album_or_playlist_results or current_search_type_lower in ("album", "playlist", "artist", "label") or (current_platform_str.lower() == "youtube" and current_search_type_lower == "channel"))
     try:
         if 'app' in globals() and app and app.winfo_exists() and 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists():
             app.after(50, lambda: _check_and_toggle_scrollbar(tree, scrollbar))
@@ -9344,9 +9373,147 @@ def display_results(results):
     except:
         pass
 
+TIDAL_EXPLORE_TYPES = ("track (ATMOS)", "album (ATMOS)", "playlist (ATMOS)", "album  ◗◖ ᴀᴛᴍᴏs", "track  ◗◖ ᴀᴛᴍᴏs", "playlist  ◗◖ ᴀᴛᴍᴏs")
+
+def _result_has_dolby_atmos(quality_str, raw_result):
+    """True if the result is Dolby Atmos (from quality string or raw Tidal audioModes)."""
+    if quality_str and 'Dolby Atmos' in str(quality_str):
+        return True
+    if isinstance(raw_result, dict) and 'DOLBY_ATMOS' in (raw_result.get('audioModes') or []):
+        return True
+    return False
+
 def _run_single_platform_search(orpheus, platform_name, search_type_str, query, search_limit, output_queue=None):
     """Run search on one platform. Returns (list of formatted result dicts, error_message or None)."""
     local_DownloadTypeEnum = DownloadTypeEnum
+    # Normalize ATMOS type for branching (e.g., "album  ◗◖ ᴀᴛᴍᴏs" → "album (ATMOS)")
+    normalized_type = search_type_str.replace("  ◗◖ ᴀᴛᴍᴏs", " (ATMOS)").replace("( ◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs)", "(ATMOS)").replace("(◗◖ atmos)", "(ATMOS)").replace("(◗◖ atmos )", "(ATMOS)").replace("(◗◖atmos )", "(ATMOS)").replace("(◗◖ATMOS )", "(ATMOS)").strip() if search_type_str else ""
+    is_tidal_atmos = platform_name and platform_name.lower() == 'tidal' and search_type_str in TIDAL_EXPLORE_TYPES
+    query_stripped = (query or "").strip()
+
+    # Tidal ATMOS with a search query: run normal search by base type, then filter to Dolby Atmos only
+    if is_tidal_atmos and query_stripped:
+        explore_map = {"track (ATMOS)": "track", "album (ATMOS)": "album", "playlist (ATMOS)": "playlist"}
+        base_type = explore_map.get(normalized_type)
+        if base_type is None:
+            return [], f"Unsupported Tidal explore type: {normalized_type}"
+        search_type_map = {"track": local_DownloadTypeEnum.track, "album": local_DownloadTypeEnum.album, "playlist": local_DownloadTypeEnum.playlist}
+        query_type = search_type_map.get(base_type)
+        # For playlist ATMOS, search for "dolby " + user query so results are Dolby-related playlists
+        search_query = ("dolby " + query_stripped) if base_type == 'playlist' else query_stripped
+        try:
+            if output_queue:
+                with TidalAutoAuthPatcher(output_queue):
+                    module_instance = orpheus.load_module(platform_name.lower())
+            else:
+                module_instance = orpheus.load_module(platform_name.lower())
+            search_results = module_instance.search(query_type, search_query, limit=search_limit)
+        except Exception as e:
+            return [], f"Error during search ({platform_name}): {str(e)}"
+        formatted_results = []
+        for result in search_results:
+            raw_result = None
+            extra_kwargs = getattr(result, 'extra_kwargs', {}) or {}
+            if isinstance(extra_kwargs, dict):
+                raw_result = extra_kwargs.get('raw_result')
+                if raw_result is None and isinstance(extra_kwargs.get('data'), dict):
+                    data = extra_kwargs['data']
+                    rid = str(getattr(result, 'result_id', ''))
+                    raw_result = data.get(rid) or data.get(int(rid)) if rid.isdigit() else None
+                    if raw_result is None and data:
+                        raw_result = next(iter(data.values()))
+            if raw_result is None:
+                raw_result = result
+            quality_str = ', '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
+            # Playlists don't have audioModes; only filter by Atmos for tracks/albums
+            if base_type != 'playlist' and not _result_has_dolby_atmos(quality_str, raw_result):
+                continue
+            cover_url = getattr(result, 'image_url', None)
+            _yr = getattr(result, 'year', None)
+            _yr_str = '' if _yr is None or str(_yr) == 'None' else str(_yr)
+            raw_duration_seconds = getattr(result, 'duration', None)
+            if raw_duration_seconds is not None and isinstance(raw_duration_seconds, str):
+                raw_duration_seconds = _parse_duration_str_to_seconds(raw_duration_seconds)
+            try:
+                raw_duration_seconds = int(raw_duration_seconds) if raw_duration_seconds is not None else None
+            except (TypeError, ValueError):
+                raw_duration_seconds = None
+            result_type = base_type
+            formatted_result = {
+                'id': str(getattr(result, 'result_id', '')),
+                'title': str(getattr(result, 'name', '') or ''),
+                'artist': ', '.join([str(a) for a in getattr(result, 'artists', []) or []]) or '',
+                'duration': beauty_format_seconds(raw_duration_seconds) if raw_duration_seconds is not None else '',
+                'duration_seconds': raw_duration_seconds,
+                'year': _yr_str,
+                'quality': quality_str,
+                'explicit': '🅴' if getattr(result, 'explicit', False) else '',
+                'preview_url': getattr(result, 'preview_url', None),
+                'cover_url': cover_url,
+                'raw_result': raw_result,
+                'platform': platform_name,
+                'type': result_type,
+            }
+            formatted_results.append(formatted_result)
+        return formatted_results, None
+
+    # Tidal explore: browse Dolby Atmos by format (no query) – only show Atmos items
+    if is_tidal_atmos and not query_stripped:
+        explore_map = {
+            "track (ATMOS)": ("atmos", "tracks"),
+            "album (ATMOS)": ("atmos", "albums"),
+            "playlist (ATMOS)": ("atmos", "playlists"),
+        }
+        format_name, content_type = explore_map.get(normalized_type, (None, None))
+        if format_name is None:
+            return [], f"Unsupported Tidal explore type: {normalized_type}"
+        try:
+            if output_queue:
+                with TidalAutoAuthPatcher(output_queue):
+                    module_instance = orpheus.load_module(platform_name.lower())
+            else:
+                module_instance = orpheus.load_module(platform_name.lower())
+            search_results = module_instance.explore(format_name, content_type, limit=search_limit)
+        except Exception as e:
+            return [], f"Error during explore ({platform_name}): {str(e)}"
+        formatted_results = []
+        for result in search_results:
+            extra_kwargs = getattr(result, 'extra_kwargs', {}) or {}
+            media_type = extra_kwargs.get('media_type')
+            result_type = (media_type.name.lower() if media_type and hasattr(media_type, 'name') else content_type.rstrip('s'))
+            raw_result = extra_kwargs.get('raw_result', result)
+            quality_str = ', '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
+            # Playlists don't have audioModes; only filter by Atmos for tracks/albums
+            if content_type != 'playlists' and not _result_has_dolby_atmos(quality_str, raw_result):
+                continue
+            cover_url = getattr(result, 'image_url', None)
+            _yr = getattr(result, 'year', None)
+            _yr_str = '' if _yr is None or str(_yr) == 'None' else str(_yr)
+            raw_duration_seconds = getattr(result, 'duration', None)
+            if raw_duration_seconds is not None and isinstance(raw_duration_seconds, str):
+                raw_duration_seconds = _parse_duration_str_to_seconds(raw_duration_seconds)
+            try:
+                raw_duration_seconds = int(raw_duration_seconds) if raw_duration_seconds is not None else None
+            except (TypeError, ValueError):
+                raw_duration_seconds = None
+            formatted_result = {
+                'id': str(getattr(result, 'result_id', '')),
+                'title': str(getattr(result, 'name', '') or ''),
+                'artist': ', '.join([str(a) for a in getattr(result, 'artists', []) or []]) or '',
+                'duration': beauty_format_seconds(raw_duration_seconds) if raw_duration_seconds is not None else '',
+                'duration_seconds': raw_duration_seconds,
+                'year': _yr_str,
+                'quality': quality_str,
+                'explicit': '🅴' if getattr(result, 'explicit', False) else '',
+                'preview_url': getattr(result, 'preview_url', None),
+                'cover_url': cover_url,
+                'raw_result': raw_result,
+                'platform': platform_name,
+                'type': result_type,
+            }
+            formatted_results.append(formatted_result)
+        return formatted_results, None
+
     search_type_map = {"track": local_DownloadTypeEnum.track, "album": local_DownloadTypeEnum.album, "artist": local_DownloadTypeEnum.artist, "playlist": local_DownloadTypeEnum.playlist, "channel": local_DownloadTypeEnum.artist, "label": local_DownloadTypeEnum.label}
     query_type = search_type_map.get((search_type_str or "").lower())
     if not query_type:
@@ -9416,6 +9583,7 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             'cover_url': cover_url,
             'raw_result': raw_result,
             'platform': platform_name,
+            'type': (search_type_str or 'track').lower(),
         }
         if search_type_str and search_type_str.lower() == 'label':
             formatted_result['title'] = ''
@@ -9571,6 +9739,10 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
 
         def _update_ui():
             global search_process_active
+            if '_clear_expand_long_loading_message' in globals() and callable(_clear_expand_long_loading_message):
+                _clear_expand_long_loading_message()
+            if '_expand_loading_message_prefix' in globals():
+                globals()["_expand_loading_message_prefix"] = "Fetching all data"
             if error_message: 
                 set_ui_state_searching(False)
                 show_centered_messagebox("Search Error", error_message, dialog_type="error"); clear_treeview(); clear_search_results_data()
@@ -9607,7 +9779,8 @@ def start_search():
         if 'type_var' not in globals() or not type_var: print("Error: Type variable not available."); return
 
         query = search_entry.get().strip(); platform_name = platform_var.get(); search_type_str = type_var.get()
-        if not query: show_centered_messagebox("Info", "Please enter a search query.", dialog_type="warning"); return
+        is_tidal_explore = platform_name and platform_name.lower() == 'tidal' and search_type_str in TIDAL_EXPLORE_TYPES
+        if not query and not is_tidal_explore: show_centered_messagebox("Info", "Please enter a search query.", dialog_type="warning"); return
         if not platform_name: show_centered_messagebox("Info", "Please select a platform.", dialog_type="warning"); return
         if not search_type_str: show_centered_messagebox("Info", "Please select a search type.", dialog_type="warning"); return
         if search_process_active: show_centered_messagebox("Busy", "A search is already in progress!", dialog_type="warning"); return
@@ -9636,6 +9809,11 @@ def start_search():
                 globals()["_expand_long_loading_after_id"] = app.after(8000, _show_expand_long_loading_message)
             search_thread = threading.Thread(target=run_search_all_platforms_target, args=(orpheus_instance, platforms_list, search_type_str, query, current_settings), daemon=True)
         else:
+            # Tidal Dolby Atmos search (with or without query) can take a while; show "Fetching all data..." after 8s
+            if platform_name and platform_name.strip().lower() == 'tidal' and search_type_str in TIDAL_EXPLORE_TYPES:
+                globals()["_expand_loading_message_prefix"] = "Fetching all data"
+                if 'app' in globals() and app and app.winfo_exists():
+                    globals()["_expand_long_loading_after_id"] = app.after(8000, _show_expand_long_loading_message)
             search_thread = threading.Thread(target=run_search_thread_target, args=(orpheus_instance, platform_name, search_type_str, query, current_settings), daemon=True)
         search_thread.start()
     except NameError as e:
@@ -9974,6 +10152,24 @@ def _create_download_icon(size=(16, 16), color="#AAAAAA"):
     draw.line([(cx - 3, 7), (cx, 10), (cx + 3, 7)], fill=color, width=1)
     
     return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+
+def _dolby_double_d_photoimage(size=(16, 16), color="#E0E0E0"):
+    """Create a small Dolby-style double-D icon (two filled D's, right one mirrored). Returns (PIL Image, PhotoImage)."""
+    # Draw at 2x resolution for sharpness
+    w, h = size[0] * 2, size[1] * 2
+    image = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    stem_w = max(2, w // 6)
+    mid = w // 2
+    # Left D: stem (vertical bar) + curve (right half of ellipse)
+    draw.rectangle([0, 0, stem_w, h], fill=color)
+    draw.chord([stem_w, 0, mid, h], 270, 90, fill=color)  # right half of ellipse
+    # Right D: curve (left half of ellipse) + stem
+    draw.chord([mid, 0, w - stem_w, h], 90, 270, fill=color)  # left half of ellipse
+    draw.rectangle([w - stem_w, 0, w, h], fill=color)
+    image = image.resize(size, Image.Resampling.LANCZOS)
+    photo = ImageTk.PhotoImage(image)
+    return image, photo
 
 def _create_undo_icon(size=(16, 16), color="#AAAAAA"):
     """Creates an undo icon (side-U curved arrow pointing left)."""
@@ -13553,7 +13749,11 @@ if __name__ == "__main__":
         platform_combo.grid(row=0, column=1, padx=(5, 6)); 
         platform_var.trace_add("write", on_platform_change)
 
-        customtkinter.CTkLabel(controls_frame, text="Type").grid(row=0, column=2, padx=(5,5), sticky="w"); type_var = tkinter.StringVar(); type_combo = customtkinter.CTkComboBox(controls_frame, values=[], variable=type_var, width=100, state="readonly", height=30, dropdown_fg_color="#2B2B2B"); type_combo.grid(row=0, column=3, padx=(2, 1), sticky="w")
+        customtkinter.CTkLabel(controls_frame, text="Type").grid(row=0, column=2, padx=(5,5), sticky="w")
+        type_var = tkinter.StringVar()
+        type_combo = customtkinter.CTkComboBox(controls_frame, values=[], variable=type_var, width=100, state="readonly", height=30, dropdown_fg_color="#2B2B2B")
+        type_combo.grid(row=0, column=3, padx=(2, 1), sticky="w")
+        type_var.trace_add("write", _update_search_placeholder)
         search_input_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent"); search_input_frame.grid(row=0, column=4, sticky="ew", padx=(10, 5))
         search_entry = customtkinter.CTkEntry(search_input_frame, placeholder_text="Enter search query...", height=30, placeholder_text_color="#7F7F7F"); search_entry.pack(side="left", fill="x", expand=True, padx=(0, 0))
         search_entry.bind("<Return>", lambda e: start_search()); search_entry.bind("<Button-3>", show_context_menu); search_entry.bind("<Button-2>", show_context_menu); search_entry.bind("<Control-Button-1>", show_context_menu)
