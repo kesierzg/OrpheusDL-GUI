@@ -6094,9 +6094,11 @@ def _clear_platform_session(platform_name):
     """Clear stored session for platforms that use loginstorage.bin or config/spotify. Use when switching accounts or after expired subscription.
     Next search/download will trigger fresh login with credentials from Settings."""
     from utils.utils import set_temporary_setting
+    # Use data directory (e.g. ~/Library/Application Support/OrpheusDL GUI on macOS) not application_path
+    data_dir = get_data_directory() or application_path
     try:
         if platform_name == "Spotify":
-            spotify_dir = os.path.join(application_path, 'config', 'spotify')
+            spotify_dir = os.path.join(data_dir, 'config', 'spotify')
             creds_files = ['credentials.json', 'credentials_webapi.json']
             removed = []
             for f in creds_files:
@@ -6116,7 +6118,7 @@ def _clear_platform_session(platform_name):
         if platform_name == "YouTube":
             cookies_path = (current_settings.get("credentials") or {}).get("YouTube", {}).get("cookies_path", "") or "./config/youtube-cookies.txt"
             if not os.path.isabs(cookies_path):
-                cookies_path = os.path.normpath(os.path.join(application_path, cookies_path.replace("./", "").replace(".\\", "")))
+                cookies_path = os.path.normpath(os.path.join(data_dir, cookies_path.replace("./", "").replace(".\\", "")))
             else:
                 cookies_path = os.path.normpath(cookies_path)
             if not os.path.isfile(cookies_path):
@@ -6133,7 +6135,7 @@ def _clear_platform_session(platform_name):
         if platform_name == "AppleMusic":
             cookies_path = (current_settings.get("credentials") or {}).get("AppleMusic", {}).get("cookies_path", "") or "./config/cookies.txt"
             if not os.path.isabs(cookies_path):
-                cookies_path = os.path.normpath(os.path.join(application_path, cookies_path.replace("./", "").replace(".\\", "")))
+                cookies_path = os.path.normpath(os.path.join(data_dir, cookies_path.replace("./", "").replace(".\\", "")))
             else:
                 cookies_path = os.path.normpath(cookies_path)
             if not os.path.isfile(cookies_path):
@@ -6163,7 +6165,7 @@ def _clear_platform_session(platform_name):
             except Exception as e:
                 show_centered_messagebox("Error", f"Could not clear token: {e}", dialog_type="error")
             return
-        storage_path = os.path.join(application_path, 'config', 'loginstorage.bin')
+        storage_path = os.path.join(data_dir, 'config', 'loginstorage.bin')
         module_key = platform_name.lower()
         if not os.path.isfile(storage_path):
             show_centered_messagebox("No Session", f"No stored session found for {platform_name}. You can search or download to log in.", dialog_type="info")
