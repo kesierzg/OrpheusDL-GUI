@@ -14030,6 +14030,21 @@ if __name__ == "__main__":
         global_settings_frame.grid_columnconfigure(1, weight=1)
         global_settings_frame.grid_columnconfigure(0, uniform="settings_label_column")
         global_settings_frame.grid_columnconfigure(2, weight=0)
+        # Faster, smoother scroll: use larger step per wheel tick (default is ~3 units)
+        _scroll_canvas = getattr(global_settings_frame, "_parent_canvas", None)
+        if _scroll_canvas is not None:
+            _scroll_step = 15  # units per wheel notch for a more gliding feel
+            def _global_settings_mousewheel(event):
+                if _scroll_canvas.winfo_exists():
+                    # Windows/Mac: event.delta; Linux: Button-4/5
+                    delta = getattr(event, "delta", 0) or (1 if event.num == 5 else -1 if event.num == 4 else 0)
+                    if delta != 0:
+                        units = -_scroll_step if delta > 0 else _scroll_step
+                        _scroll_canvas.yview("scroll", units, "units")
+            for _w in (global_settings_frame, _scroll_canvas):
+                _w.bind("<MouseWheel>", _global_settings_mousewheel)
+                _w.bind("<Button-4>", _global_settings_mousewheel)
+                _w.bind("<Button-5>", _global_settings_mousewheel)
         row = 0
         tooltip_texts = {
             "general.output_path": "The main folder where all downloads will be saved.",
