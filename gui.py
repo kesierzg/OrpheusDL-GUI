@@ -1942,7 +1942,7 @@ def _expand_loading_dots_tick():
     try:
         prefix = _expand_loading_message_prefix if '_expand_loading_message_prefix' in globals() else "Fetching all data"
         dots = LOADING_ANIMATION_FRAMES[_expand_loading_dots_position]
-        _expand_loading_label.configure(text=f"{prefix}{dots} (this can take up to ~1 minute)")
+        _expand_loading_label.configure(text=f"{prefix}{dots} This can take up to ~1 minute")
         _expand_loading_dots_position = (_expand_loading_dots_position + 1) % len(LOADING_ANIMATION_FRAMES)
     except Exception:
         pass
@@ -1958,7 +1958,7 @@ def _show_expand_long_loading_message():
     try:
         prefix = _expand_loading_message_prefix if '_expand_loading_message_prefix' in globals() else "Fetching all data"
         _expand_loading_dots_position = 0
-        _expand_loading_label.configure(text=prefix + LOADING_ANIMATION_FRAMES[0] + " (this can take up to ~1 minute)")
+        _expand_loading_label.configure(text=prefix + LOADING_ANIMATION_FRAMES[0] + " This can take up to ~1 minute")
         _expand_loading_label.pack(side="left", anchor="w", padx=(12, 0), pady=0)
         if 'app' in globals() and app and app.winfo_exists():
             _expand_loading_dots_after_id = app.after(300, _expand_loading_dots_tick)
@@ -7429,6 +7429,7 @@ def set_ui_state_searching(is_searching):
             if 'platform_combo' in globals() and platform_combo and platform_combo.winfo_exists(): platform_combo.configure(state=combo_state)
             if 'type_combo' in globals() and type_combo and type_combo.winfo_exists(): type_combo.configure(state=combo_state)
             if 'search_entry' in globals() and search_entry and search_entry.winfo_exists(): search_entry.configure(state=state)
+            if 'tidal_atmos_checkbox' in globals() and tidal_atmos_checkbox and tidal_atmos_checkbox.winfo_exists(): tidal_atmos_checkbox.configure(state=state)
             if 'search_progress_bar' in globals() and search_progress_bar and search_progress_bar.winfo_exists():
                 if is_searching: search_progress_bar.configure(mode="indeterminate"); search_progress_bar.start()
                 else: search_progress_bar.stop(); search_progress_bar.set(0); search_progress_bar.configure(mode="determinate")
@@ -9089,7 +9090,7 @@ def update_search_types(platform):
         "Beatport": ["track", "artist", "playlist", "album", "label"],
         "Beatsource": ["track", "artist", "playlist", "album", "label"],
         "Qobuz": ["track", "artist", "playlist", "album"],
-        "Tidal": ["track", "artist", "playlist", "album", "album  ◗◖ ᴀᴛᴍᴏs", "track  ◗◖ ᴀᴛᴍᴏs", "playlist  ◗◖ ᴀᴛᴍᴏs"],
+        "Tidal": ["track", "artist", "playlist", "album"],
     }
     default_types = sorted(["track", "artist", "playlist", "album"])
     available_types = sorted(platform_types.get(platform, default_types))
@@ -9103,20 +9104,56 @@ def update_search_types(platform):
     except NameError: pass
     except tkinter.TclError as e: print(f"TclError updating search types (widget destroyed?): {e}")
     except Exception as e: print(f"Error updating search types: {e}")
+    # Show/hide Tidal ATMOS checkbox: only when Tidal AND type is not artist
+    try:
+        if 'tidal_atmos_frame' in globals() and tidal_atmos_frame and tidal_atmos_frame.winfo_exists():
+            current_type = (type_var.get() or "").strip().lower() if ('type_var' in globals() and type_var) else ""
+            if (platform or "").strip().lower() == "tidal" and current_type != "artist":
+                tidal_atmos_frame.pack(side="top", anchor="w", pady=(6, 0))
+            else:
+                tidal_atmos_frame.pack_forget()
+    except (NameError, tkinter.TclError, Exception):
+        pass
     _update_search_placeholder()
 
+def _update_tidal_atmos_visibility(*args):
+    """Show ATMOS checkbox only when Platform is Tidal and Type is not artist."""
+    try:
+        if 'tidal_atmos_frame' not in globals() or not tidal_atmos_frame or not tidal_atmos_frame.winfo_exists():
+            return
+        if 'platform_var' not in globals() or not platform_var or 'type_var' not in globals() or not type_var:
+            return
+        platform = (platform_var.get() or "").strip().lower()
+        current_type = (type_var.get() or "").strip().lower()
+        if platform == "tidal" and current_type != "artist":
+            tidal_atmos_frame.pack(side="top", anchor="w", pady=(6, 0))
+        else:
+            tidal_atmos_frame.pack_forget()
+    except (NameError, tkinter.TclError, Exception):
+        pass
+
 def _update_search_placeholder(*args):
-    """Set search entry placeholder when Tidal + track/album (ATMOS) selected, else default."""
+    """Set search entry placeholder when Tidal + ATMOS checkbox enabled, else default.
+    Do not update while the entry has focus to avoid placeholder being treated as content when user types after switching Type."""
     try:
         if 'search_entry' not in globals() or not search_entry or not search_entry.winfo_exists():
             return
-        if 'type_var' not in globals() or not type_var or 'platform_var' not in globals() or not platform_var:
+        if 'platform_var' not in globals() or not platform_var:
             return
-        platform = (platform_var.get() or "").strip()
-        search_type = (type_var.get() or "").strip()
-        # Normalize: strip emoji/pipe to get base type for comparison
-        normalized_type = search_type.replace("  ◗◖ ᴀᴛᴍᴏs", " (ATMOS)").replace("  ◗◖ ᴀᴛᴍᴏs", " (ATMOS)").replace("( ◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs)", "(ATMOS)").replace("(◗◖ atmos)", "(ATMOS)").replace("(◗◖ atmos )", "(ATMOS)").replace("(◗◖atmos )", "(ATMOS)").replace("(◗◖ATMOS )", "(ATMOS)").strip()
-        if platform.lower() == "tidal" and normalized_type in ("album (ATMOS)", "track (ATMOS)", "playlist (ATMOS)"):
+        try:
+            has_focus = (search_entry.winfo_toplevel().focus_get() == search_entry)
+        except (AttributeError, tkinter.TclError, Exception):
+            has_focus = False
+        if has_focus:
+            return
+        platform = (platform_var.get() or "").strip().lower()
+        atmos_enabled = False
+        if platform == "tidal" and 'tidal_atmos_var' in globals() and tidal_atmos_var:
+            try:
+                atmos_enabled = tidal_atmos_var.get()
+            except (tkinter.TclError, Exception):
+                pass
+        if platform == "tidal" and atmos_enabled:
             placeholder = "Enter search query or hit Search to explore..."
         else:
             placeholder = "Enter search query..."
@@ -9779,6 +9816,11 @@ def start_search():
         if 'type_var' not in globals() or not type_var: print("Error: Type variable not available."); return
 
         query = search_entry.get().strip(); platform_name = platform_var.get(); search_type_str = type_var.get()
+        # When Tidal + ATMOS checkbox: effective type is e.g. "album (ATMOS)" for explore/search
+        if platform_name and platform_name.strip().lower() == 'tidal' and ('tidal_atmos_var' in globals() and tidal_atmos_var and tidal_atmos_var.get()):
+            base = (search_type_str or "").strip().lower()
+            if base in ("album", "playlist", "track"):
+                search_type_str = ("track (ATMOS)" if base == "track" else "album (ATMOS)" if base == "album" else "playlist (ATMOS)")
         is_tidal_explore = platform_name and platform_name.lower() == 'tidal' and search_type_str in TIDAL_EXPLORE_TYPES
         if not query and not is_tidal_explore: show_centered_messagebox("Info", "Please enter a search query.", dialog_type="warning"); return
         if not platform_name: show_centered_messagebox("Info", "Please select a platform.", dialog_type="warning"); return
@@ -13741,27 +13783,41 @@ if __name__ == "__main__":
         stop_button = customtkinter.CTkButton(bottom_frame, text="Stop", width=100, height=30, command=stop_download, fg_color="#343638", hover_color="#1F6AA5", state=tkinter.DISABLED); stop_button.grid(row=0, column=2, sticky="e", padx=(0, 5))
         search_tab = tabview.add("Search"); search_main_frame = customtkinter.CTkFrame(search_tab, fg_color="transparent"); search_main_frame.pack(fill="both", expand=True, padx=9, pady=(10,0))
         # Add extra top padding to align with download tab (which has 2 input rows)
-        controls_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); controls_frame.pack(fill="x", pady=(5, 20)); controls_frame.grid_columnconfigure(4, weight=1)
-        customtkinter.CTkLabel(controls_frame, text="Platform").grid(row=0, column=0, padx=(5,1), sticky="w")
+        controls_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); controls_frame.pack(fill="x", pady=(5, 0)); controls_frame.grid_columnconfigure(4, weight=1)
+        # Fixed row height for all platforms so RESULTS starts at same position (matches Tidal with ATMOS checkbox: entry + gap + checkbox)
+        controls_frame.grid_rowconfigure(0, minsize=60)
+        customtkinter.CTkLabel(controls_frame, text="Platform").grid(row=0, column=0, padx=(5,1), sticky="nw")
         search_tab_initial_platforms = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
         platform_var = tkinter.StringVar(value=search_tab_initial_platforms[0] if search_tab_initial_platforms else ""); 
         platform_combo = customtkinter.CTkComboBox(controls_frame, values=search_tab_initial_platforms, variable=platform_var, width=140, state="readonly", height=30, dropdown_fg_color="#2B2B2B"); 
-        platform_combo.grid(row=0, column=1, padx=(5, 6)); 
+        platform_combo.grid(row=0, column=1, padx=(5, 6), sticky="n"); 
         platform_var.trace_add("write", on_platform_change)
 
-        customtkinter.CTkLabel(controls_frame, text="Type").grid(row=0, column=2, padx=(5,5), sticky="w")
+        customtkinter.CTkLabel(controls_frame, text="Type").grid(row=0, column=2, padx=(5,5), sticky="nw")
         type_var = tkinter.StringVar()
         type_combo = customtkinter.CTkComboBox(controls_frame, values=[], variable=type_var, width=100, state="readonly", height=30, dropdown_fg_color="#2B2B2B")
-        type_combo.grid(row=0, column=3, padx=(2, 1), sticky="w")
+        type_combo.grid(row=0, column=3, padx=(2, 1), sticky="n")
         type_var.trace_add("write", _update_search_placeholder)
-        search_input_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent"); search_input_frame.grid(row=0, column=4, sticky="ew", padx=(10, 5))
-        search_entry = customtkinter.CTkEntry(search_input_frame, placeholder_text="Enter search query...", height=30, placeholder_text_color="#7F7F7F"); search_entry.pack(side="left", fill="x", expand=True, padx=(0, 0))
+        type_var.trace_add("write", _update_tidal_atmos_visibility)
+        search_input_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent"); search_input_frame.grid(row=0, column=4, sticky="new", padx=(10, 5)); search_input_frame.grid_columnconfigure(0, weight=1)
+        search_entry_row = customtkinter.CTkFrame(search_input_frame, fg_color="transparent"); search_entry_row.pack(side="top", fill="x")
+        search_entry = customtkinter.CTkEntry(search_entry_row, placeholder_text="Enter search query...", height=30, placeholder_text_color="#7F7F7F"); search_entry.pack(side="left", fill="x", expand=True, padx=(0, 0))
         search_entry.bind("<Return>", lambda e: start_search()); search_entry.bind("<Button-3>", show_context_menu); search_entry.bind("<Button-2>", show_context_menu); search_entry.bind("<Control-Button-1>", show_context_menu)
         search_entry.bind("<Control-c>", _handle_ctrl_c_copy); search_entry.bind("<Control-C>", _handle_ctrl_c_copy)
         search_entry.bind("<FocusIn>", lambda e, w=search_entry: handle_focus_in(w))
-        search_entry.bind("<FocusOut>", lambda e, w=search_entry: handle_focus_out(w))
-        clear_search_button = customtkinter.CTkButton(search_input_frame, text="Clear", command=clear_search_entry, width=100, height=30, fg_color="#343638", hover_color="#1F6AA5"); clear_search_button.pack(side="left", padx=(10, 0))
-        button_search_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent"); button_search_frame.grid(row=0, column=5, padx=(5,0))
+        search_entry.bind("<FocusOut>", lambda e, w=search_entry: (handle_focus_out(w), _update_search_placeholder()))
+        clear_search_button = customtkinter.CTkButton(search_entry_row, text="Clear", command=clear_search_entry, width=100, height=30, fg_color="#343638", hover_color="#1F6AA5"); clear_search_button.pack(side="left", padx=(10, 0))
+        # Tidal ATMOS checkbox: under search field, left-aligned; text ◗◖ ᴀᴛᴍᴏs with smaller font; visible only when Tidal + type is album/playlist/track
+        tidal_atmos_var = tkinter.BooleanVar(value=False)
+        tidal_atmos_frame = customtkinter.CTkFrame(search_input_frame, fg_color="transparent")
+        tidal_atmos_checkbox = customtkinter.CTkCheckBox(tidal_atmos_frame, text="◗◖ ᴀᴛᴍᴏs", variable=tidal_atmos_var, width=100, height=22, font=("Segoe UI", 14), command=_update_search_placeholder)
+        tidal_atmos_checkbox.pack(side="left")
+        tidal_atmos_var.trace_add("write", lambda *a: _update_search_placeholder())
+        tidal_atmos_frame.pack_forget()  # Shown by update_search_types when Tidal and type != artist
+        globals()["tidal_atmos_var"] = tidal_atmos_var
+        globals()["tidal_atmos_frame"] = tidal_atmos_frame
+        globals()["tidal_atmos_checkbox"] = tidal_atmos_checkbox
+        button_search_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent"); button_search_frame.grid(row=0, column=5, padx=(5,0), sticky="n")
         search_button = customtkinter.CTkButton(button_search_frame, text="Search", command=start_search, width=100, height=30, fg_color="#343638", hover_color="#1F6AA5", state="disabled"); search_button.pack(side="left", padx=(0, 6))
         update_search_types(platform_var.get())
         # Pack selection frame FIRST (at bottom) so it reserves space before the expanding results frame
@@ -13774,7 +13830,7 @@ if __name__ == "__main__":
         selection_entry.bind("<FocusOut>", lambda e, w=selection_entry: handle_focus_out(w))
         search_download_button = customtkinter.CTkButton(selection_controls_frame, text="Download", command=download_selected, width=100, height=30, state="disabled", fg_color="#343638", hover_color="#1F6AA5"); search_download_button.pack(side="left", padx=(5, 6))
         # Now pack the results frame which will expand to fill remaining space
-        results_outer_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); results_outer_frame.pack(fill="both", expand=True, pady=(8,15))
+        results_outer_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); results_outer_frame.pack(fill="both", expand=True, pady=(0, 15))
         # Results header: optional "← Back" (left), then RESULTS / Album: ... label, then volume
         results_header_frame = customtkinter.CTkFrame(results_outer_frame, fg_color="transparent"); results_header_frame.pack(fill="x", padx=0, pady=0)
         _back_to_search_button = customtkinter.CTkButton(
