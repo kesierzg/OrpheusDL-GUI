@@ -12265,8 +12265,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
             deezer_arl_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.deezer.com"))
             deezer_arl_link.bind("<Enter>", lambda e: deezer_arl_link.configure(text_color=LINK_HOVER_COLOR))
             deezer_arl_link.bind("<Leave>", lambda e: deezer_arl_link.configure(text_color=LINK_COLOR))
-            _deezer_step(left_col_arl, 2, "Hit F12 to open DevTools in your browser")
-            _deezer_step(left_col_arl, 3, "Go to Storage/Application → Cookies → www.deezer.com")
+            _deezer_step(left_col_arl, 2, "Open Developer Tools in your browser")
+            _deezer_step(left_col_arl, 3, "Go to Application/Storage → Cookies → www.deezer.com")
             step4_arl = customtkinter.CTkFrame(left_col_arl, fg_color="transparent")
             step4_arl.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step4_arl, text="4.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
@@ -12435,12 +12435,12 @@ def _create_credential_tab_content(platform_name, tab_frame):
             qobuz_play_link.bind("<Enter>", lambda e: qobuz_play_link.configure(text_color=LINK_HOVER_COLOR))
             qobuz_play_link.bind("<Leave>", lambda e: qobuz_play_link.configure(text_color=LINK_COLOR))
             customtkinter.CTkLabel(step1_id_frame, text=")", font=("Segoe UI", 12), text_color="gray").pack(side="left")
-            _qobuz_step(left_col_idtoken, 2, "Hit F12 to open DevTools in your browser")
+            _qobuz_step(left_col_idtoken, 2, "Open Developer Tools in your browser")
             # Step 3: one-liner (no wrap)
             step3_id_frame = customtkinter.CTkFrame(left_col_idtoken, fg_color="transparent")
             step3_id_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step3_id_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step3_id_frame, text="Go to Storage/Application → Local storage → play.qobuz.com", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+            customtkinter.CTkLabel(step3_id_frame, text="Go to Application/Storage → Local storage → play.qobuz.com", font=("Segoe UI", 12), text_color="gray", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
 
             # --- Right Column: "Recommended Values" header (same height as "How to set up") + app_id / app_secret ---
             right_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
@@ -12578,14 +12578,14 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step2_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step2_frame, text="2.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step2_frame, text="Hit F12 to open DevTools in your browser", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step2_frame, text="Open Developer Tools in your browser", font=("Segoe UI", 12), text_color="gray").pack(side="left")
             
             # Step 3
             step3_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step3_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step3_frame, text="Go to Storage/Application → Cookies → https://soundcloud.com", font=("Segoe UI", 12), text_color="gray").pack(side="left")
+            customtkinter.CTkLabel(step3_frame, text="Go to Application/Storage → Cookies → https://soundcloud.com", font=("Segoe UI", 12), text_color="gray").pack(side="left")
 
             # Step 4
             step4_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
