@@ -13068,6 +13068,12 @@ def _on_gui_exit():
     """Handles cleanup when the GUI is closing."""
     global app, _mutex_handle
     print("[Exit] GUI closing. Cleaning up temp directory...")
+    # Ensure any preview audio is stopped (especially on macOS where afplay keeps running)
+    try:
+        if 'stop_audio' in globals() and callable(stop_audio):
+            stop_audio()
+    except Exception as e:
+        print(f"[Exit] Error stopping audio on exit: {e}")
     try:
         shutil.rmtree('temp', ignore_errors=True)
         print("[Exit] Temp directory removed.")
