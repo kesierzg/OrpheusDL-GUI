@@ -13812,6 +13812,13 @@ if __name__ == "__main__":
         tidal_atmos_frame = customtkinter.CTkFrame(search_input_frame, fg_color="transparent")
         tidal_atmos_checkbox = customtkinter.CTkCheckBox(tidal_atmos_frame, text="◗◖ ᴀᴛᴍᴏs", variable=tidal_atmos_var, width=100, height=22, font=("Segoe UI", 14), command=_update_search_placeholder)
         tidal_atmos_checkbox.pack(side="left")
+        # Tooltip styled like Global settings tooltips
+        CTkToolTip(
+            tidal_atmos_checkbox,
+            message="Search for Dolby Atmos format only.\nOr hit Search to explore the latest releases.",
+            bg_color=TOOLTIP_MENU_BG,
+            text_color=LIGHT_TEXT_COLOR,
+        )
         tidal_atmos_var.trace_add("write", lambda *a: _update_search_placeholder())
         tidal_atmos_frame.pack_forget()  # Shown by update_search_types when Tidal and type != artist
         globals()["tidal_atmos_var"] = tidal_atmos_var
