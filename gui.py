@@ -13816,7 +13816,7 @@ if __name__ == "__main__":
         # Tidal ATMOS checkbox: under search field, left-aligned; text ◗◖ ᴀᴛᴍᴏs with smaller font; visible only when Tidal + type is album/playlist/track
         tidal_atmos_var = tkinter.BooleanVar(value=False)
         tidal_atmos_frame = customtkinter.CTkFrame(search_input_frame, fg_color="transparent")
-        tidal_atmos_checkbox = customtkinter.CTkCheckBox(tidal_atmos_frame, text="◗◖ ᴀᴛᴍᴏs", variable=tidal_atmos_var, width=100, height=22, font=("Segoe UI", 14), command=_update_search_placeholder)
+        tidal_atmos_checkbox = customtkinter.CTkCheckBox(tidal_atmos_frame, text="◗◖ ᴀᴛᴍᴏs", variable=tidal_atmos_var, width=100, height=22, font=("Segoe UI", 13), command=_update_search_placeholder)
         tidal_atmos_checkbox.pack(side="left")
         # Tooltip styled like Global settings tooltips
         CTkToolTip(
