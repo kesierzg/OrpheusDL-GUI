@@ -809,10 +809,12 @@ TREEVIEW_BG_HEX = "#1D1E1E"  # Match Custom.Treeview fieldbackground
 # Fixed width for all right-click context menus (matches main action buttons: 100)
 CONTEXT_MENU_WIDTH = 100
 # Icon and text color for context menu items (match so icons = text)
-CONTEXT_MENU_TEXT_COLOR = "#DCE4EE"
+CONTEXT_MENU_TEXT_COLOR = "#dddddd"
 CONTEXT_MENU_TEXT_DISABLED = "#808080"  # gray (hex for PIL and CTk)
 # Background for all tooltips and right-click context menus
 TOOLTIP_MENU_BG = "#222323"
+# Background for special context menus (Artwork, Search Results) and Dolby Atmos tooltip
+SPECIAL_MENU_BG = "#343638"
 
 # Content width for download log, search results, and platform help sections (kept in sync)
 HELP_CONTENT_WIDTH = 920
@@ -3071,9 +3073,9 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     context_menu.geometry(f"+{x}+{y}")
                                     
                                     # Match tooltip background and fixed width; border matches separator color (#2B2B2B)
-                                    menu_frame = customtkinter.CTkFrame(context_menu, border_width=1, border_color="#565B5E", fg_color=TOOLTIP_MENU_BG, width=CONTEXT_MENU_WIDTH)
+                                    menu_frame = customtkinter.CTkFrame(context_menu, border_width=1, border_color="#565B5E", fg_color=SPECIAL_MENU_BG, width=CONTEXT_MENU_WIDTH)
                                     menu_frame.pack(fill="both", expand=True, padx=1, pady=1)
-                                    button_color = TOOLTIP_MENU_BG
+                                    button_color = SPECIAL_MENU_BG
                                     hover_color_artwork = "#1F6AA5"
                                     
                                     # macOS: plain tk rows + motion-based hover (Enter/Leave often don't fire in overrideredirect on macOS)
@@ -3081,27 +3083,29 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                         from PIL import Image, ImageDraw, ImageTk
                                         text_fg = CONTEXT_MENU_TEXT_COLOR
                                         # Icons as PhotoImage for tk.Label (keep refs so they aren't GC'd)
-                                        def _artwork_copy_pil():
+                                        def _artwork_copy_pil(color=text_fg):
                                             img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
                                             d = ImageDraw.Draw(img)
                                             bx1, by1, bx2, by2 = 2, 2, 10, 10
                                             fx1, fy1, fx2, fy2 = 5, 5, 13, 13
-                                            d.line([(bx1, by1), (bx2, by1)], fill=text_fg, width=1)
-                                            d.line([(bx1, by1), (bx1, by2)], fill=text_fg, width=1)
-                                            d.line([(bx2, by1), (bx2, fy1)], fill=text_fg, width=1)
-                                            d.line([(bx1, by2), (fx1, by2)], fill=text_fg, width=1)
-                                            d.rectangle([fx1, fy1, fx2, fy2], outline=text_fg, width=1)
+                                            d.line([(bx1, by1), (bx2, by1)], fill=color, width=1)
+                                            d.line([(bx1, by1), (bx1, by2)], fill=color, width=1)
+                                            d.line([(bx2, by1), (bx2, fy1)], fill=color, width=1)
+                                            d.line([(bx1, by2), (fx1, by2)], fill=color, width=1)
+                                            d.rectangle([fx1, fy1, fx2, fy2], outline=color, width=1)
                                             return img
-                                        def _artwork_download_pil():
+                                        def _artwork_download_pil(color=text_fg):
                                             img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
                                             d = ImageDraw.Draw(img)
                                             cx = 8
-                                            d.line([(3, 13), (13, 13)], fill=text_fg, width=1)
-                                            d.line([(cx, 2), (cx, 10)], fill=text_fg, width=1)
-                                            d.line([(cx - 3, 7), (cx, 10), (cx + 3, 7)], fill=text_fg, width=1)
+                                            d.line([(3, 13), (13, 13)], fill=color, width=1)
+                                            d.line([(cx, 2), (cx, 10)], fill=color, width=1)
+                                            d.line([(cx - 3, 7), (cx, 10), (cx + 3, 7)], fill=color, width=1)
                                             return img
                                         _artwork_copy_photo = ImageTk.PhotoImage(_artwork_copy_pil())
+                                        _artwork_copy_photo_hover = ImageTk.PhotoImage(_artwork_copy_pil(color="#FFFFFF"))
                                         _artwork_save_photo = ImageTk.PhotoImage(_artwork_download_pil())
+                                        _artwork_save_photo_hover = ImageTk.PhotoImage(_artwork_download_pil(color="#FFFFFF"))
                                         
                                         copy_row_tk = tkinter.Frame(menu_frame, bg=button_color, height=24, width=CONTEXT_MENU_WIDTH, cursor="", highlightthickness=0)
                                         copy_row_tk.pack(pady=(2, 1), padx=2)
@@ -3135,21 +3139,21 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                             hover = hover_color_artwork
                                             if in_copy:
                                                 copy_row_tk.config(bg=hover, cursor=HAND_CURSOR)
-                                                copy_lbl_tk.config(bg=hover, cursor=HAND_CURSOR)
+                                                copy_lbl_tk.config(bg=hover, fg="#FFFFFF", image=_artwork_copy_photo_hover, cursor=HAND_CURSOR)
                                                 save_row_tk.config(bg=button_color, cursor="")
-                                                save_lbl_tk.config(bg=button_color, cursor="")
+                                                save_lbl_tk.config(bg=button_color, fg=text_fg, image=_artwork_save_photo, cursor="")
                                                 context_menu.configure(cursor=HAND_CURSOR)
                                             elif in_save:
                                                 save_row_tk.config(bg=hover, cursor=HAND_CURSOR)
-                                                save_lbl_tk.config(bg=hover, cursor=HAND_CURSOR)
+                                                save_lbl_tk.config(bg=hover, fg="#FFFFFF", image=_artwork_save_photo_hover, cursor=HAND_CURSOR)
                                                 copy_row_tk.config(bg=button_color, cursor="")
-                                                copy_lbl_tk.config(bg=button_color, cursor="")
+                                                copy_lbl_tk.config(bg=button_color, fg=text_fg, image=_artwork_copy_photo, cursor="")
                                                 context_menu.configure(cursor=HAND_CURSOR)
                                             else:
                                                 copy_row_tk.config(bg=button_color, cursor="")
-                                                copy_lbl_tk.config(bg=button_color, cursor="")
+                                                copy_lbl_tk.config(bg=button_color, fg=text_fg, image=_artwork_copy_photo, cursor="")
                                                 save_row_tk.config(bg=button_color, cursor="")
-                                                save_lbl_tk.config(bg=button_color, cursor="")
+                                                save_lbl_tk.config(bg=button_color, fg=text_fg, image=_artwork_save_photo, cursor="")
                                                 context_menu.configure(cursor="")
                                         
                                         def _artwork_motion(e):
@@ -3178,6 +3182,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     else:
                                         menu_frame.configure(cursor=HAND_CURSOR)
                                         copy_icon = _create_copy_icon(color=CONTEXT_MENU_TEXT_COLOR)
+                                        copy_icon_hover = _create_copy_icon(color="#FFFFFF")
                                         copy_btn = customtkinter.CTkButton(
                                             menu_frame,
                                             text="Copy Image",
@@ -3195,12 +3200,13 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                             command=lambda: _copy_image_to_clipboard(context_menu)
                                         )
                                         copy_btn.image = copy_icon
-                                        copy_btn.pack(pady=(2, 1), padx=2, fill="x")
+                                        copy_btn.pack(pady=(2, 1), padx=2, fill="x"); _bind_hover_effect(copy_btn, normal_bg=button_color, hover_image=copy_icon_hover, normal_image=copy_icon)
                                         
                                         sep_frame = customtkinter.CTkFrame(menu_frame, width=50, height=2, fg_color="#2B2B2B")
                                         sep_frame.pack(fill="x", padx=2, pady=2)
                                         
                                         save_icon = _create_download_icon(color=CONTEXT_MENU_TEXT_COLOR)
+                                        save_icon_hover = _create_download_icon(color="#FFFFFF")
                                         save_btn = customtkinter.CTkButton(
                                             menu_frame,
                                             text="Save as...",
@@ -3218,7 +3224,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                             command=lambda: _save_image_to_file(context_menu)
                                         )
                                         save_btn.image = save_icon
-                                        save_btn.pack(pady=(1, 2), padx=2, fill="x")
+                                        save_btn.pack(pady=(1, 2), padx=2, fill="x"); _bind_hover_effect(save_btn, normal_bg=button_color, hover_image=save_icon_hover, normal_image=save_icon)
                                     
                                     # Close menu when clicking outside (deferred to avoid macOS Tk crash)
                                     def _close_menu(event=None):
@@ -6514,6 +6520,46 @@ def show_log_viewer(title="Application Logs", parent=None):
     
     dialog.grab_set()
 
+def _bind_hover_effect(widget, hover_color="#FFFFFF", normal_color=CONTEXT_MENU_TEXT_COLOR, hover_bg="#1F6AA5", normal_bg=None, hover_image=None, normal_image=None):
+    """Binds Enter/Leave events to change text color, background color, and image on hover."""
+    def _on_enter(e):
+        try:
+            if hasattr(widget, 'cget') and widget.cget("state") == "disabled":
+                return
+            
+            if hasattr(widget, 'configure'):
+                kwargs = {'text_color': hover_color}
+                if hover_bg: kwargs['fg_color'] = hover_bg
+                if hover_image: kwargs['image'] = hover_image
+                widget.configure(**kwargs)
+            else:
+                widget.config(fg=hover_color)
+                if hover_bg: widget.config(bg=hover_bg)
+                if hover_image: widget.config(image=hover_image)
+        except: pass
+    
+    def _on_leave(e):
+        try:
+            # If disabled, we might have skipped _on_enter, but if we leave, we ensuring state is reset is safer
+            # though usually if disabled, it stays disabled.
+            # But checking state generally avoids messing with disabled appearance.
+            if hasattr(widget, 'cget') and widget.cget("state") == "disabled":
+                return
+
+            if hasattr(widget, 'configure'):
+                kwargs = {'text_color': normal_color}
+                if normal_bg: kwargs['fg_color'] = normal_bg
+                if normal_image: kwargs['image'] = normal_image
+                widget.configure(**kwargs)
+            else:
+                widget.config(fg=normal_color)
+                if normal_bg: widget.config(bg=normal_bg)
+                if normal_image: widget.config(image=normal_image)
+        except: pass
+        
+    widget.bind("<Enter>", _on_enter, add="+")
+    widget.bind("<Leave>", _on_leave, add="+")
+
 def _create_menu():
     global _context_menu, app, BUTTON_COLOR
     if _context_menu and _context_menu.winfo_exists(): return
@@ -6524,6 +6570,7 @@ def _create_menu():
 
     # Undo button (icon color = text color; disabled icon = disabled text color)
     undo_icon = _create_undo_icon(color=CONTEXT_MENU_TEXT_COLOR)
+    undo_icon_hover = _create_undo_icon(color="#FFFFFF")
     undo_icon_disabled = _create_undo_icon(color=CONTEXT_MENU_TEXT_DISABLED)
     undo_button = customtkinter.CTkButton(
         _context_menu, 
@@ -6543,7 +6590,7 @@ def _create_menu():
     )
     undo_button.image = undo_icon
     undo_button.disabled_image = undo_icon_disabled
-    undo_button.pack(pady=(2, 1), padx=2, fill="x")
+    undo_button.pack(pady=(2, 1), padx=2, fill="x"); _bind_hover_effect(undo_button, normal_bg=button_color, hover_image=undo_icon_hover, normal_image=undo_icon)
     
     # Separator line (slightly lighter than menu bg so it's visible)
     separator = customtkinter.CTkFrame(_context_menu, width=50, height=2, fg_color="#2B2B2B")
@@ -6551,6 +6598,7 @@ def _create_menu():
     
     # Copy button
     copy_icon = _create_copy_icon(color=CONTEXT_MENU_TEXT_COLOR)
+    copy_icon_hover = _create_copy_icon(color="#FFFFFF")
     copy_icon_disabled = _create_copy_icon(color=CONTEXT_MENU_TEXT_DISABLED)
     copy_button = customtkinter.CTkButton(
         _context_menu, 
@@ -6570,10 +6618,11 @@ def _create_menu():
     )
     copy_button.image = copy_icon
     copy_button.disabled_image = copy_icon_disabled
-    copy_button.pack(pady=1, padx=2, fill="x")
+    copy_button.pack(pady=1, padx=2, fill="x"); _bind_hover_effect(copy_button, normal_bg=button_color, hover_image=copy_icon_hover, normal_image=copy_icon)
     
     # Paste button
     paste_icon = _create_paste_icon(color=CONTEXT_MENU_TEXT_COLOR)
+    paste_icon_hover = _create_paste_icon(color="#FFFFFF")
     paste_icon_disabled = _create_paste_icon(color=CONTEXT_MENU_TEXT_DISABLED)
     paste_button = customtkinter.CTkButton(
         _context_menu, 
@@ -6593,7 +6642,7 @@ def _create_menu():
     )
     paste_button.image = paste_icon
     paste_button.disabled_image = paste_icon_disabled
-    paste_button.pack(pady=(1, 2), padx=2, fill="x")
+    paste_button.pack(pady=(1, 2), padx=2, fill="x"); _bind_hover_effect(paste_button, normal_bg=button_color, hover_image=paste_icon_hover, normal_image=paste_icon)
     
     _context_menu.pack_forget()
 
@@ -9154,7 +9203,7 @@ def _update_search_placeholder(*args):
             except (tkinter.TclError, Exception):
                 pass
         if platform == "tidal" and atmos_enabled:
-            placeholder = "Enter search query or hit Search to explore..."
+            placeholder = "Enter search query or hit search to explore..."
         else:
             placeholder = "Enter search query..."
         search_entry.configure(placeholder_text=placeholder)
@@ -10021,12 +10070,13 @@ def _create_search_context_menu():
         # Wrapper: fixed width; menu frame and spacer also fixed width so menu doesn't grow
         _search_context_menu_wrapper = customtkinter.CTkFrame(app, fg_color="transparent", width=CONTEXT_MENU_WIDTH)
         # Main context menu frame - fixed width; rounded corners
-        _search_context_menu = customtkinter.CTkFrame(_search_context_menu_wrapper, border_width=1, border_color="#565B5E", fg_color=TOOLTIP_MENU_BG, width=CONTEXT_MENU_WIDTH)
+        _search_context_menu = customtkinter.CTkFrame(_search_context_menu_wrapper, border_width=1, border_color="#565B5E", fg_color=SPECIAL_MENU_BG, width=CONTEXT_MENU_WIDTH)
         _search_context_menu.configure(cursor=HAND_CURSOR)
-        button_color = TOOLTIP_MENU_BG
+        button_color = SPECIAL_MENU_BG
         
         # Open URL button - same style as copy/paste buttons (icon color = text color)
         external_link_icon = _create_external_link_icon(color=CONTEXT_MENU_TEXT_COLOR)
+        external_link_icon_hover = _create_external_link_icon(color="#FFFFFF")
         _search_copy_url_button = customtkinter.CTkButton(
             _search_context_menu, 
             text="Link", 
@@ -10044,7 +10094,7 @@ def _create_search_context_menu():
             anchor="w"
         )
         _search_copy_url_button.image = external_link_icon  # Keep reference
-        _search_copy_url_button.pack(pady=(2, 1), padx=2, fill="x")
+        _search_copy_url_button.pack(pady=(2, 1), padx=2, fill="x"); _bind_hover_effect(_search_copy_url_button, normal_bg=button_color, hover_image=external_link_icon_hover, normal_image=external_link_icon)
         
         # Separator line (slightly lighter than menu bg so it's visible)
         separator = customtkinter.CTkFrame(_search_context_menu, width=50, height=2, fg_color="#2B2B2B")
@@ -10080,12 +10130,12 @@ def _create_search_context_menu():
             # Hide 4th button by default (will be shown for TIDAL); last button gets minimal bottom pady (2); SoundCloud/Apple Music get 4 when repacked
             if i < 3:
                 btn.pack(pady=(1, 2) if i == 2 else 1, padx=2, fill="x")
-            _search_quality_buttons.append(btn)  # Store reference to button
+            _search_quality_buttons.append(btn); _bind_hover_effect(btn, normal_bg=button_color)  # Store reference to button
 
         # One-liner for SoundCloud/Apple Music: "No other formats available"
         _search_context_menu_bottom_label = customtkinter.CTkLabel(
             _search_context_menu, text="  1 format available",
-            font=("Segoe UI", 10), text_color="#808080"
+            font=("Segoe UI", 10), text_color="#aaaaaa", cursor="arrow"
         )
         # show_search_context_menu packs it when platform is soundcloud/applemusic
 
@@ -13788,8 +13838,13 @@ if __name__ == "__main__":
         clear_output_button = customtkinter.CTkButton(bottom_frame, text="Clear Output", width=100, height=30, command=clear_output_log, fg_color="#343638", hover_color="#1F6AA5"); clear_output_button.grid(row=0, column=1, sticky="e", padx=(5, 10))
         stop_button = customtkinter.CTkButton(bottom_frame, text="Stop", width=100, height=30, command=stop_download, fg_color="#343638", hover_color="#1F6AA5", state=tkinter.DISABLED); stop_button.grid(row=0, column=2, sticky="e", padx=(0, 5))
         search_tab = tabview.add("Search"); search_main_frame = customtkinter.CTkFrame(search_tab, fg_color="transparent"); search_main_frame.pack(fill="both", expand=True, padx=9, pady=(10,0))
+        
+        def clear_focus(event=None):
+            app.focus_set()
+        
+        search_main_frame.bind("<Button-1>", clear_focus)
         # Add extra top padding to align with download tab (which has 2 input rows)
-        controls_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); controls_frame.pack(fill="x", pady=(5, 0)); controls_frame.grid_columnconfigure(4, weight=1)
+        controls_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); controls_frame.pack(fill="x", pady=(5, 0)); controls_frame.grid_columnconfigure(4, weight=1); controls_frame.bind("<Button-1>", clear_focus)
         # Fixed row height for all platforms so RESULTS starts at same position (matches Tidal with ATMOS checkbox: entry + gap + checkbox)
         controls_frame.grid_rowconfigure(0, minsize=60)
         customtkinter.CTkLabel(controls_frame, text="Platform").grid(row=0, column=0, padx=(5,1), sticky="nw")
@@ -13798,6 +13853,7 @@ if __name__ == "__main__":
         platform_combo = customtkinter.CTkComboBox(controls_frame, values=search_tab_initial_platforms, variable=platform_var, width=140, state="readonly", height=30, dropdown_fg_color="#2B2B2B"); 
         platform_combo.grid(row=0, column=1, padx=(5, 6), sticky="n"); 
         platform_var.trace_add("write", on_platform_change)
+        platform_var.trace_add("write", lambda *a: clear_focus())
 
         customtkinter.CTkLabel(controls_frame, text="Type").grid(row=0, column=2, padx=(5,5), sticky="nw")
         type_var = tkinter.StringVar()
@@ -13805,7 +13861,8 @@ if __name__ == "__main__":
         type_combo.grid(row=0, column=3, padx=(2, 1), sticky="n")
         type_var.trace_add("write", _update_search_placeholder)
         type_var.trace_add("write", _update_tidal_atmos_visibility)
-        search_input_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent"); search_input_frame.grid(row=0, column=4, sticky="new", padx=(10, 5)); search_input_frame.grid_columnconfigure(0, weight=1)
+        type_var.trace_add("write", lambda *a: clear_focus())
+        search_input_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent"); search_input_frame.grid(row=0, column=4, sticky="new", padx=(10, 5)); search_input_frame.grid_columnconfigure(0, weight=1); search_input_frame.bind("<Button-1>", clear_focus)
         search_entry_row = customtkinter.CTkFrame(search_input_frame, fg_color="transparent"); search_entry_row.pack(side="top", fill="x")
         search_entry = customtkinter.CTkEntry(search_entry_row, placeholder_text="Enter search query...", height=30, placeholder_text_color="#7F7F7F"); search_entry.pack(side="left", fill="x", expand=True, padx=(0, 0))
         search_entry.bind("<Return>", lambda e: start_search()); search_entry.bind("<Button-3>", show_context_menu); search_entry.bind("<Button-2>", show_context_menu); search_entry.bind("<Control-Button-1>", show_context_menu)
@@ -13816,12 +13873,12 @@ if __name__ == "__main__":
         # Tidal ATMOS checkbox: under search field, left-aligned; text ◗◖ ᴀᴛᴍᴏs with smaller font; visible only when Tidal + type is album/playlist/track
         tidal_atmos_var = tkinter.BooleanVar(value=False)
         tidal_atmos_frame = customtkinter.CTkFrame(search_input_frame, fg_color="transparent")
-        tidal_atmos_checkbox = customtkinter.CTkCheckBox(tidal_atmos_frame, text="◗◖ ᴀᴛᴍᴏs", variable=tidal_atmos_var, width=100, height=22, font=("Segoe UI", 13), command=_update_search_placeholder)
+        tidal_atmos_checkbox = customtkinter.CTkCheckBox(tidal_atmos_frame, text="◗◖ ᴀᴛᴍᴏs", variable=tidal_atmos_var, width=100, height=22, font=("Segoe UI", 13), command=lambda: (_update_search_placeholder(), app.focus_set()))
         tidal_atmos_checkbox.pack(side="left")
         # Tooltip styled like Global settings tooltips
         CTkToolTip(
             tidal_atmos_checkbox,
-            message="Search for Dolby Atmos format only.\nOr hit Search to explore the latest releases.",
+            message="Search for Dolby Atmos format only.\nOr hit search to explore the latest releases.",
             bg_color=TOOLTIP_MENU_BG,
             text_color=LIGHT_TEXT_COLOR,
         )
@@ -13843,7 +13900,7 @@ if __name__ == "__main__":
         selection_entry.bind("<FocusOut>", lambda e, w=selection_entry: handle_focus_out(w))
         search_download_button = customtkinter.CTkButton(selection_controls_frame, text="Download", command=download_selected, width=100, height=30, state="disabled", fg_color="#343638", hover_color="#1F6AA5"); search_download_button.pack(side="left", padx=(5, 6))
         # Now pack the results frame which will expand to fill remaining space
-        results_outer_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); results_outer_frame.pack(fill="both", expand=True, pady=(0, 15))
+        results_outer_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); results_outer_frame.pack(fill="both", expand=True, pady=(0, 15)); results_outer_frame.bind("<Button-1>", clear_focus)
         # Results header: optional "← Back" (left), then RESULTS / Album: ... label, then volume
         results_header_frame = customtkinter.CTkFrame(results_outer_frame, fg_color="transparent"); results_header_frame.pack(fill="x", padx=0, pady=0)
         _back_to_search_button = customtkinter.CTkButton(
