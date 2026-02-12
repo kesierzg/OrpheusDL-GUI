@@ -1944,7 +1944,7 @@ def _expand_loading_dots_tick():
     try:
         prefix = _expand_loading_message_prefix if '_expand_loading_message_prefix' in globals() else "Fetching all data"
         dots = LOADING_ANIMATION_FRAMES[_expand_loading_dots_position]
-        _expand_loading_label.configure(text=f"{prefix}{dots} This can take up to ~1 minute")
+        _expand_loading_label.configure(text=f"{prefix}{dots} (This can take up to ~1 minute)")
         _expand_loading_dots_position = (_expand_loading_dots_position + 1) % len(LOADING_ANIMATION_FRAMES)
     except Exception:
         pass
@@ -1960,7 +1960,7 @@ def _show_expand_long_loading_message():
     try:
         prefix = _expand_loading_message_prefix if '_expand_loading_message_prefix' in globals() else "Fetching all data"
         _expand_loading_dots_position = 0
-        _expand_loading_label.configure(text=prefix + LOADING_ANIMATION_FRAMES[0] + " This can take up to ~1 minute")
+        _expand_loading_label.configure(text=prefix + LOADING_ANIMATION_FRAMES[0] + " (This can take up to ~1 minute)")
         _expand_loading_label.pack(side="left", anchor="w", padx=(12, 0), pady=0)
         if 'app' in globals() and app and app.winfo_exists():
             _expand_loading_dots_after_id = app.after(300, _expand_loading_dots_tick)
@@ -3072,10 +3072,11 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     y = event.y_root
                                     context_menu.geometry(f"+{x}+{y}")
                                     
+                                    # Artwork Context Menu
                                     # Match tooltip background and fixed width; border matches separator color (#2B2B2B)
-                                    menu_frame = customtkinter.CTkFrame(context_menu, border_width=1, border_color="#565B5E", fg_color=SPECIAL_MENU_BG, width=CONTEXT_MENU_WIDTH)
-                                    menu_frame.pack(fill="both", expand=True, padx=1, pady=1)
-                                    button_color = SPECIAL_MENU_BG
+                                    menu_frame = customtkinter.CTkFrame(context_menu, border_width=1, height=1, border_color="#565B5E", fg_color="#242424", width=80)
+                                    menu_frame.pack(fill="both", expand=True, padx=0, pady=0)
+                                    button_color = "#242424"
                                     hover_color_artwork = "#1F6AA5"
                                     
                                     # macOS: plain tk rows + motion-based hover (Enter/Leave often don't fire in overrideredirect on macOS)
@@ -3202,8 +3203,8 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                         copy_btn.image = copy_icon
                                         copy_btn.pack(pady=(2, 1), padx=2, fill="x"); _bind_hover_effect(copy_btn, normal_bg=button_color, hover_image=copy_icon_hover, normal_image=copy_icon)
                                         
-                                        sep_frame = customtkinter.CTkFrame(menu_frame, width=50, height=2, fg_color="#2B2B2B")
-                                        sep_frame.pack(fill="x", padx=2, pady=2)
+                                        sep_frame = customtkinter.CTkFrame(menu_frame, width=80, height=2, fg_color="#242424")
+                                        sep_frame.pack(fill="x", padx=1, pady=1)
                                         
                                         save_icon = _create_download_icon(color=CONTEXT_MENU_TEXT_COLOR)
                                         save_icon_hover = _create_download_icon(color="#FFFFFF")
@@ -3488,7 +3489,7 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
             _start_loading_animation(parent_iid)
         # After 8s show "Fetching all data... (this can take up to ~1 minute)" with walking dots
         if app and app.winfo_exists():
-            _expand_long_loading_after_id = app.after(8000, _show_expand_long_loading_message)
+            _expand_long_loading_after_id = app.after(7000, _show_expand_long_loading_message)
         def worker():
             track_entries = []
             try:
@@ -3621,7 +3622,7 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                 tree.item(parent_iid, values=tuple(current_values))
             _start_loading_animation(parent_iid)
         if app and app.winfo_exists():
-            _expand_long_loading_after_id = app.after(8000, _show_expand_long_loading_message)
+            _expand_long_loading_after_id = app.after(7000, _show_expand_long_loading_message)
         def worker():
             album_entries = []
             context_kind = "Label" if (item_data.get('type') or '').lower() == 'label' else "Artist"
@@ -6565,8 +6566,8 @@ def _create_menu():
     if _context_menu and _context_menu.winfo_exists(): return
     if 'app' not in globals() or not app: return
     # Match tooltip/menu background for consistency; border matches separator color (#2B2B2B)
-    _context_menu = customtkinter.CTkFrame(app, border_width=1, border_color="#565B5E", fg_color=TOOLTIP_MENU_BG, width=CONTEXT_MENU_WIDTH)
-    button_color = TOOLTIP_MENU_BG
+    _context_menu = customtkinter.CTkFrame(app, border_width=1, border_color="#565B5E", fg_color="#242424", width=CONTEXT_MENU_WIDTH)
+    button_color = "#242424"
 
     # Undo button (icon color = text color; disabled icon = disabled text color)
     undo_icon = _create_undo_icon(color=CONTEXT_MENU_TEXT_COLOR)
@@ -6593,8 +6594,8 @@ def _create_menu():
     undo_button.pack(pady=(2, 1), padx=2, fill="x"); _bind_hover_effect(undo_button, normal_bg=button_color, hover_image=undo_icon_hover, normal_image=undo_icon)
     
     # Separator line (slightly lighter than menu bg so it's visible)
-    separator = customtkinter.CTkFrame(_context_menu, width=50, height=2, fg_color="#2B2B2B")
-    separator.pack(fill="x", padx=2, pady=2)
+    separator = customtkinter.CTkFrame(_context_menu, width=80, height=2, fg_color="#343434")
+    separator.pack(fill="x", padx=10, pady=4)
     
     # Copy button
     copy_icon = _create_copy_icon(color=CONTEXT_MENU_TEXT_COLOR)
@@ -9897,14 +9898,14 @@ def start_search():
                 return
             globals()["_expand_loading_message_prefix"] = "Searching all platforms"
             if 'app' in globals() and app and app.winfo_exists():
-                globals()["_expand_long_loading_after_id"] = app.after(8000, _show_expand_long_loading_message)
+                globals()["_expand_long_loading_after_id"] = app.after(7000, _show_expand_long_loading_message)
             search_thread = threading.Thread(target=run_search_all_platforms_target, args=(orpheus_instance, platforms_list, search_type_str, query, current_settings), daemon=True)
         else:
             # Tidal Dolby Atmos search (with or without query) can take a while; show "Fetching all data..." after 8s
-            if platform_name and platform_name.strip().lower() == 'tidal' and search_type_str in TIDAL_EXPLORE_TYPES:
-                globals()["_expand_loading_message_prefix"] = "Fetching all data"
-                if 'app' in globals() and app and app.winfo_exists():
-                    globals()["_expand_long_loading_after_id"] = app.after(8000, _show_expand_long_loading_message)
+            # Now applied to ALL searches as per user request
+            globals()["_expand_loading_message_prefix"] = f"Searching {platform_name}"
+            if 'app' in globals() and app and app.winfo_exists():
+                globals()["_expand_long_loading_after_id"] = app.after(7000, _show_expand_long_loading_message)
             search_thread = threading.Thread(target=run_search_thread_target, args=(orpheus_instance, platform_name, search_type_str, query, current_settings), daemon=True)
         search_thread.start()
     except NameError as e:
@@ -10070,9 +10071,9 @@ def _create_search_context_menu():
         # Wrapper: fixed width; menu frame and spacer also fixed width so menu doesn't grow
         _search_context_menu_wrapper = customtkinter.CTkFrame(app, fg_color="transparent", width=CONTEXT_MENU_WIDTH)
         # Main context menu frame - fixed width; rounded corners
-        _search_context_menu = customtkinter.CTkFrame(_search_context_menu_wrapper, border_width=1, border_color="#565B5E", fg_color=SPECIAL_MENU_BG, width=CONTEXT_MENU_WIDTH)
+        _search_context_menu = customtkinter.CTkFrame(_search_context_menu_wrapper, border_width=1, border_color="#565B5E", fg_color="#242424", width=CONTEXT_MENU_WIDTH)
         _search_context_menu.configure(cursor=HAND_CURSOR)
-        button_color = SPECIAL_MENU_BG
+        button_color = "#242424"
         
         # Open URL button - same style as copy/paste buttons (icon color = text color)
         external_link_icon = _create_external_link_icon(color=CONTEXT_MENU_TEXT_COLOR)
@@ -10086,7 +10087,7 @@ def _create_search_context_menu():
             width=100,
             height=24,
             font=("Segoe UI", 11),
-            fg_color=button_color,
+            fg_color= "#242424",
             hover_color="#1F6AA5",
             text_color=CONTEXT_MENU_TEXT_COLOR,
             text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
@@ -10097,8 +10098,8 @@ def _create_search_context_menu():
         _search_copy_url_button.pack(pady=(2, 1), padx=2, fill="x"); _bind_hover_effect(_search_copy_url_button, normal_bg=button_color, hover_image=external_link_icon_hover, normal_image=external_link_icon)
         
         # Separator line (slightly lighter than menu bg so it's visible)
-        separator = customtkinter.CTkFrame(_search_context_menu, width=50, height=2, fg_color="#2B2B2B")
-        separator.pack(fill="x", padx=2, pady=2)
+        separator = customtkinter.CTkFrame(_search_context_menu, width=80, height=2, fg_color="#343434")
+        separator.pack(fill="x", padx=10, pady=4)
         
         # Quality options as buttons (like a submenu)
         # Create 4 buttons to support platforms like TIDAL that have 4 quality tiers
@@ -10120,7 +10121,7 @@ def _create_search_context_menu():
                 width=100,
                 height=24,
                 font=("Segoe UI", 11),
-                fg_color=button_color,
+                fg_color="#242424",
                 hover_color="#1F6AA5",
                 text_color=CONTEXT_MENU_TEXT_COLOR,
                 text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
@@ -10135,7 +10136,7 @@ def _create_search_context_menu():
         # One-liner for SoundCloud/Apple Music: "No other formats available"
         _search_context_menu_bottom_label = customtkinter.CTkLabel(
             _search_context_menu, text="  1 format available",
-            font=("Segoe UI", 10), text_color="#aaaaaa", cursor="arrow"
+            font=("Segoe UI", 10), text_color="#808080", cursor="arrow"
         )
         # show_search_context_menu packs it when platform is soundcloud/applemusic
 
