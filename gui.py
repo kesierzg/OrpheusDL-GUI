@@ -312,8 +312,8 @@ def play_audio(source):
     is_stream = is_hls_stream or is_soundcloud_stream
     
     # For streams, convert to WAV using ffmpeg first (limited to 30 seconds) on Windows, or non-SoundCloud streams on other platforms.
-    # On macOS, SoundCloud previews (e.g. M4A) are played natively by afplay after download; WAV conversion can break playback.
-    if is_stream and not (system == "Darwin" and is_soundcloud_stream):
+    # On macOS and Linux, SoundCloud previews (e.g. M4A) are played natively after download; WAV conversion can break playback.
+    if is_stream and not ((system == "Darwin" or system == "Linux") and is_soundcloud_stream):
         try:
             import tempfile
             ffmpeg_path = _get_ffmpeg_path()
@@ -370,8 +370,8 @@ def play_audio(source):
             
             # Create a temp file with the correct extension if possible, or .mp3 default (or .m4a for SoundCloud on macOS)
             ext = '.mp3'
-            if system == "Darwin" and 'sndcdn.com' in source.lower():
-                ext = '.m4a'  # SoundCloud CDN often serves M4A; afplay supports it natively
+            if (system == "Darwin" or system == "Linux") and 'sndcdn.com' in source.lower():
+                ext = '.m4a'  # SoundCloud CDN often serves M4A; afplay/ffplay supports it natively
             if '.' in source.split('/')[-1]:
                 possible_ext = '.' + source.split('/')[-1].split('.')[-1].split('?')[0]
                 if len(possible_ext) <= 5: # Sanity check
