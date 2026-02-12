@@ -16,7 +16,7 @@
 1. Clone this repository (`git clone https://github.com/bascurtiz/OrpheusDL-GUI`) or download the ZIP file.
 2. Ensure all files from this repository are placed in the same folder where your `orpheus.py` is located.
 3. Update your package list: `sudo apt update`
-4. Install the Python virtual environment package: `sudo apt install python3-venv`
+4. Install the Python virtual environment and Tkinter packages: `sudo apt install python3-venv python3-tk`
 5. Create a virtual environment: `python3 -m venv venv`
 6. Activate the virtual environment: `source venv/bin/activate`
 7. Install the required dependencies: `pip3 install -r requirements-gui.txt`
