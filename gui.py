@@ -500,8 +500,33 @@ def play_audio(source):
             return True
             
         elif system == "Linux":
-            # Linux - use xdg-open to play audio with default system player
-            _audio_process = subprocess.Popen(["xdg-open", source], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Linux - use ffplay (part of ffmpeg) or mpv to play audio without opening a window
+            # xdg-open opens the default app (often Firefox) which is undesirable for previews
+            
+            player_cmd = None
+            
+            # 1. Try ffplay (installed with ffmpeg, usually available)
+            if shutil.which("ffplay"):
+                # -nodisp: no window
+                # -autoexit: close after playing
+                # -hide_banner: less log noise
+                # -loglevel error: only errors
+                player_cmd = ["ffplay", "-nodisp", "-autoexit", "-hide_banner", "-loglevel", "error", source]
+            
+            # 2. Try mpv (common media player)
+            elif shutil.which("mpv"):
+                player_cmd = ["mpv", "--no-video", source]
+            
+            # 3. Fallback to xdg-open (system default, might open browser but better than nothing)
+            else:
+                if _audio_debug():
+                    print(f"[Audio] No suitable command-line player found (ffplay/mpv). Falling back to xdg-open.")
+                player_cmd = ["xdg-open", source]
+
+            if _audio_debug():
+                print(f"[Audio] Playing with command: {' '.join(player_cmd)}")
+
+            _audio_process = subprocess.Popen(player_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return True
             
     except Exception as e:
@@ -14091,7 +14116,10 @@ if __name__ == "__main__":
         # Faster, smoother scroll: use larger step per wheel tick (default is ~3 units)
         _scroll_canvas = getattr(global_settings_frame, "_parent_canvas", None)
         if _scroll_canvas is not None:
-            _scroll_step = 15  # units per wheel notch for a more gliding feel
+            # Linux scroll events (Button-4/5) are frequent and discrete (one 'click' per notch usually).
+            # 15 units is too much/fast. Windows/Mac benefit from larger steps for a "gliding" feel.
+            is_linux = platform.system() == "Linux"
+            _scroll_step = 3 if is_linux else 15
             def _global_settings_mousewheel(event):
                 if _scroll_canvas.winfo_exists():
                     # Windows/Mac: event.delta; Linux: Button-4/5

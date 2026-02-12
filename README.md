@@ -20,7 +20,11 @@
 5. Create a virtual environment: `python3 -m venv venv`
 6. Activate the virtual environment: `source venv/bin/activate`
 7. Install the required dependencies: `pip3 install -r requirements-gui.txt`
-8. Run the GUI: `python3 gui.py`<br>
+8. Ensure **FFmpeg** is installed (usually includes `ffplay`).
+   - Ubuntu/Debian: `sudo apt install ffmpeg`
+   - Fedora: `sudo dnf install ffmpeg`
+   - Arch: `sudo pacman -S ffmpeg`
+9. Run the GUI: `python3 gui.py`<br>
 <br>
 <img src="https://i.imgur.com/WP7yUMr.gif" alt="GUI overview">
 
