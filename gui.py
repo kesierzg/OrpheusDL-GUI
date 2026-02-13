@@ -4087,14 +4087,14 @@ def _show_album_track_list_view(album_item_data, track_entries):
         # Use distinct tree_iids (album_track_1, ...) so we don't overwrite cover cache for original search (item_1, ...)
         flat = []
         for idx, entry in enumerate(track_entries, start=1):
-            copy = dict(entry)
-            copy["tree_iid"] = f"album_track_{idx}"
-            copy["parent_iid"] = None
-            copy["number"] = str(idx)
+            entry_copy = dict(entry)
+            entry_copy["tree_iid"] = f"album_track_{idx}"
+            entry_copy["parent_iid"] = None
+            entry_copy["number"] = str(idx)
             # Use album/playlist cover for all rows so display and click-to-popup use the same URL
-            copy["cover_url"] = album_cover_url or copy.get("cover_url")
-            copy["platform"] = copy.get("platform") or platform_str  # ensure platform set for preview/lazy-load
-            flat.append(copy)
+            entry_copy["cover_url"] = album_cover_url or entry_copy.get("cover_url")
+            entry_copy["platform"] = entry_copy.get("platform") or platform_str  # ensure platform set for preview/lazy-load
+            flat.append(entry_copy)
         _expanded_album_playlist_iids.clear()
         clear_treeview()
         search_results_data = flat
@@ -5989,6 +5989,8 @@ def save_settings(show_confirmation: bool = True):
             initialize_orpheus()
         if show_confirmation:
             show_centered_messagebox("Settings Saved", "Settings have been saved successfully.", dialog_type="info")
+        
+
 
         return True
 
@@ -6007,6 +6009,7 @@ def save_settings(show_confirmation: bool = True):
             error_message_for_dialog = f"{error_message}\\n\\n(Failed to write details to error_log.txt)"
         show_centered_messagebox("Settings Error", error_message_for_dialog, dialog_type="error")
         return False
+    
     except Exception as e:
         log_file_path = os.path.join(os.getcwd(), 'error_log.txt')
         error_message = f"Unexpected error saving settings:\\n{type(e).__name__}: {e}"
@@ -6022,6 +6025,8 @@ def save_settings(show_confirmation: bool = True):
             error_message_for_dialog = f"{error_message}\\n\\n(Failed to write details to error_log.txt)"
         show_centered_messagebox("Settings Error", error_message_for_dialog, dialog_type="error")
         return False
+    
+    return True
 
 def handle_save_settings():
     """Handles the save settings button click."""
@@ -6197,20 +6202,33 @@ def _clear_platform_session(platform_name):
         if not os.path.isfile(storage_path):
             show_centered_messagebox("No Session", f"No stored session found for {platform_name}. You can search or download to log in.", dialog_type="info")
             return
-        if platform_name in ("Beatport", "Beatsource"):
-            set_temporary_setting(storage_path, module_key, 'custom_data', 'access_token', None)
-            set_temporary_setting(storage_path, module_key, 'custom_data', 'refresh_token', None)
-            set_temporary_setting(storage_path, module_key, 'custom_data', 'expires', None)
-        elif platform_name == "Tidal":
-            set_temporary_setting(storage_path, module_key, 'custom_data', 'sessions', {})
-        elif platform_name == "Qobuz":
-            set_temporary_setting(storage_path, module_key, 'custom_data', 'token', None)
-        elif platform_name == "Deezer":
-            set_temporary_setting(storage_path, module_key, 'custom_data', 'arl', None)
-        if platform_name == "Tidal":
-            show_centered_messagebox("Session Cleared", "Tidal stored session has been cleared.\n\nNext search or download will open a browser window where you can log in with your Tidal account to link device.", dialog_type="info")
-        else:
-            show_centered_messagebox("Session Cleared", f"{platform_name} stored session has been cleared.\n\nNext search or download will log in with your credentials from above.", dialog_type="info")
+        # Confirmation dialog (was missing for these platforms)
+        if not show_centered_confirm("Confirm", f"Are you sure you want to clear the {platform_name} session?"):
+           return
+
+        def _clear_worker():
+            try:
+                # Import here to avoid potential circular imports at top level if utils imports gui
+                from utils.utils import remove_module_from_storage
+                
+                if platform_name in ("Beatport", "Beatsource", "Tidal", "Qobuz", "Deezer"):
+                    remove_module_from_storage(storage_path, module_key)
+                
+                # Success message on main thread
+                if platform_name == "Tidal":
+                    msg = "Tidal stored session has been cleared.\n\nNext search or download will open a browser window where you can log in with your Tidal account to link device."
+                else:
+                    msg = f"{platform_name} stored session has been cleared.\n\nNext search or download will log in with your credentials from above."
+                
+                if 'app' in globals() and app:
+                    app.after(0, lambda: show_centered_messagebox("Session Cleared", msg, dialog_type="info"))
+
+            except Exception as e:
+                # Error message on main thread
+                if 'app' in globals() and app:
+                    app.after(0, lambda: show_centered_messagebox("Error", f"Could not clear session: {e}", dialog_type="error"))
+
+        threading.Thread(target=_clear_worker, daemon=True).start()
     except Exception as e:
         if "Module does not use" in str(e) or "does not exist" in str(e).lower():
             show_centered_messagebox("No Session", f"No stored session found for {platform_name}. You can search or download to log in.", dialog_type="info")
@@ -9413,7 +9431,7 @@ def display_results(results):
                 is_track_row = (current_search_type_str.lower() == "track") or (result_type == "track")
                 is_album_playlist_row = (current_search_type_lower in ("album", "playlist") or ((row_platform or '').lower() == "youtube" and current_search_type_lower == "channel") or current_search_type_lower == "label") or (result_type == "album") or (result_type == "playlist")
                 is_artist_row = current_search_type_lower == "artist"
-                can_lazy_load_preview = ((row_platform or '').lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal')) and is_track_row
+                can_lazy_load_preview = ((row_platform or '').lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer')) and is_track_row
                 is_youtube_track = ((row_platform or '').lower() == 'youtube') and is_track_row
                 preview_icon = (PREVIEW_EXPAND_COLLAPSED if (is_album_playlist_row or is_artist_row) else
                     (PREVIEW_PLAY_ICON if (preview_url or can_lazy_load_preview or is_youtube_track) else PREVIEW_UNAVAILABLE))
@@ -10740,6 +10758,17 @@ def _hide_search_context_menu_on_click(event):
 
 def build_url_from_result(result_data):
     platform = result_data.get('platform'); search_type = result_data.get('type'); item_id = result_data.get('id'); raw_result_obj = result_data.get('raw_result')
+
+    # Fallback: If item_id is missing, try to get it from raw_result's download_extra_kwargs (common in Deezer album tracks)
+    if not item_id and raw_result_obj:
+        try:
+            if hasattr(raw_result_obj, 'download_extra_kwargs') and raw_result_obj.download_extra_kwargs:
+                item_id = raw_result_obj.download_extra_kwargs.get('id')
+            elif isinstance(raw_result_obj, dict) and raw_result_obj.get('download_extra_kwargs'):
+                item_id = raw_result_obj['download_extra_kwargs'].get('id')
+        except Exception:
+            pass
+
     if not all([platform, search_type, item_id]): print("[URL Build] Missing data."); return None
 
     p_lower = platform.lower(); t_lower = search_type.lower()
@@ -13498,8 +13527,68 @@ def run_download_in_thread_responsive(orpheus, url, output_path, gui_settings, s
         except:
             final_cleanup()
 
-def _auto_save_credential_change(*args):
+def _auto_save_credential_change(platform_name, key, widget=None, *args):
     """Callback to save settings when a credential value changes."""
+    global current_settings, settings_vars
+    from utils.utils import set_temporary_setting
+    
+    # Logic to clear cached tokens if critical credentials change
+    # This prevents the "ghost login" issue where an old valid token works even after changing password to invalid.
+    try:
+        should_clear_tokens = False
+        data_dir = get_data_directory() if 'get_data_directory' in globals() else (application_path if 'application_path' in globals() else ".")
+        storage_path = os.path.join(data_dir, 'config', 'loginstorage.bin')
+        
+        # Qobuz: If email/password changes, clear auth_token and user_id
+        if platform_name == "Qobuz" and key in ("username", "email", "password"):
+            # Clear in current_settings
+            creds = current_settings.get("credentials", {}).get("Qobuz", {})
+            creds["auth_token"] = ""
+            creds["user_id"] = ""
+            
+            # Clear in settings_vars and UI
+            qobuz_vars = settings_vars.get("credentials", {}).get("Qobuz", {})
+            if "auth_token" in qobuz_vars and isinstance(qobuz_vars["auth_token"], tkinter.StringVar):
+                qobuz_vars["auth_token"].set("")
+            if "user_id" in qobuz_vars and isinstance(qobuz_vars["user_id"], tkinter.StringVar):
+                qobuz_vars["user_id"].set("")
+
+            # Clear in loginstorage.bin (persistent session storage)
+            if os.path.exists(storage_path):
+                try:
+                    set_temporary_setting(storage_path, 'Qobuz', 'custom_data', 'token', '')
+                    print(f"[Settings] Qobuz {key} changed. Cleared token from loginstorage.bin.")
+                except Exception as e_storage:
+                    print(f"[Settings] Error clearing Qobuz token from storage: {e_storage}")
+                
+            print(f"[Settings] Qobuz {key} changed. Cleared cached auth_token and user_id.")
+            should_clear_tokens = True
+            
+        # Deezer: If email/password changes, clear ARL
+        elif platform_name == "Deezer" and key in ("email", "password"):
+            # Clear in current_settings
+            creds = current_settings.get("credentials", {}).get("Deezer", {})
+            creds["arl"] = ""
+            
+            # Clear in settings_vars and UI
+            deezer_vars = settings_vars.get("credentials", {}).get("Deezer", {})
+            if "arl" in deezer_vars and isinstance(deezer_vars["arl"], tkinter.StringVar):
+                deezer_vars["arl"].set("")
+
+            # Clear in loginstorage.bin (persistent session storage)
+            if os.path.exists(storage_path):
+                try:
+                    set_temporary_setting(storage_path, 'Deezer', 'custom_data', 'arl', '')
+                    print(f"[Settings] Deezer {key} changed. Cleared ARL from loginstorage.bin.")
+                except Exception as e_storage:
+                    print(f"[Settings] Error clearing Deezer ARL from storage: {e_storage}")
+                
+            print(f"[Settings] Deezer {key} changed. Cleared cached ARL.")
+            should_clear_tokens = True
+            
+    except Exception as e:
+        print(f"[Settings] Error clearing cached tokens: {e}")
+
     save_settings(show_confirmation=False)
 
 if __name__ == "__main__":
