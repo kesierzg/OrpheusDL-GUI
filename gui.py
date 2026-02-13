@@ -4476,6 +4476,18 @@ def _on_preview_url_fetched(item_iid, item_data, preview_url):
                         app.after(0, lambda: show_centered_messagebox("Preview unavailable", "This track has no preview (it may be restricted in your region or not streamable on SoundCloud).", dialog_type="info"))
                 except Exception:
                     pass
+            
+            # Show "No preview available" in the loading label area (where "Fetching all data..." appears)
+            if '_expand_loading_label' in globals() and _expand_loading_label and _expand_loading_label.winfo_exists():
+                try:
+                    _clear_expand_long_loading_message() # Stop any existing loading animation/text
+                    _expand_loading_label.configure(text="No preview available")
+                    _expand_loading_label.pack(side="left", anchor="w", padx=(12, 0), pady=0)
+                    # Hide it after 3 seconds
+                    if 'app' in globals() and app and app.winfo_exists():
+                        app.after(3000, lambda: _expand_loading_label.pack_forget() if _expand_loading_label.winfo_exists() else None)
+                except Exception:
+                    pass
     except Exception as e:
         print(f"[Preview] Error updating preview URL: {e}")
 
