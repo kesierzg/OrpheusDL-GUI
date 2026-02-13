@@ -6238,7 +6238,8 @@ def _clear_platform_session(platform_name):
             except Exception as e:
                 # Error message on main thread
                 if 'app' in globals() and app:
-                    app.after(0, lambda: show_centered_messagebox("Error", f"Could not clear session: {e}", dialog_type="error"))
+                    err_msg = str(e)
+                    app.after(0, lambda: show_centered_messagebox("Error", f"Could not clear session: {err_msg}", dialog_type="error"))
 
         threading.Thread(target=_clear_worker, daemon=True).start()
     except Exception as e:
