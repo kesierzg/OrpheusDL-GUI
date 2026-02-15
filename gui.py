@@ -313,7 +313,7 @@ def play_audio(source):
     
     # For streams, convert to WAV using ffmpeg first (limited to 30 seconds) on Windows, or non-SoundCloud streams on other platforms.
     # On macOS and Linux, SoundCloud previews (e.g. M4A) are played natively after download; WAV conversion can break playback.
-    if is_stream and not ((system == "Darwin" or system == "Linux") and is_soundcloud_stream):
+    if is_stream and not (system == "Linux" and is_soundcloud_stream):
         try:
             import tempfile
             ffmpeg_path = _get_ffmpeg_path()
@@ -2113,8 +2113,12 @@ def _play_file_on_main_thread(item_iid, file_path):
             else:
                 _on_preview_started(item_iid, True)
         else:
-            # On other systems, just call _on_preview_started with success
-            _on_preview_started(item_iid, True)
+            # On other systems, we need to actually play the file!
+            # The play_audio function handles the subprocess creation for afplay (macOS) or ffplay/mpv (Linux)
+            if _audio_debug():
+                print(f"[Audio] Playing converted file on main thread: {os.path.basename(file_path)}")
+            success = play_audio(file_path)
+            _on_preview_started(item_iid, bool(success))
     except Exception as e:
         if _audio_debug():
             print(f"[Audio] Error playing file on main thread: {e}")
@@ -12284,7 +12288,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://youtu.be/FHGLlox6Das")
+                command=lambda: webbrowser.open("https://youtu.be/ZM9b3pMNqgM")
             )
             # Use place for absolute positioning within the relative frame
             # x=-15, y=15 gives it some padding from the top-right corner
@@ -12341,7 +12345,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://youtu.be/wmpF94D-S4U")
+                command=lambda: webbrowser.open("https://youtu.be/m5N3YMgbfAg")
             )
             if not deezer_use_arl:
                 deezer_see_demo_btn.place_forget()
@@ -12510,7 +12514,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://youtu.be/O9HX6_UkWvo")
+                command=lambda: webbrowser.open("https://youtu.be/jCiUEnn1r-Y")
             )
             if not qobuz_use_id:
                 qobuz_see_demo_btn.place_forget()
@@ -13005,8 +13009,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Add the "See demo" button to the top-right of the help_frame
         # Each platform has its own demo video URL (platforms with their own See demo in-help are excluded here)
         SEE_DEMO_URLS = {
-            "AppleMusic": "https://youtu.be/HbV4Fx2Is2I",
-            "SoundCloud": "https://youtu.be/9YFPsEWk6ZY",
+            "AppleMusic": "https://youtu.be/4o6Jks6kSQA",
+            "SoundCloud": "https://youtu.be/37xJFd2M2Jk",
             "Spotify": "https://youtu.be/7A3cZ5ELtZY",
         }
         if platform_name in SEE_DEMO_URLS:
