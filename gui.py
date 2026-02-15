@@ -3434,7 +3434,15 @@ def _track_to_result_entry(track, index, parent_data, parent_iid, platform_str):
         name = getattr(track, 'name', None) or (track.get('name') if isinstance(track, dict) else None) or (track.get('title') if isinstance(track, dict) else None) or ''
         artists = getattr(track, 'artists', None) or (track.get('artists') if isinstance(track, dict) else []) or []
         artist_str = ', '.join([str(a) for a in artists]) if artists else ''
-        dur = getattr(track, 'duration', None) or (track.get('duration') if isinstance(track, dict) else None)
+        dur = getattr(track, 'duration', None)
+        if dur is None and isinstance(track, dict):
+            dur = track.get('duration')
+        
+        if dur is None and isinstance(track, dict) and 'duration_ms' in track:
+            try:
+                dur = int(track['duration_ms'] / 1000)
+            except (ValueError, TypeError):
+                pass
         duration_str = beauty_format_seconds(dur) if dur is not None else ''
         year = getattr(track, 'release_year', None) or (track.get('release_year') if isinstance(track, dict) else None)
         year_str = '' if year is None or str(year) == 'None' else str(year)
@@ -3561,12 +3569,25 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                     pass
                 resolved = []
                 for idx, track in enumerate(tracks, start=1):
-                    if quality_tier is not None and codec_options is not None and hasattr(module_instance, 'get_track_info') and isinstance(track, (str, int)):
+                    # Check if we need to fetch full track info.
+                    # 1. If track is just an ID (str/int)
+                    # 2. If track is a placeholder object (name="Loading...") from Librespot fallback
+                    track_id_to_fetch = None
+                    if isinstance(track, (str, int)):
+                        track_id_to_fetch = str(track)
+                    elif hasattr(track, 'name') and track.name == 'Loading...' and hasattr(track, 'id'):
+                        track_id_to_fetch = track.id
+                    elif isinstance(track, dict) and track.get('name') == 'Loading...' and track.get('id'):
+                        track_id_to_fetch = track.get('id')
+
+                    if quality_tier is not None and codec_options is not None and hasattr(module_instance, 'get_track_info') and track_id_to_fetch:
                         try:
-                            t = module_instance.get_track_info(str(track), quality_tier, codec_options, **extra_kwargs)
+                            # print(f"[Expand] Fetching metadata for track {idx}: {track_id_to_fetch}")
+                            t = module_instance.get_track_info(str(track_id_to_fetch), quality_tier, codec_options, **extra_kwargs)
                             if t is not None:
                                 track = t
-                        except Exception:
+                        except Exception as e:
+                            print(f"[Expand] Error fetching metadata for {track_id_to_fetch}: {e}")
                             pass
                     resolved.append(track)
                 # Deezer: album/playlist tracks are resolved from IDs; attach preview URLs in bulk for tracklist playback
@@ -14406,6 +14427,13 @@ Unnecessary Lossless-to-Lossless""",
                     if isinstance(default_value, bool):
                         var = tkinter.BooleanVar(value=bool(current_value)); settings_vars["globals"][full_key] = var
                         widget = customtkinter.CTkCheckBox(global_settings_frame, text="", variable=var)
+                        
+                        if full_key == "advanced.debug_mode":
+                            def _on_debug_mode_change():
+                                save_settings(show_confirmation=False)
+                                show_centered_messagebox("Restart Required", "Please restart the application for Debug Mode changes to fully take effect.", dialog_type="info")
+                            widget.configure(command=_on_debug_mode_change)
+
                         widget.grid(row=row, column=1, sticky="w", padx=5, pady=5)
                     elif isinstance(default_value, dict):
                         if field == "codec_conversions":
