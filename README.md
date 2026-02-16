@@ -1,7 +1,9 @@
 # OrpheusDL GUI
 
+<img src="https://i.imgur.com/tXAYDdn.gif" alt="GUI overview">
+
 ## Trailer
-[![Watch trailer](https://i.imgur.com/UENa7ln.png)](https://youtu.be/RAXsW67SjGU)
+Watch trailer: https://youtu.be/RAXsW67SjGU
 
 ## How to install:
 
@@ -26,7 +28,6 @@
    - Arch: `sudo pacman -S ffmpeg`
 9. Run the GUI: `python3 gui.py`<br>
 <br>
-<img src="https://i.imgur.com/WP7yUMr.gif" alt="GUI overview">
 
 ## Compatibility
 
