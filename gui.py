@@ -12574,7 +12574,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://youtu.be/ZM9b3pMNqgM")
+                command=lambda: webbrowser.open("https://youtu.be/XAnP6s11TvY")
             )
             # Use place for absolute positioning within the relative frame
             # x=-15, y=15 gives it some padding from the top-right corner
@@ -12631,7 +12631,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://youtu.be/m5N3YMgbfAg")
+                command=lambda: webbrowser.open("https://youtu.be/TJTY4zSEgHU")
             )
             if not deezer_use_arl:
                 deezer_see_demo_btn.place_forget()
@@ -12800,7 +12800,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://youtu.be/jCiUEnn1r-Y")
+                command=lambda: webbrowser.open("https://youtu.be/sCuiyq-Sgo4")
             )
             if not qobuz_use_id:
                 qobuz_see_demo_btn.place_forget()
@@ -13295,9 +13295,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Add the "See demo" button to the top-right of the help_frame
         # Each platform has its own demo video URL (platforms with their own See demo in-help are excluded here)
         SEE_DEMO_URLS = {
-            "AppleMusic": "https://youtu.be/4o6Jks6kSQA",
-            "SoundCloud": "https://youtu.be/37xJFd2M2Jk",
-            "Spotify": "https://youtu.be/7A3cZ5ELtZY",
+            "AppleMusic": "https://youtu.be/tbZaCFUnhow",
+            "SoundCloud": "https://youtu.be/LEEJosz2CYg",
+            "Spotify": "https://youtu.be/aJYDACfilRM",
         }
         if platform_name in SEE_DEMO_URLS:
             demo_url = SEE_DEMO_URLS[platform_name]
