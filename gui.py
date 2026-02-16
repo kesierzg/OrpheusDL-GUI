@@ -785,6 +785,7 @@ _expand_long_loading_after_id = None  # 8s delayed show of message with "(this c
 _expand_loading_dots_after_id = None  # Walking dots animation for that message
 _expand_loading_dots_position = 0
 _expand_loading_message_prefix = "Fetching all data"  # Or "Searching all platforms" for All search
+_expand_loading_time_estimate = None  # Calculated per-platform estimate; used in loading message (None = 'This can take a while')
 _expanded_album_playlist_iids = set()  # Tree iids of expanded album/playlist rows (show tracks as children)
 # When viewing an album's tracks in the list view (instead of inline expand), holds saved search state for "Back"
 _album_track_list_context = None  # None or list of {"saved_data": [...], "title": "..."}; stack for Back navigation
@@ -1938,6 +1939,59 @@ def _stop_loading_animation():
         except:
             pass
 
+def _estimate_expand_time(track_count, platform_name, estimate_type='track', context_kind=None):
+    """Estimate loading time for expanding a playlist/album/artist/label based on count and platform.
+    estimate_type: 'track' for playlist/album track expansion, 'release' for artist/label release expansion.
+    context_kind: 'artist' or 'label' (used with estimate_type='release' for different rates).
+    Returns a human-readable string like '~15 seconds', '~1 minute', '~2 minutes', or None."""
+    if not track_count or track_count <= 0:
+        return None
+    if estimate_type == 'release':
+        # Per-release fetch time in seconds (measured with real artist/label expansion)
+        # Artist and label rates differ significantly due to different API endpoints
+        if context_kind == 'label':
+            per_release_rates = {
+                'beatport': 0.028,      # 4324 releases in 2min
+                'beatsource': 0.013,    # 3284 releases in 43s
+            }
+        else:  # artist
+            per_release_rates = {
+                'beatport': 0.04,       # 1222 releases in 48s
+                'beatsource': 0.41,     # 1371 releases in 9m24s
+            }
+        rate = per_release_rates.get(platform_name.lower().replace(' ', ''))
+        if rate is None:
+            return None  # Unknown release rate for this platform
+    else:
+        # Per-track fetch time in seconds (measured with 100-track playlists)
+        per_track_rates = {
+            'spotify': 0.64,
+            'deezer': 0.12,
+            'tidal': 0.42,
+            'qobuz': 0.25,
+            'applemusic': 0.005,    # loads almost instantly
+            'apple music': 0.005,
+            'soundcloud': 0.1,
+            'youtube': 0.01,        # loads almost instantly
+            'beatport': 0.505,
+            'beatsource': 0.354,
+        }
+        rate = per_track_rates.get(platform_name.lower().replace(' ', ''), 0.4)
+    estimated_seconds = track_count * rate
+    if estimated_seconds < 60:
+        # Round to nearest 5 seconds for readable accuracy
+        rounded = int(round(estimated_seconds / 5) * 5)
+        if rounded < 10:
+            return None  # Too fast for a meaningful ETA
+        return f"~{rounded} seconds"
+    elif estimated_seconds < 90:
+        return "~1 minute"
+    elif estimated_seconds < 150:
+        return "~2 minutes"
+    else:
+        mins = int(round(estimated_seconds / 60))
+        return f"~{mins} minutes"
+
 def _clear_expand_long_loading_message():
     """Cancel 8s delayed message and hide 'Fetching all data... ' label."""
     global _expand_long_loading_after_id, _expand_loading_dots_after_id
@@ -1968,8 +2022,10 @@ def _expand_loading_dots_tick():
         return
     try:
         prefix = _expand_loading_message_prefix if '_expand_loading_message_prefix' in globals() else "Fetching all data"
+        time_est = _expand_loading_time_estimate if '_expand_loading_time_estimate' in globals() else None
         dots = LOADING_ANIMATION_FRAMES[_expand_loading_dots_position]
-        _expand_loading_label.configure(text=f"{prefix}{dots} (This can take up to ~1 minute)")
+        suffix = f"(ETA: {time_est})" if time_est else "(This can take a while)"
+        _expand_loading_label.configure(text=f"{prefix}{dots} {suffix}")
         _expand_loading_dots_position = (_expand_loading_dots_position + 1) % len(LOADING_ANIMATION_FRAMES)
     except Exception:
         pass
@@ -1984,11 +2040,29 @@ def _show_expand_long_loading_message():
         return
     try:
         prefix = _expand_loading_message_prefix if '_expand_loading_message_prefix' in globals() else "Fetching all data"
+        time_est = _expand_loading_time_estimate if '_expand_loading_time_estimate' in globals() else None
         _expand_loading_dots_position = 0
-        _expand_loading_label.configure(text=prefix + LOADING_ANIMATION_FRAMES[0] + " (This can take up to ~1 minute)")
+        suffix = f"(ETA: {time_est})" if time_est else "(This can take a while)"
+        _expand_loading_label.configure(text=prefix + LOADING_ANIMATION_FRAMES[0] + f" {suffix}")
         _expand_loading_label.pack(side="left", anchor="w", padx=(12, 0), pady=0)
         if 'app' in globals() and app and app.winfo_exists():
             _expand_loading_dots_after_id = app.after(300, _expand_loading_dots_tick)
+    except Exception:
+        pass
+
+def _update_loading_estimate_from_worker(count, platform_name, message_prefix, estimate_type='track', context_kind=None):
+    """Update the loading label from within a worker thread once the actual count is discovered.
+    This updates the globals and triggers a UI refresh so the dots tick picks up the new values."""
+    global _expand_loading_message_prefix, _expand_loading_time_estimate
+    try:
+        _expand_loading_message_prefix = message_prefix
+        _expand_loading_time_estimate = _estimate_expand_time(count, platform_name, estimate_type=estimate_type, context_kind=context_kind)
+        # If the label is already visible, refresh it immediately
+        if '_expand_loading_label' in globals() and _expand_loading_label and _expand_loading_label.winfo_ismapped():
+            if 'app' in globals() and app and app.winfo_exists():
+                time_est = _expand_loading_time_estimate
+                suffix = f"(ETA: {time_est})" if time_est else "(This can take a while)"
+                app.after(0, lambda: _expand_loading_label.configure(text=f"{message_prefix} .. {suffix}"))
     except Exception:
         pass
 
@@ -2329,6 +2403,9 @@ def _enlarge_preview_icon(item_iid):
                     # Only show stop hover icon if we're actually playing (not loading)
                     current_values[0] = PREVIEW_STOP_HOVER
                     tree.item(item_iid, values=tuple(current_values), tags=_tree_row_tags(item_iid, playing=True))
+                elif current_icon == PREVIEW_UNAVAILABLE:
+                    # Don't change hover for unavailable previews
+                    return
                 else:
                     current_values[0] = PREVIEW_PLAY_HOVER
                     tree.item(item_iid, values=tuple(current_values), tags=_tree_row_tags(item_iid, playing=False))
@@ -3461,7 +3538,8 @@ def _track_to_result_entry(track, index, parent_data, parent_iid, platform_str):
         "id": str(tid), "number": str(index), "title": name, "artist": artist_str,
         "duration": duration_str, "year": year_str, "additional": "", "explicit": explicit_str,
         "platform": platform_str, "type": "track", "raw_result": raw, "tree_iid": child_iid,
-        "preview_url": preview_url, "cover_url": cover_url, "parent_iid": parent_iid
+        "preview_url": preview_url, "cover_url": cover_url, "parent_iid": parent_iid,
+        "has_full_meta": not is_plain_id,
     }
 
 def _insert_album_playlist_children(parent_iid, parent_data, track_entries):
@@ -3505,7 +3583,7 @@ def _insert_album_playlist_children(parent_iid, parent_data, track_entries):
 
 def _fetch_and_expand_album_playlist(parent_iid, item_data):
     """Fetch album/playlist tracks in a background thread and expand the row on the main thread."""
-    global orpheus_instance, app, tree, _expanded_album_playlist_iids, _expand_long_loading_after_id
+    global orpheus_instance, app, tree, _expanded_album_playlist_iids, _expand_long_loading_after_id, _expand_loading_message_prefix, _expand_loading_time_estimate
     try:
         if 'orpheus_instance' not in globals() or not orpheus_instance or 'app' not in globals() or not app or not app.winfo_exists():
             return
@@ -3524,7 +3602,36 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                 current_values[0] = LOADING_ANIMATION_FRAMES[0]
                 tree.item(parent_iid, values=tuple(current_values))
             _start_loading_animation(parent_iid)
-        # After 8s show "Fetching all data... (this can take up to ~1 minute)" with walking dots
+        # Extract track count from additional field (e.g. "50 tracks") for specific loading message
+        track_count, _ = _parse_additional_track_count(item_data.get('additional', ''))
+        # Fallback: try raw_result for track count (handles both dict and SearchResult objects)
+        if not track_count:
+            raw = item_data.get('raw_result')
+            if isinstance(raw, dict):
+                track_count = (raw.get('tracks') or {}).get('total') if isinstance(raw.get('tracks'), dict) else None
+                if not track_count:
+                    track_count = (raw.get('attributes') or {}).get('trackCount')
+                if not track_count:
+                    track_count = raw.get('track_count') or raw.get('tracks_count') or raw.get('nb_tracks')
+            elif raw is not None:
+                # SearchResult object (Spotify/Tidal): try attribute access
+                tracks_attr = getattr(raw, 'tracks', None)
+                if isinstance(tracks_attr, dict):
+                    track_count = tracks_attr.get('total')
+                if not track_count:
+                    track_count = getattr(raw, 'track_count', None) or getattr(raw, 'total_tracks', None)
+            if track_count is not None:
+                try:
+                    track_count = int(track_count)
+                except (TypeError, ValueError):
+                    track_count = None
+        content_type = "playlist" if item_type == "playlist" else ("channel" if item_type == "channel" else "album")
+        if track_count and track_count > 0:
+            _expand_loading_message_prefix = f"Fetching {track_count} tracks in {content_type}"
+        else:
+            _expand_loading_message_prefix = "Fetching all data"
+        _expand_loading_time_estimate = _estimate_expand_time(track_count, platform_name)
+        # After 7s show loading message with track count and ETA
         if app and app.winfo_exists():
             _expand_long_loading_after_id = app.after(7000, _show_expand_long_loading_message)
         def worker():
@@ -3555,6 +3662,14 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                 if not info or not getattr(info, 'tracks', None):
                     return
                 tracks = info.tracks
+                # Update loading label with actual track count from API (if we didn't know it before expansion)
+                actual_count = len(tracks)
+                if actual_count > 0:
+                    _update_loading_estimate_from_worker(
+                        actual_count, platform_name,
+                        f"Fetching {actual_count} tracks in {content_type}",
+                        estimate_type='track'
+                    )
                 extra_kwargs = getattr(info, 'track_extra_kwargs', None) or {}
                 # If module returns only track IDs (e.g. Deezer), resolve to full TrackInfo for real titles
                 quality_tier = codec_options = None
@@ -3632,6 +3747,21 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                         continue
                     track_entries.append(entry)
             except Exception as e:
+                # Spotify 429 rate limit: show popup recommending right-click → Open Link
+                if 'RateLimit' in type(e).__name__:
+                    def _show_rate_limit_popup():
+                        _clear_expand_long_loading_message()
+                        _stop_loading_animation()
+                        if tree and tree.winfo_exists() and tree.exists(parent_iid):
+                            cv = list(tree.item(parent_iid, 'values'))
+                            if cv:
+                                cv[0] = PREVIEW_EXPAND_COLLAPSED
+                                tree.item(parent_iid, values=tuple(cv))
+                        if 'show_centered_messagebox' in globals():
+                            show_centered_messagebox("Spotify rate limit", "Spotify rate limit kicked in.\n\nRecommended: use the right-click menu\nto open the link instead.", dialog_type="info")
+                    if app and app.winfo_exists():
+                        app.after(0, _show_rate_limit_popup)
+                    return
                 if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                     print(f"[Expand] Error fetching album/playlist tracks: {e}")
                 track_entries = []
@@ -3657,7 +3787,7 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
 
 def _fetch_and_show_artist_albums(parent_iid, item_data):
     """Fetch artist's albums and show them in the list view (like album track list). One get_artist_info call when module returns full album data."""
-    global orpheus_instance, app, tree, _expand_long_loading_after_id
+    global orpheus_instance, app, tree, _expand_long_loading_after_id, _expand_loading_message_prefix, _expand_loading_time_estimate
     try:
         if 'orpheus_instance' not in globals() or not orpheus_instance or 'app' not in globals() or not app or not app.winfo_exists():
             return
@@ -3671,6 +3801,34 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                 current_values[0] = LOADING_ANIMATION_FRAMES[0]
                 tree.item(parent_iid, values=tuple(current_values))
             _start_loading_animation(parent_iid)
+        context_kind = "label" if (item_data.get('type') or '').lower() == 'label' else "artist"
+        # Try to extract release count from additional field (e.g. "4324 releases")
+        release_count = None
+        addl_str = item_data.get('additional', '')
+        if addl_str:
+            m = re.search(r'(\d+)\s*releases?', str(addl_str), re.IGNORECASE)
+            if m:
+                try:
+                    release_count = int(m.group(1))
+                except (ValueError, TypeError):
+                    pass
+        # Fallback: try raw_result for release/track count
+        if not release_count:
+            raw = item_data.get('raw_result')
+            if isinstance(raw, dict):
+                release_count = raw.get('releases_count') or raw.get('release_count') or raw.get('total_releases')
+            elif raw is not None:
+                release_count = getattr(raw, 'releases_count', None) or getattr(raw, 'release_count', None)
+            if release_count is not None:
+                try:
+                    release_count = int(release_count)
+                except (TypeError, ValueError):
+                    release_count = None
+        if release_count and release_count > 0:
+            _expand_loading_message_prefix = f"Fetching {release_count} {context_kind} releases"
+        else:
+            _expand_loading_message_prefix = f"Fetching {context_kind} releases"
+        _expand_loading_time_estimate = _estimate_expand_time(release_count, platform_name, estimate_type='release', context_kind=context_kind)
         if app and app.winfo_exists():
             _expand_long_loading_after_id = app.after(7000, _show_expand_long_loading_message)
         def worker():
@@ -3706,6 +3864,17 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                     if not hasattr(module_instance, 'get_label_info'):
                         schedule_done()
                         return
+                    # Intercept module's print to show page progress in GUI loading label
+                    _original_mod_print = getattr(module_instance, 'print', None)
+                    def _label_progress_print(*args, **kwargs):
+                        msg = str(args[0]) if args else ''
+                        m = re.search(r'(page\s+\d+/\d+)', msg, re.IGNORECASE)
+                        if m:
+                            _update_loading_estimate_from_worker(0, platform_name, f"Fetching label data ({m.group(1)})...")
+                        if _original_mod_print:
+                            _original_mod_print(*args, **kwargs)
+                    if _original_mod_print:
+                        module_instance.print = _label_progress_print
                     try:
                         info = module_instance.get_label_info(res_id, **{})
                     except Exception as e:
@@ -3713,11 +3882,22 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                             print(f"[Label] Error get_label_info: {e}")
                         schedule_done()
                         return
+                    finally:
+                        if _original_mod_print:
+                            module_instance.print = _original_mod_print
                     if not info:
                         schedule_done()
                         return
                     albums = getattr(info, 'albums', None) or []
                     tracks = getattr(info, 'tracks', None) or []
+                    # Update loading label with actual release count discovered from API
+                    total_items = len(albums) or len(tracks)
+                    if total_items > 0:
+                        _update_loading_estimate_from_worker(
+                            total_items, platform_name,
+                            f"Fetching {total_items} label releases",
+                            estimate_type='release', context_kind='label'
+                        )
                     label_name = getattr(info, 'name', '') or item_data.get('title') or item_data.get('artist') or 'Label'
                     album_extra = getattr(info, 'album_extra_kwargs', None) or {}
                     track_extra = getattr(info, 'track_extra_kwargs', None) or {}
@@ -3769,7 +3949,22 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                                 print(f"[Label] Error showing label tracks: {e}")
                         return
                     if not albums:
-                        schedule_done()
+                        # Show message for empty labels (no releases or tracks found)
+                        def _show_empty_label_msg():
+                            _clear_expand_long_loading_message()
+                            _stop_loading_animation()
+                            if tree and tree.winfo_exists() and tree.exists(parent_iid):
+                                current_values = list(tree.item(parent_iid, 'values'))
+                                if current_values:
+                                    current_values[0] = PREVIEW_EXPAND_COLLAPSED
+                                    tree.item(parent_iid, values=tuple(current_values))
+                            try:
+                                if 'show_centered_messagebox' in globals():
+                                    show_centered_messagebox("Label", f"No releases or tracks found for this label.", dialog_type="info")
+                            except Exception:
+                                pass
+                        if app and app.winfo_exists():
+                            app.after(0, _show_empty_label_msg)
                         return
                     display_idx = 0
                     for album in albums:
@@ -3864,7 +4059,22 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                     # Module now handles empty data (fetches user name from API)
                     info = module_instance.get_artist_info(res_id, True, data)
                 else:
-                    info = module_instance.get_artist_info(res_id, get_credited_albums=True, **{})
+                    # Intercept module's print to show page progress in GUI loading label
+                    _original_mod_print_a = getattr(module_instance, 'print', None)
+                    def _artist_progress_print(*args, **kwargs):
+                        msg = str(args[0]) if args else ''
+                        m = re.search(r'(page\s+\d+/\d+)', msg, re.IGNORECASE)
+                        if m:
+                            _update_loading_estimate_from_worker(0, platform_name, f"Fetching artist data ({m.group(1)})...")
+                        if _original_mod_print_a:
+                            _original_mod_print_a(*args, **kwargs)
+                    if _original_mod_print_a:
+                        module_instance.print = _artist_progress_print
+                    try:
+                        info = module_instance.get_artist_info(res_id, get_credited_albums=True, **{})
+                    finally:
+                        if _original_mod_print_a:
+                            module_instance.print = _original_mod_print_a
                 if not info:
                     schedule_done()
                     return
@@ -3872,6 +4082,14 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                 tracks = getattr(info, 'tracks', None) or []
                 platform_str = item_data.get('platform', 'Unknown')
                 artist_name = item_data.get('artist') or getattr(info, 'name', '') or 'Artist'
+                # Update loading label with actual count discovered from API
+                total_items = len(tracks) or len(albums)
+                if total_items > 0:
+                    _update_loading_estimate_from_worker(
+                        total_items, platform_name,
+                        f"Fetching {total_items} artist releases",
+                        estimate_type='release', context_kind='artist'
+                    )
                 album_extra = getattr(info, 'album_extra_kwargs', None) or {}
                 track_extra = getattr(info, 'track_extra_kwargs', None) or {}
                 album_data_dict = album_extra.get('data') if isinstance(album_extra, dict) else {}
@@ -4009,6 +4227,21 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                             entry['raw_result'] = album_data_dict.get(aid) or album_data_dict.get(int(aid)) if str(aid).isdigit() else album_data_dict.get(aid)
                     album_entries.append(entry)
             except Exception as e:
+                # Spotify 429 rate limit: show popup recommending right-click → Open Link
+                if 'RateLimit' in type(e).__name__:
+                    def _show_rate_limit_popup():
+                        _clear_expand_long_loading_message()
+                        _stop_loading_animation()
+                        if tree and tree.winfo_exists() and tree.exists(parent_iid):
+                            cv = list(tree.item(parent_iid, 'values'))
+                            if cv:
+                                cv[0] = PREVIEW_EXPAND_COLLAPSED
+                                tree.item(parent_iid, values=tuple(cv))
+                        if 'show_centered_messagebox' in globals():
+                            show_centered_messagebox("Spotify rate limit", "Spotify rate limit kicked in.\n\nRecommended: use the right-click menu\nto open the link instead.", dialog_type="info")
+                    if app and app.winfo_exists():
+                        app.after(0, _show_rate_limit_popup)
+                    return
                 if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                     print(f"[Artist] Error fetching artist albums: {e}")
                 album_entries = []
@@ -4502,17 +4735,41 @@ def _on_preview_url_fetched(item_iid, item_data, preview_url):
                 except Exception:
                     pass
             
-            # Show "No preview available" in the loading label area (where "Fetching all data..." appears)
-            if '_expand_loading_label' in globals() and _expand_loading_label and _expand_loading_label.winfo_exists():
-                try:
-                    _clear_expand_long_loading_message() # Stop any existing loading animation/text
-                    _expand_loading_label.configure(text="No preview available")
-                    _expand_loading_label.pack(side="left", anchor="w", padx=(12, 0), pady=0)
-                    # Hide it after 3 seconds
-                    if 'app' in globals() and app and app.winfo_exists():
-                        app.after(3000, lambda: _expand_loading_label.pack_forget() if _expand_loading_label.winfo_exists() else None)
-                except Exception:
-                    pass
+            # Show "No preview available" in the header area
+            # In album/playlist view, _expand_loading_label is off-screen (breadcrumb bar takes its place),
+            # so append the message to results_label instead (e.g. "Paranoid  ·  No preview available")
+            _no_preview_msg = "No preview available"
+            _shown_in_results_label = False
+            if '_current_results_header_title' in globals() and _current_results_header_title:
+                # Album/playlist view: append to results_label text
+                if 'results_label' in globals() and results_label and results_label.winfo_exists():
+                    try:
+                        _orig_title = _current_results_header_title
+                        # Strip "Album: " / "Playlist: " prefix for display
+                        _display_title = _orig_title
+                        for _prefix in ("Album: ", "Playlist: ", "Artist: ", "Label: ", "Channel: "):
+                            if _orig_title.startswith(_prefix):
+                                _display_title = _orig_title[len(_prefix):]
+                                break
+                        results_label.configure(text=f"{_display_title}  ·  {_no_preview_msg}")
+                        _shown_in_results_label = True
+                        # Restore original title after 3 seconds
+                        if 'app' in globals() and app and app.winfo_exists():
+                            app.after(3000, lambda t=_display_title: results_label.configure(text=t) if results_label.winfo_exists() else None)
+                    except Exception:
+                        pass
+            if not _shown_in_results_label:
+                # Track search view: use _expand_loading_label (appears right after "RESULTS")
+                if '_expand_loading_label' in globals() and _expand_loading_label and _expand_loading_label.winfo_exists():
+                    try:
+                        _clear_expand_long_loading_message() # Stop any existing loading animation/text
+                        _expand_loading_label.configure(text=_no_preview_msg)
+                        _expand_loading_label.pack(side="left", anchor="w", padx=(12, 0), pady=0)
+                        # Hide it after 3 seconds
+                        if 'app' in globals() and app and app.winfo_exists():
+                            app.after(3000, lambda: _expand_loading_label.pack_forget() if _expand_loading_label.winfo_exists() else None)
+                    except Exception:
+                        pass
     except Exception as e:
         print(f"[Preview] Error updating preview URL: {e}")
 
@@ -9228,10 +9485,12 @@ def update_search_types(platform):
     try:
         if 'type_var' in globals() and type_var and 'type_combo' in globals() and type_combo and type_combo.winfo_exists():
             current_type = type_var.get(); type_combo.configure(values=available_types)
-            if current_type in available_types: type_var.set(current_type)
-            elif "track" in available_types: type_var.set("track")
-            elif available_types: type_var.set(available_types[0])
-            else: type_var.set("")
+            # Use type_combo.set() instead of type_var.set() — CTkComboBox.configure(values=...)
+            # resets the internal display; type_var.set() alone doesn't reliably update it back
+            if current_type in available_types: type_combo.set(current_type)
+            elif "track" in available_types: type_combo.set("track")
+            elif available_types: type_combo.set(available_types[0])
+            else: type_combo.set("")
     except NameError: pass
     except tkinter.TclError as e: print(f"TclError updating search types (widget destroyed?): {e}")
     except Exception as e: print(f"Error updating search types: {e}")
@@ -9839,6 +10098,8 @@ def run_search_all_platforms_target(orpheus, platforms_list, search_type_str, qu
                 _clear_expand_long_loading_message()
             if '_expand_loading_message_prefix' in globals():
                 globals()["_expand_loading_message_prefix"] = "Fetching all data"
+            if '_expand_loading_time_estimate' in globals():
+                globals()["_expand_loading_time_estimate"] = None
             set_ui_state_searching(False)
             search_process_active = False
             if not combined:
@@ -9911,6 +10172,8 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
                 _clear_expand_long_loading_message()
             if '_expand_loading_message_prefix' in globals():
                 globals()["_expand_loading_message_prefix"] = "Fetching all data"
+            if '_expand_loading_time_estimate' in globals():
+                globals()["_expand_loading_time_estimate"] = None
             if error_message: 
                 set_ui_state_searching(False)
                 show_centered_messagebox("Search Error", error_message, dialog_type="error"); clear_treeview(); clear_search_results_data()
@@ -9978,6 +10241,7 @@ def start_search():
                 show_centered_messagebox("No Platforms", "No platforms are configured for search. Add credentials (or cookies for Apple Music) for at least one platform in Settings.", dialog_type="warning")
                 return
             globals()["_expand_loading_message_prefix"] = "Searching all platforms"
+            globals()["_expand_loading_time_estimate"] = None
             if 'app' in globals() and app and app.winfo_exists():
                 globals()["_expand_long_loading_after_id"] = app.after(7000, _show_expand_long_loading_message)
             search_thread = threading.Thread(target=run_search_all_platforms_target, args=(orpheus_instance, platforms_list, search_type_str, query, current_settings), daemon=True)
@@ -9985,6 +10249,7 @@ def start_search():
             # Tidal Dolby Atmos search (with or without query) can take a while; show "Fetching all data..." after 8s
             # Now applied to ALL searches as per user request
             globals()["_expand_loading_message_prefix"] = f"Searching {platform_name}"
+            globals()["_expand_loading_time_estimate"] = None
             if 'app' in globals() and app and app.winfo_exists():
                 globals()["_expand_long_loading_after_id"] = app.after(7000, _show_expand_long_loading_message)
             search_thread = threading.Thread(target=run_search_thread_target, args=(orpheus_instance, platform_name, search_type_str, query, current_settings), daemon=True)
