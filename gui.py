@@ -951,7 +951,7 @@ def get_searchable_platforms(settings, installed_platform_keys, app_path):
     """Return list of platform names that can be searched: YouTube, Apple Music, and Deezer always (optional credentials); others if credentials are set.
     Tidal is excluded until the user has successfully logged in (saved sessions exist), since loading it without sessions opens the browser."""
     base = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
-    platforms_with_optional_credentials = ["YouTube", "AppleMusic", "Deezer", "Qobuz"]
+    platforms_with_optional_credentials = ["YouTube", "AppleMusic", "Deezer", "Qobuz", "Spotify"]
     configured = []
     creds = (settings or {}).get("credentials", {})
     try:
@@ -4854,19 +4854,7 @@ if platform.system() == "Windows":
         except Exception as e2:
             print(f"[DPI] Warning: Could not set DPI awareness ({e1} / {e2})")
 
-    # Create named mutex for installer detection
-    try:
-        from ctypes import windll
-        # Create a named mutex. The handle must be kept alive for the process lifetime.
-        # We use a Local mutex (no "Global\" prefix) to avoid permission issues.
-        # This allows the installer (running in the same session) to detect the app.
-        _mutex_handle = windll.kernel32.CreateMutexW(None, False, "OrpheusDL-GUI-Mutex")
-        if windll.kernel32.GetLastError() == 183: # ERROR_ALREADY_EXISTS
-            print("[Mutex] AppMutex already exists (another instance is likely running)")
-        else:
-            print("[Mutex] Created AppMutex: OrpheusDL-GUI-Mutex")
-    except Exception as e:
-        print(f"[Mutex] Failed to create AppMutex: {e}")
+
 
 def get_script_directory():
     """Gets the directory containing the script/executable, handling bundled apps."""
@@ -9326,7 +9314,7 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
         client_id = (spotify_creds.get("client_id") or "").strip()
         client_secret = (spotify_creds.get("client_secret") or "").strip()
         if not username or not client_id or not client_secret:
-            show_centered_messagebox("Search Error", "Error during search: spotify -> Spotify credentials are required. Please fill in your username, client ID and secret in the settings.", dialog_type="warning")
+            show_centered_messagebox("Download Error", "Spotify credentials are required for downloading. Please fill in your username, client ID and secret in the settings.", dialog_type="warning")
             return False
 
     # macOS/Linux: Deno is not bundled; required for YouTube downloads. Show install pop-up if missing.
@@ -10220,15 +10208,6 @@ def start_search():
         if not platform_name: show_centered_messagebox("Info", "Please select a platform.", dialog_type="warning"); return
         if not search_type_str: show_centered_messagebox("Info", "Please select a search type.", dialog_type="warning"); return
         if search_process_active: show_centered_messagebox("Busy", "A search is already in progress!", dialog_type="warning"); return
-        # Spotify: require username, client ID, and client secret before search/download (single-platform only)
-        if platform_name == "Spotify":
-            spotify_creds = (current_settings.get("credentials") or {}).get("Spotify") or {}
-            username = (spotify_creds.get("username") or "").strip()
-            client_id = (spotify_creds.get("client_id") or "").strip()
-            client_secret = (spotify_creds.get("client_secret") or "").strip()
-            if not username or not client_id or not client_secret:
-                show_centered_messagebox("Search Error", "Error during search: spotify -> Spotify credentials are required. Please fill in your username, client ID and secret in the settings.", dialog_type="warning")
-                return
 
         clear_search_ui()
         set_ui_state_searching(True)
@@ -13374,7 +13353,7 @@ def update_search_platform_dropdown():
         configured_platforms = []
 
         # Platforms where credentials are completely optional (work without any credentials)
-        platforms_with_optional_credentials = ["YouTube", "AppleMusic", "Deezer", "Qobuz"]
+        platforms_with_optional_credentials = ["YouTube", "AppleMusic", "Deezer", "Qobuz", "Spotify"]
 
         for platform_name_iter in base_available_platforms:
             # YouTube, Apple Music, Deezer (public API) always show - no credential check
@@ -13902,7 +13881,7 @@ if __name__ == "__main__":
             from ctypes import windll, wintypes
 
             ERROR_ALREADY_EXISTS = 183
-            mutex_name = "OrpheusDL_GUI_Instance_Mutex_8E1D3B4C_A5F8_4B9A_8D7C_6F0A1B3E4D5C"
+            mutex_name = "OrpheusDL-GUI-Mutex"
             CreateMutexW = windll.kernel32.CreateMutexW
             CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
             CreateMutexW.restype = wintypes.HANDLE
