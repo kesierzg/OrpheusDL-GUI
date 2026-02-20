@@ -105,10 +105,10 @@ import time
 import asyncio
 if sys.platform == "win32":
     try:
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-        print("[Patch] Applied asyncio.WindowsSelectorEventLoopPolicy() for Windows.")
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        print("[Patch] Applied asyncio.WindowsProactorEventLoopPolicy() for Windows.")
     except Exception as e:
-        print(f"[Patch] WARNING: Failed to set asyncio.WindowsSelectorEventLoopPolicy(): {e}")
+        print(f"[Patch] WARNING: Failed to set asyncio.WindowsProactorEventLoopPolicy(): {e}")
 
 # Native Audio Playback Imports
 if platform.system() == "Windows":
@@ -180,9 +180,90 @@ _log_capture.start_capture()
 _SCRIPT_DIR = None
 _DATA_DIR = None
 
+# ============================================================================
+# Platform Icon Loading
+# ============================================================================
+PLATFORM_ICONS = {}
+BLANK_ICON = None
+
+def load_platform_icons():
+    """Load and cache platform icons after Tk root is ready."""
+    global PLATFORM_ICONS, BLANK_ICON
+    try:
+        # Create a blank icon for alignment of items without icons
+        try:
+            blank_img = Image.new("RGBA", (16 + 10, 16), (0, 0, 0, 0))
+            BLANK_ICON = ImageTk.PhotoImage(blank_img)
+        except Exception as e:
+            print(f"[UI] Error creating blank icon: {e}")
+
+        if getattr(sys, 'frozen', False):
+            _PLATFORM_DIR = os.path.join(os.path.dirname(sys.executable), "platforms")
+        else:
+            _PLATFORM_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "platforms")
+
+        if os.path.exists(_PLATFORM_DIR):
+            for icon_file in os.listdir(_PLATFORM_DIR):
+                if icon_file.lower().endswith(".png"):
+                    try:
+                        name = os.path.splitext(icon_file)[0].lower()
+                        icon_path = os.path.join(_PLATFORM_DIR, icon_file)
+                        img = Image.open(icon_path).convert("RGBA")
+                        # Create a wider image to include left padding (space in front of images)
+                        padding_left = 10
+                        padded_img = Image.new("RGBA", (16 + padding_left, 16), (0, 0, 0, 0))
+                        padded_img.paste(img, (padding_left, 0))
+                        PLATFORM_ICONS[name] = ImageTk.PhotoImage(padded_img)
+                    except Exception as e:
+                        print(f"[UI] Error loading icon {icon_file}: {e}")
+    except Exception as e:
+        print(f"[UI] Error initializing platform icons: {e}")
+
+class CTkImageComboBox(customtkinter.CTkComboBox):
+    """
+    Subclass of CTkComboBox that displays platform icons in the dropdown menu.
+    Uses the native tkinter.Menu's image support.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Patch the internal DropdownMenu's _add_menu_commands to include icons
+        if hasattr(self, "_dropdown_menu"):
+            self._dropdown_menu._add_menu_commands = self._patched_add_menu_commands
+            # Re-initialize menu commands with icons if values exist
+            if hasattr(self, "_values") and self._values:
+                self._patched_add_menu_commands()
+
+    def _patched_add_menu_commands(self):
+        """Modified version of DropdownMenu._add_menu_commands that adds icons."""
+        self._dropdown_menu.delete(0, "end")
+        
+        for value in self._dropdown_menu._values:
+            # Match icon by slugified name (removing spaces)
+            icon_key = value.replace(" ", "").lower()
+            icon = PLATFORM_ICONS.get(icon_key) or BLANK_ICON
+            
+            # Format label with consistent spacing: add space on the right of images before text
+            if sys.platform.startswith("linux"):
+                label_text = "   " + value.ljust(self._dropdown_menu._min_character_width) + "  "
+            else:
+                label_text = ("   " + value).ljust(self._dropdown_menu._min_character_width)
+            
+            self._dropdown_menu.add_command(
+                label=label_text,
+                command=lambda v=value: self._dropdown_menu._button_callback(v),
+                image=icon,
+                compound="left"
+            )
+
+    def configure(self, **kwargs):
+        """Intercept values update to ensure icons are refreshed."""
+        super().configure(**kwargs)
+        if "values" in kwargs:
+            self._patched_add_menu_commands()
+
 SERVICE_COLORS = {
     "tidal": "#33ffe7",
-    "apple music": "#FA586A",
+    "applemusic": "#FA586A",
     "beatport": "#00ff89",
     "beatsource": "#16a8f4",
     "deezer": "#a238ff",
@@ -199,7 +280,7 @@ SERVICE_COLORS = {
 
 SERVICE_DISPLAY_NAMES = {
     "tidal": "TIDAL",
-    "apple music": "Apple Music",
+    "applemusic": "Apple Music",
     "beatport": "Beatport",
     "beatsource": "Beatsource",
     "deezer": "Deezer",
@@ -835,7 +916,7 @@ TREEVIEW_BG_HEX = "#1D1E1E"  # Match Custom.Treeview fieldbackground
 # Fixed width for all right-click context menus (matches main action buttons: 100)
 CONTEXT_MENU_WIDTH = 100
 # Icon and text color for context menu items (match so icons = text)
-CONTEXT_MENU_TEXT_COLOR = "#dddddd"
+CONTEXT_MENU_TEXT_COLOR = "#DCE4EE"
 CONTEXT_MENU_TEXT_DISABLED = "#808080"  # gray (hex for PIL and CTk)
 # Background for all tooltips and right-click context menus
 TOOLTIP_MENU_BG = "#222323"
@@ -846,7 +927,7 @@ SPECIAL_MENU_BG = "#343638"
 HELP_CONTENT_WIDTH = 920
 
 # Platform icons on cover in column #0 (loaded from local "platforms" folder)
-PLATFORM_ICON_NAMES = ("AppleMusic", "Beatport", "Beatsource", "Deezer", "Qobuz", "SoundCloud", "Spotify", "Tidal", "YouTube")
+PLATFORM_ICON_NAMES = ("Apple Music", "Beatport", "Beatsource", "Deezer", "Qobuz", "SoundCloud", "Spotify", "Tidal", "YouTube")
 PLATFORM_ICON_SIZE = 16  # Size of platform icon in the overlay (compact so it doesn’t dominate the row)
 _platform_icon_cache = {}  # platform_name -> PhotoImage (keep references)
 _platform_icon_cache_lock = threading.Lock()
@@ -951,7 +1032,7 @@ def get_searchable_platforms(settings, installed_platform_keys, app_path):
     """Return list of platform names that can be searched: YouTube, Apple Music, and Deezer always (optional credentials); others if credentials are set.
     Tidal is excluded until the user has successfully logged in (saved sessions exist), since loading it without sessions opens the browser."""
     base = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
-    platforms_with_optional_credentials = ["YouTube", "AppleMusic", "Deezer", "Qobuz", "Spotify"]
+    platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify"]
     configured = []
     creds = (settings or {}).get("credentials", {})
     try:
@@ -3183,7 +3264,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     menu_frame = customtkinter.CTkFrame(context_menu, border_width=1, height=1, border_color="#565B5E", fg_color="#242424", width=80)
                                     menu_frame.pack(fill="both", expand=True, padx=0, pady=0)
                                     button_color = "#242424"
-                                    hover_color_artwork = "#1F6AA5"
+                                    hover_color_artwork = "#474747"
                                     
                                     # macOS: plain tk rows + motion-based hover (Enter/Leave often don't fire in overrideredirect on macOS)
                                     if platform.system() == "Darwin":
@@ -3191,10 +3272,13 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                         text_fg = CONTEXT_MENU_TEXT_COLOR
                                         # Icons as PhotoImage for tk.Label (keep refs so they aren't GC'd)
                                         def _artwork_copy_pil(color=text_fg):
-                                            img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+                                            # Create a wider image for 3px left padding (adjusted to match dropdown's 14px total space)
+                                            padding_left = 3
+                                            img = Image.new("RGBA", (16 + padding_left, 16), (0, 0, 0, 0))
                                             d = ImageDraw.Draw(img)
-                                            bx1, by1, bx2, by2 = 2, 2, 10, 10
-                                            fx1, fy1, fx2, fy2 = 5, 5, 13, 13
+                                            offset_x = padding_left
+                                            bx1, by1, bx2, by2 = 2 + offset_x, 2, 10 + offset_x, 10
+                                            fx1, fy1, fx2, fy2 = 5 + offset_x, 5, 13 + offset_x, 13
                                             d.line([(bx1, by1), (bx2, by1)], fill=color, width=1)
                                             d.line([(bx1, by1), (bx1, by2)], fill=color, width=1)
                                             d.line([(bx2, by1), (bx2, fy1)], fill=color, width=1)
@@ -3202,17 +3286,18 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                             d.rectangle([fx1, fy1, fx2, fy2], outline=color, width=1)
                                             return img
                                         def _artwork_download_pil(color=text_fg):
-                                            img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+                                            # Create a wider image for 3px left padding (adjusted to match dropdown's 14px total space)
+                                            padding_left = 3
+                                            img = Image.new("RGBA", (16 + padding_left, 16), (0, 0, 0, 0))
                                             d = ImageDraw.Draw(img)
-                                            cx = 8
-                                            d.line([(3, 13), (13, 13)], fill=color, width=1)
+                                            offset_x = padding_left
+                                            cx = 8 + offset_x
+                                            d.line([(3 + offset_x, 13), (13 + offset_x, 13)], fill=color, width=1)
                                             d.line([(cx, 2), (cx, 10)], fill=color, width=1)
                                             d.line([(cx - 3, 7), (cx, 10), (cx + 3, 7)], fill=color, width=1)
                                             return img
                                         _artwork_copy_photo = ImageTk.PhotoImage(_artwork_copy_pil())
-                                        _artwork_copy_photo_hover = ImageTk.PhotoImage(_artwork_copy_pil(color="#FFFFFF"))
                                         _artwork_save_photo = ImageTk.PhotoImage(_artwork_download_pil())
-                                        _artwork_save_photo_hover = ImageTk.PhotoImage(_artwork_download_pil(color="#FFFFFF"))
                                         
                                         copy_row_tk = tkinter.Frame(menu_frame, bg=button_color, height=24, width=CONTEXT_MENU_WIDTH, cursor="", highlightthickness=0)
                                         copy_row_tk.pack(pady=(2, 1), padx=2)
@@ -3246,13 +3331,13 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                             hover = hover_color_artwork
                                             if in_copy:
                                                 copy_row_tk.config(bg=hover, cursor=HAND_CURSOR)
-                                                copy_lbl_tk.config(bg=hover, fg="#FFFFFF", image=_artwork_copy_photo_hover, cursor=HAND_CURSOR)
+                                                copy_lbl_tk.config(bg=hover, fg=text_fg, image=_artwork_copy_photo, cursor=HAND_CURSOR)
                                                 save_row_tk.config(bg=button_color, cursor="")
                                                 save_lbl_tk.config(bg=button_color, fg=text_fg, image=_artwork_save_photo, cursor="")
                                                 context_menu.configure(cursor=HAND_CURSOR)
                                             elif in_save:
                                                 save_row_tk.config(bg=hover, cursor=HAND_CURSOR)
-                                                save_lbl_tk.config(bg=hover, fg="#FFFFFF", image=_artwork_save_photo_hover, cursor=HAND_CURSOR)
+                                                save_lbl_tk.config(bg=hover, fg=text_fg, image=_artwork_save_photo, cursor=HAND_CURSOR)
                                                 copy_row_tk.config(bg=button_color, cursor="")
                                                 copy_lbl_tk.config(bg=button_color, fg=text_fg, image=_artwork_copy_photo, cursor="")
                                                 context_menu.configure(cursor=HAND_CURSOR)
@@ -3289,7 +3374,6 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     else:
                                         menu_frame.configure(cursor=HAND_CURSOR)
                                         copy_icon = _create_copy_icon(color=CONTEXT_MENU_TEXT_COLOR)
-                                        copy_icon_hover = _create_copy_icon(color="#FFFFFF")
                                         copy_btn = customtkinter.CTkButton(
                                             menu_frame,
                                             text="Copy Image",
@@ -3301,19 +3385,19 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                             font=("Segoe UI", 11),
                                             fg_color=button_color,
                                             hover_color=hover_color_artwork,
+                                            corner_radius=0,
                                             text_color=CONTEXT_MENU_TEXT_COLOR,
                                             text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
                                             border_width=0,
                                             command=lambda: _copy_image_to_clipboard(context_menu)
                                         )
                                         copy_btn.image = copy_icon
-                                        copy_btn.pack(pady=(2, 1), padx=2, fill="x"); _bind_hover_effect(copy_btn, normal_bg=button_color, hover_image=copy_icon_hover, normal_image=copy_icon)
+                                        copy_btn.pack(pady=(2, 1), padx=2, fill="x"); _bind_hover_effect(copy_btn, normal_bg=button_color, normal_image=copy_icon)
                                         
                                         sep_frame = customtkinter.CTkFrame(menu_frame, width=80, height=2, fg_color="#242424")
                                         sep_frame.pack(fill="x", padx=1, pady=1)
                                         
                                         save_icon = _create_download_icon(color=CONTEXT_MENU_TEXT_COLOR)
-                                        save_icon_hover = _create_download_icon(color="#FFFFFF")
                                         save_btn = customtkinter.CTkButton(
                                             menu_frame,
                                             text="Save as...",
@@ -3325,13 +3409,14 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                             font=("Segoe UI", 11),
                                             fg_color=button_color,
                                             hover_color=hover_color_artwork,
+                                            corner_radius=0,
                                             text_color=CONTEXT_MENU_TEXT_COLOR,
                                             text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
                                             border_width=0,
                                             command=lambda: _save_image_to_file(context_menu)
                                         )
                                         save_btn.image = save_icon
-                                        save_btn.pack(pady=(1, 2), padx=2, fill="x"); _bind_hover_effect(save_btn, normal_bg=button_color, hover_image=save_icon_hover, normal_image=save_icon)
+                                        save_btn.pack(pady=(1, 2), padx=2, fill="x"); _bind_hover_effect(save_btn, normal_bg=button_color, normal_image=save_icon)
                                     
                                     # Close menu when clicking outside (deferred to avoid macOS Tk crash)
                                     def _close_menu(event=None):
@@ -3532,7 +3617,12 @@ def _track_to_result_entry(track, index, parent_data, parent_iid, platform_str):
         if not name:
             name = f"Track {index}"
         if not artist_str:
-            artist_str = (parent_data.get('artist') or '').strip() or ''
+            # Check for literal 'artists' list first, then 'artist' singular string
+            artists_data = (track.get('artists') if isinstance(track, dict) else []) or []
+            if artists_data:
+                artist_str = ', '.join([str(a) for a in artists_data])
+            else:
+                artist_str = (track.get('artist') if isinstance(track, dict) else (parent_data.get('artist') or '')).strip() or ''
     child_iid = f"{parent_iid}_t{index}"
     return {
         "id": str(tid), "number": str(index), "title": name, "artist": artist_str,
@@ -3587,7 +3677,7 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
     try:
         if 'orpheus_instance' not in globals() or not orpheus_instance or 'app' not in globals() or not app or not app.winfo_exists():
             return
-        platform_name = (item_data.get('platform') or '').lower()
+        platform_name = (item_data.get('platform') or '').lower().replace(" ", "")
         item_type = (item_data.get('type') or '').lower()
         res_id = item_data.get('id')
         # Allow album, playlist, or YouTube channel (channel expand shows uploads as tracks)
@@ -3791,7 +3881,7 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
     try:
         if 'orpheus_instance' not in globals() or not orpheus_instance or 'app' not in globals() or not app or not app.winfo_exists():
             return
-        platform_name = (item_data.get('platform') or '').lower()
+        platform_name = (item_data.get('platform') or '').lower().replace(" ", "")
         res_id = item_data.get('id')
         if not platform_name or not res_id:
             return
@@ -4644,14 +4734,19 @@ def _try_lazy_load_preview(item_iid, item_data):
                     # Apple Music: 30s preview from get_song attributes.previews (search and expanded album/playlist child tracks)
                     if hasattr(module_instance, 'apple_music_api') and hasattr(module_instance.apple_music_api, 'get_song'):
                         try:
-                            track_data = module_instance.apple_music_api.get_song(track_id)
-                            if track_data and isinstance(track_data, dict) and 'attributes' in track_data:
-                                attrs = track_data.get('attributes', {})
-                                previews = attrs.get('previews', [])
-                                if previews and len(previews) > 0:
-                                    preview_url = previews[0].get('url')
-                        except Exception:
-                            pass
+                            # Use _run_async since apple_music_api.get_song is a coroutine
+                            if hasattr(module_instance, '_run_async'):
+                                country = item_data.get('extra_kwargs', {}).get('country')
+                                track_metadata = module_instance._run_async(lambda s: s.apple_music_api.get_song(track_id), storefront=country)
+                                if track_metadata and 'data' in track_metadata and len(track_metadata['data']) > 0:
+                                    track_data = track_metadata['data'][0]
+                                    if track_data and isinstance(track_data, dict) and 'attributes' in track_data:
+                                        attrs = track_data.get('attributes', {})
+                                        previews = attrs.get('previews', [])
+                                        if previews and len(previews) > 0:
+                                            preview_url = previews[0].get('url')
+                        except Exception as e:
+                            print(f"[Preview] Apple Music lazy load error: {e}")
                 
                 # Check again before updating UI
                 if _lazy_loading_preview_iid != target_iid:
@@ -5831,7 +5926,7 @@ def load_settings():
                              deep_merge(settings["globals"][section_key], section_data)
         if "modules" in file_settings:
             settings["modules"] = copy.deepcopy(file_settings["modules"])
-            platform_map_from_orpheus = { "bugs": "BugsMusic", "nugs": "Nugs", "soundcloud": "SoundCloud", "tidal": "Tidal", "qobuz": "Qobuz", "deezer": "Deezer", "idagio": "Idagio", "kkbox": "KKBOX", "napster": "Napster", "beatport": "Beatport", "beatsource": "Beatsource", "musixmatch": "Musixmatch", "spotify": "Spotify", "applemusic": "AppleMusic", "youtube": "YouTube" }
+            platform_map_from_orpheus = { "bugs": "BugsMusic", "nugs": "Nugs", "soundcloud": "SoundCloud", "tidal": "Tidal", "qobuz": "Qobuz", "deezer": "Deezer", "idagio": "Idagio", "kkbox": "KKBOX", "napster": "Napster", "beatport": "Beatport", "beatsource": "Beatsource", "musixmatch": "Musixmatch", "spotify": "Spotify", "applemusic": "Apple Music", "youtube": "YouTube" }
             for orpheus_platform, creds_from_file in file_settings["modules"].items():
                 gui_platform = platform_map_from_orpheus.get(orpheus_platform)
                 if gui_platform and gui_platform in DEFAULT_SETTINGS["credentials"]:
@@ -6211,7 +6306,7 @@ def save_settings(show_confirmation: bool = True):
                       if section_key == "advanced" and item_key == "conversion_flags":
                           continue
                       mapped_orpheus_updates["global"][section_key][item_key] = item_value
-    platform_map_to_orpheus = { "BugsMusic": "bugs", "Nugs": "nugs", "SoundCloud": "soundcloud", "Tidal": "tidal", "Qobuz": "qobuz", "Deezer": "deezer", "Idagio": "idagio", "KKBOX": "kkbox", "Napster": "napster", "Beatport": "beatport", "Beatsource": "beatsource", "Musixmatch": "musixmatch", "Spotify": "spotify", "AppleMusic": "applemusic", "YouTube": "youtube" }
+    platform_map_to_orpheus = { "BugsMusic": "bugs", "Nugs": "nugs", "SoundCloud": "soundcloud", "Tidal": "tidal", "Qobuz": "qobuz", "Deezer": "deezer", "Idagio": "idagio", "KKBOX": "kkbox", "Napster": "napster", "Beatport": "beatport", "Beatsource": "beatsource", "Musixmatch": "musixmatch", "Spotify": "spotify", "Apple Music": "applemusic", "YouTube": "youtube" }
     for gui_platform, creds in updated_gui_settings.get("credentials", {}).items():
         orpheus_platform = platform_map_to_orpheus.get(gui_platform)
         if orpheus_platform:
@@ -6369,12 +6464,13 @@ def run_login_in_thread(orpheus, platform_name, gui_settings):
     sys.stderr = dummy_stderr
     
     try:
-        # Use auto-auth patcher for Tidal to handle TV login automatically
-        if platform_name.lower() == 'tidal':
+        # Normalize platform name (e.g. "Apple Music" -> "applemusic") for module loading
+        orpheus_platform = platform_name.lower().replace(" ", "")
+        if orpheus_platform == 'tidal':
             with TidalAutoAuthPatcher(output_queue):
-                module_instance = orpheus.load_module(platform_name)
+                module_instance = orpheus.load_module(orpheus_platform)
         else:
-            module_instance = orpheus.load_module(platform_name)
+            module_instance = orpheus.load_module(orpheus_platform)
         if hasattr(module_instance, 'login'):
             if platform_name.lower() == 'beatport':
                 string_io = io.StringIO()
@@ -6446,8 +6542,8 @@ def _clear_platform_session(platform_name):
             except OSError as e:
                 show_centered_messagebox("Error", f"Could not delete file: {e}", dialog_type="error")
             return
-        if platform_name == "AppleMusic":
-            cookies_path = (current_settings.get("credentials") or {}).get("AppleMusic", {}).get("cookies_path", "") or "./config/cookies.txt"
+        if platform_name == "Apple Music":
+            cookies_path = (current_settings.get("credentials") or {}).get("Apple Music", {}).get("cookies_path", "") or "./config/cookies.txt"
             if not os.path.isabs(cookies_path):
                 cookies_path = os.path.normpath(os.path.join(data_dir, cookies_path.replace("./", "").replace(".\\", "")))
             else:
@@ -6847,8 +6943,9 @@ def show_log_viewer(title="Application Logs", parent=None):
     
     dialog.grab_set()
 
-def _bind_hover_effect(widget, hover_color="#FFFFFF", normal_color=CONTEXT_MENU_TEXT_COLOR, hover_bg="#1F6AA5", normal_bg=None, hover_image=None, normal_image=None):
+def _bind_hover_effect(widget, hover_color=None, normal_color=CONTEXT_MENU_TEXT_COLOR, hover_bg="#474747", normal_bg=None, hover_image=None, normal_image=None):
     """Binds Enter/Leave events to change text color, background color, and image on hover."""
+    if hover_color is None: hover_color = normal_color
     def _on_enter(e):
         try:
             if hasattr(widget, 'cget') and widget.cget("state") == "disabled":
@@ -6897,7 +6994,6 @@ def _create_menu():
 
     # Undo button (icon color = text color; disabled icon = disabled text color)
     undo_icon = _create_undo_icon(color=CONTEXT_MENU_TEXT_COLOR)
-    undo_icon_hover = _create_undo_icon(color="#FFFFFF")
     undo_icon_disabled = _create_undo_icon(color=CONTEXT_MENU_TEXT_DISABLED)
     undo_button = customtkinter.CTkButton(
         _context_menu, 
@@ -6909,7 +7005,8 @@ def _create_menu():
         height=24, 
         font=("Segoe UI", 11),
         fg_color=button_color, 
-        hover_color="#1F6AA5", 
+        hover_color="#474747", 
+        corner_radius=0,
         text_color=CONTEXT_MENU_TEXT_COLOR,
         text_color_disabled=CONTEXT_MENU_TEXT_DISABLED, 
         border_width=0,
@@ -6917,7 +7014,7 @@ def _create_menu():
     )
     undo_button.image = undo_icon
     undo_button.disabled_image = undo_icon_disabled
-    undo_button.pack(pady=(2, 1), padx=2, fill="x"); _bind_hover_effect(undo_button, normal_bg=button_color, hover_image=undo_icon_hover, normal_image=undo_icon)
+    undo_button.pack(pady=(2, 1), padx=2, fill="x"); _bind_hover_effect(undo_button, normal_bg=button_color, normal_image=undo_icon)
     
     # Separator line (slightly lighter than menu bg so it's visible)
     separator = customtkinter.CTkFrame(_context_menu, width=80, height=2, fg_color="#343434")
@@ -6925,7 +7022,6 @@ def _create_menu():
     
     # Copy button
     copy_icon = _create_copy_icon(color=CONTEXT_MENU_TEXT_COLOR)
-    copy_icon_hover = _create_copy_icon(color="#FFFFFF")
     copy_icon_disabled = _create_copy_icon(color=CONTEXT_MENU_TEXT_DISABLED)
     copy_button = customtkinter.CTkButton(
         _context_menu, 
@@ -6937,7 +7033,8 @@ def _create_menu():
         height=24, 
         font=("Segoe UI", 11),
         fg_color=button_color, 
-        hover_color="#1F6AA5", 
+        hover_color="#474747", 
+        corner_radius=0,
         text_color=CONTEXT_MENU_TEXT_COLOR,
         text_color_disabled=CONTEXT_MENU_TEXT_DISABLED, 
         border_width=0,
@@ -6945,11 +7042,10 @@ def _create_menu():
     )
     copy_button.image = copy_icon
     copy_button.disabled_image = copy_icon_disabled
-    copy_button.pack(pady=1, padx=2, fill="x"); _bind_hover_effect(copy_button, normal_bg=button_color, hover_image=copy_icon_hover, normal_image=copy_icon)
+    copy_button.pack(pady=1, padx=2, fill="x"); _bind_hover_effect(copy_button, normal_bg=button_color, normal_image=copy_icon)
     
     # Paste button
     paste_icon = _create_paste_icon(color=CONTEXT_MENU_TEXT_COLOR)
-    paste_icon_hover = _create_paste_icon(color="#FFFFFF")
     paste_icon_disabled = _create_paste_icon(color=CONTEXT_MENU_TEXT_DISABLED)
     paste_button = customtkinter.CTkButton(
         _context_menu, 
@@ -6961,7 +7057,8 @@ def _create_menu():
         height=24, 
         font=("Segoe UI", 11),
         fg_color=button_color, 
-        hover_color="#1F6AA5", 
+        hover_color="#474747", 
+        corner_radius=0,
         text_color=CONTEXT_MENU_TEXT_COLOR,
         text_color_disabled=CONTEXT_MENU_TEXT_DISABLED, 
         border_width=0,
@@ -6969,7 +7066,7 @@ def _create_menu():
     )
     paste_button.image = paste_icon
     paste_button.disabled_image = paste_icon_disabled
-    paste_button.pack(pady=(1, 2), padx=2, fill="x"); _bind_hover_effect(paste_button, normal_bg=button_color, hover_image=paste_icon_hover, normal_image=paste_icon)
+    paste_button.pack(pady=(1, 2), padx=2, fill="x"); _bind_hover_effect(paste_button, normal_bg=button_color, normal_image=paste_icon)
     
     _context_menu.pack_forget()
 
@@ -7173,7 +7270,7 @@ def _clean_ansi_and_process_markers(text):
     import re
     platform_patterns = {
         r'Platform: \033\[96m(TIDAL)\033\[0m': 'tidal',
-        r'Platform: \033\[91m(Apple Music)\033\[0m': 'apple music',
+        r'Platform: \033\[91m(Apple Music)\033\[0m': 'applemusic',
         r'Platform: \033\[92m(Beatport)\033\[0m': 'beatport',
         r'Platform: \033\[94m(Beatsource)\033\[0m': 'beatsource',
         r'Platform: \033\[94m(Napster)\033\[0m': 'napster',
@@ -8973,7 +9070,8 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                             downloader.download_track,
                             stop_event,
                             track_id=str(media_id),
-                            album_location=output_path + '/'
+                            album_location=output_path + '/',
+                            extra_kwargs=getattr(downloader, 'extra_kwargs', {})
                         )
                         yield_to_gui()
                     except DownloadCancelledError:
@@ -9817,11 +9915,12 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
         # For playlist ATMOS, search for "dolby " + user query so results are Dolby-related playlists
         search_query = ("dolby " + query_stripped) if base_type == 'playlist' else query_stripped
         try:
+            orpheus_platform = platform_name.lower().replace(" ", "")
             if output_queue:
                 with TidalAutoAuthPatcher(output_queue):
-                    module_instance = orpheus.load_module(platform_name.lower())
+                    module_instance = orpheus.load_module(orpheus_platform)
             else:
-                module_instance = orpheus.load_module(platform_name.lower())
+                module_instance = orpheus.load_module(orpheus_platform)
             search_results = module_instance.search(query_type, search_query, limit=search_limit)
         except Exception as e:
             return [], f"Error during search ({platform_name}): {str(e)}"
@@ -9883,11 +9982,12 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
         if format_name is None:
             return [], f"Unsupported Tidal explore type: {normalized_type}"
         try:
+            orpheus_platform = platform_name.lower().replace(" ", "")
             if output_queue:
                 with TidalAutoAuthPatcher(output_queue):
-                    module_instance = orpheus.load_module(platform_name.lower())
+                    module_instance = orpheus.load_module(orpheus_platform)
             else:
-                module_instance = orpheus.load_module(platform_name.lower())
+                module_instance = orpheus.load_module(orpheus_platform)
             search_results = module_instance.explore(format_name, content_type, limit=search_limit)
         except Exception as e:
             return [], f"Error during explore ({platform_name}): {str(e)}"
@@ -9934,11 +10034,12 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
     if not query_type:
         return [], f"Invalid search type: {search_type_str}"
     try:
+        orpheus_platform = platform_name.lower().replace(" ", "")
         if platform_name.lower() == 'tidal' and output_queue:
             with TidalAutoAuthPatcher(output_queue):
-                module_instance = orpheus.load_module(platform_name.lower())
+                module_instance = orpheus.load_module(orpheus_platform)
         else:
-            module_instance = orpheus.load_module(platform_name.lower())
+            module_instance = orpheus.load_module(orpheus_platform)
         search_results = module_instance.search(query_type, query, limit=search_limit)
     except Exception as e:
         return [], f"Error during search ({platform_name}): {str(e)}"
@@ -10402,7 +10503,6 @@ def _create_search_context_menu():
         
         # Open URL button - same style as copy/paste buttons (icon color = text color)
         external_link_icon = _create_external_link_icon(color=CONTEXT_MENU_TEXT_COLOR)
-        external_link_icon_hover = _create_external_link_icon(color="#FFFFFF")
         _search_copy_url_button = customtkinter.CTkButton(
             _search_context_menu, 
             text="Link", 
@@ -10413,14 +10513,15 @@ def _create_search_context_menu():
             height=24,
             font=("Segoe UI", 11),
             fg_color= "#242424",
-            hover_color="#1F6AA5",
+            hover_color="#474747",
+            corner_radius=0,
             text_color=CONTEXT_MENU_TEXT_COLOR,
             text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
             border_width=0,
             anchor="w"
         )
         _search_copy_url_button.image = external_link_icon  # Keep reference
-        _search_copy_url_button.pack(pady=(2, 1), padx=2, fill="x"); _bind_hover_effect(_search_copy_url_button, normal_bg=button_color, hover_image=external_link_icon_hover, normal_image=external_link_icon)
+        _search_copy_url_button.pack(pady=(2, 1), padx=2, fill="x"); _bind_hover_effect(_search_copy_url_button, normal_bg=button_color, normal_image=external_link_icon)
         
         # Separator line (slightly lighter than menu bg so it's visible)
         separator = customtkinter.CTkFrame(_search_context_menu, width=80, height=2, fg_color="#343434")
@@ -10447,7 +10548,8 @@ def _create_search_context_menu():
                 height=24,
                 font=("Segoe UI", 11),
                 fg_color="#242424",
-                hover_color="#1F6AA5",
+                hover_color="#474747",
+                corner_radius=0,
                 text_color=CONTEXT_MENU_TEXT_COLOR,
                 text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
                 border_width=0,
@@ -10519,7 +10621,9 @@ def _open_selected_url(event=None):
                     print(f"Error opening URL {url}: {e}")
         
         if urls_opened > 0:
-            print(f"Opened {urls_opened} URL(s) in external browser.")
+            debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
+            if debug_mode:
+                print(f"Opened {urls_opened} URL(s) in external browser.")
         else:
             print("Could not build URL(s) for selected item(s).")
             
@@ -10551,15 +10655,18 @@ def _download_with_quality(event=None):
 
 def _create_download_icon(size=(16, 16), color="#AAAAAA"):
     """Creates a simple line download icon (Arrow + Line)."""
-    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    # Create a wider image for 3px left padding (adjusted to match dropdown's 14px total space)
+    padding_left = 3
+    image = Image.new("RGBA", (size[0] + padding_left, size[1]), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     
+    offset_x = padding_left
     w, h = size
-    cx = w // 2
+    cx = (w // 2) + offset_x
     
     # Bottom horizontal line
     # x: 3 to 13, y: 13
-    draw.line([(3, 13), (13, 13)], fill=color, width=1)
+    draw.line([(3 + offset_x, 13), (13 + offset_x, 13)], fill=color, width=1)
     
     # Arrow shaft
     # x: 8, y: 2 to 10
@@ -10569,7 +10676,7 @@ def _create_download_icon(size=(16, 16), color="#AAAAAA"):
     # Tip at (8, 10), left at (5, 7), right at (11, 7)
     draw.line([(cx - 3, 7), (cx, 10), (cx + 3, 7)], fill=color, width=1)
     
-    return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+    return customtkinter.CTkImage(light_image=image, dark_image=image, size=(size[0] + padding_left, size[1]))
 
 def _dolby_double_d_photoimage(size=(16, 16), color="#E0E0E0"):
     """Create a small Dolby-style double-D icon (two filled D's, right one mirrored). Returns (PIL Image, PhotoImage)."""
@@ -10591,25 +10698,28 @@ def _dolby_double_d_photoimage(size=(16, 16), color="#E0E0E0"):
 
 def _create_undo_icon(size=(16, 16), color="#AAAAAA"):
     """Creates an undo icon (side-U curved arrow pointing left)."""
-    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    # Create a wider image for 3px left padding (adjusted to match dropdown's 14px total space)
+    padding_left = 3
+    image = Image.new("RGBA", (size[0] + padding_left, size[1]), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     
+    offset_x = padding_left
     # Arrow head (simple lines)
     # Tip at (2, 6), top at (6, 3), bottom at (6, 9)
-    draw.line([(6, 3), (2, 6), (6, 9)], fill=color, width=1)
+    draw.line([(6 + offset_x, 3), (2 + offset_x, 6), (6 + offset_x, 9)], fill=color, width=1)
     
     # Top line from tip to curve start
-    draw.line([(2, 6), (10, 6)], fill=color, width=1)
+    draw.line([(2 + offset_x, 6), (10 + offset_x, 6)], fill=color, width=1)
     
     # Curve part (arc)
     # Bounding box [7, 6, 13, 12] creates a semi-circle from (10, 6) to (10, 12)
     # start=270 (top), end=90 (bottom) clockwise
-    draw.arc([7, 6, 13, 12], start=270, end=90, fill=color, width=1)
+    draw.arc([7 + offset_x, 6, 13 + offset_x, 12], start=270, end=90, fill=color, width=1)
     
     # Bottom line from curve end to tail
-    draw.line([(10, 12), (3, 12)], fill=color, width=1)
+    draw.line([(10 + offset_x, 12), (3 + offset_x, 12)], fill=color, width=1)
     
-    return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+    return customtkinter.CTkImage(light_image=image, dark_image=image, size=(size[0] + padding_left, size[1]))
 
 _undo_stacks = {}
 
@@ -10649,36 +10759,42 @@ def _undo_text():
 
 def _create_paste_icon(size=(16, 16), color="#AAAAAA"):
     """Creates a simple clipboard paste icon."""
-    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    # Create a wider image for 3px left padding (adjusted to match dropdown's 14px total space)
+    padding_left = 3
+    image = Image.new("RGBA", (size[0] + padding_left, size[1]), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     
+    offset_x = padding_left
     # Main clipboard body
     # x: 3 to 13, y: 4 to 15
-    draw.rounded_rectangle([3, 4, 13, 15], radius=1, outline=color, width=1)
+    draw.rounded_rectangle([3 + offset_x, 4, 13 + offset_x, 15], radius=1, outline=color, width=1)
     
     # Handle on top
     # x: 6 to 10, y: 1 to 4
-    draw.rounded_rectangle([6, 1, 10, 4], radius=1, outline=color, width=1)
+    draw.rounded_rectangle([6 + offset_x, 1, 10 + offset_x, 4], radius=1, outline=color, width=1)
     
-    return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+    return customtkinter.CTkImage(light_image=image, dark_image=image, size=(size[0] + padding_left, size[1]))
 
 
 def _create_copy_icon(size=(16, 16), color="#AAAAAA"):
     """Creates a copy icon (two overlapping squares)."""
-    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    # Create a wider image for 3px left padding (adjusted to match dropdown's 14px total space)
+    padding_left = 3
+    image = Image.new("RGBA", (size[0] + padding_left, size[1]), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     
+    offset_x = padding_left
     w, h = size
     square_size = 8
     stroke_width = 1
     
     # Back square (top-left) - Fixed orientation
-    bx1, by1 = 2, 2
-    bx2, by2 = 2 + square_size, 2 + square_size
+    bx1, by1 = 2 + offset_x, 2
+    bx2, by2 = 2 + offset_x + square_size, 2 + square_size
     
     # Front square (bottom-right) - Fixed orientation
-    fx1, fy1 = 5, 5
-    fx2, fy2 = 5 + square_size, 5 + square_size
+    fx1, fy1 = 5 + offset_x, 5
+    fx2, fy2 = 5 + offset_x + square_size, 5 + square_size
     
     # Draw back square partially to simulate overlap without solid fill
     # Top side
@@ -10697,25 +10813,28 @@ def _create_copy_icon(size=(16, 16), color="#AAAAAA"):
         width=stroke_width
     )
     
-    return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+    return customtkinter.CTkImage(light_image=image, dark_image=image, size=(size[0] + padding_left, size[1]))
 
 
 def _create_save_icon(size=(16, 16), color="#AAAAAA"):
     """Creates a save icon (floppy disk)."""
-    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    # Create a wider image for 3px left padding (adjusted to match dropdown's 14px total space)
+    padding_left = 3
+    image = Image.new("RGBA", (size[0] + padding_left, size[1]), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     
+    offset_x = padding_left
     w, h = size
     stroke_width = 1
     
     # Floppy disk shape
     # Top rectangle (label area)
-    top_x1, top_y1 = 3, 2
-    top_x2, top_y2 = 13, 5
+    top_x1, top_y1 = 3 + offset_x, 2
+    top_x2, top_y2 = 13 + offset_x, 5
     
     # Main body
-    body_x1, body_y1 = 2, 5
-    body_x2, body_y2 = 14, 13
+    body_x1, body_y1 = 2 + offset_x, 5
+    body_x2, body_y2 = 14 + offset_x, 13
     
     # Draw main body
     draw.rectangle([body_x1, body_y1, body_x2, body_y2], outline=color, width=stroke_width)
@@ -10724,54 +10843,61 @@ def _create_save_icon(size=(16, 16), color="#AAAAAA"):
     draw.rectangle([top_x1, top_y1, top_x2, top_y2], outline=color, width=stroke_width)
     
     # Draw metal slider (bottom center)
-    slider_x1, slider_y1 = 6, 11
-    slider_x2, slider_y2 = 10, 12
+    slider_x1, slider_y1 = 6 + offset_x, 11
+    slider_x2, slider_y2 = 10 + offset_x, 12
     draw.rectangle([slider_x1, slider_y1, slider_x2, slider_y2], outline=color, width=stroke_width)
     
     # Draw center hole
-    hole_x1, hole_y1 = 7, 7
-    hole_x2, hole_y2 = 9, 9
+    hole_x1, hole_y1 = 7 + offset_x, 7
+    hole_x2, hole_y2 = 9 + offset_x, 9
     draw.rectangle([hole_x1, hole_y1, hole_x2, hole_y2], fill=color, outline=color)
     
-    return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+    return customtkinter.CTkImage(light_image=image, dark_image=image, size=(size[0] + padding_left, size[1]))
 
 
 def _create_save_as_icon(size=(16, 16), color="#AAAAAA"):
     """Creates a save-as icon (floppy disk with pencil overlay)."""
-    buf = (16, 16)
+    # Create a wider image for 3px left padding (adjusted to match dropdown's 14px total space)
+    padding_left = 3
+    buf = (16 + padding_left, 16)
     image = Image.new("RGBA", buf, (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     stroke_width = 1
+    offset_x = padding_left
 
     # Floppy disk
-    draw.rectangle([2, 5, 14, 13], outline=color, width=stroke_width)
-    draw.rectangle([3, 2, 13, 5], outline=color, width=stroke_width)
-    draw.rectangle([6, 11, 10, 12], outline=color, width=stroke_width)
-    draw.rectangle([7, 7, 9, 9], fill=color, outline=color)
+    draw.rectangle([2 + offset_x, 5, 14 + offset_x, 13], outline=color, width=stroke_width)
+    draw.rectangle([3 + offset_x, 2, 13 + offset_x, 5], outline=color, width=stroke_width)
+    draw.rectangle([6 + offset_x, 11, 10 + offset_x, 12], outline=color, width=stroke_width)
+    draw.rectangle([7 + offset_x, 7, 9 + offset_x, 9], fill=color, outline=color)
 
     # Pencil overlay (diagonal, lower-left to upper-right, tip at top-right)
-    draw.line([(5, 12), (12, 5)], fill=color, width=stroke_width)
-    draw.line([(6, 11), (13, 4)], fill=color, width=stroke_width)
-    draw.line([(5, 12), (6, 11)], fill=color, width=stroke_width)
-    draw.line([(12, 5), (13, 4)], fill=color, width=stroke_width)
+    draw.line([(5 + offset_x, 12), (12 + offset_x, 5)], fill=color, width=stroke_width)
+    draw.line([(6 + offset_x, 11), (13 + offset_x, 4)], fill=color, width=stroke_width)
+    draw.line([(5 + offset_x, 12), (6 + offset_x, 11)], fill=color, width=stroke_width)
+    draw.line([(12 + offset_x, 5), (13 + offset_x, 4)], fill=color, width=stroke_width)
 
-    if size != buf:
-        image = image.resize(size, Image.Resampling.NEAREST)
-    return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+    if size != (16, 16):
+        # Resize logic should maintain padding or be careful here. Assuming size=(16,16) usually.
+        image = image.resize(((size[0] + padding_left), size[1]), Image.Resampling.NEAREST)
+    return customtkinter.CTkImage(light_image=image, dark_image=image, size=(size[0] + padding_left, size[1]))
 
 
 def _create_external_link_icon(size=(16, 16), color="#AAAAAA"):
     """Creates an external link icon (square with open corner and arrow pointing out)."""
-    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    # Create a wider image for 3px left padding (adjusted to match dropdown's 14px total space)
+    padding_left = 3
+    image = Image.new("RGBA", (size[0] + padding_left, size[1]), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     
+    offset_x = padding_left
     w, h = size
     square_size = 9
     stroke_width = 1.5
     
     # Square position (lower-left portion of icon)
-    sq_x1, sq_y1 = 2, 5
-    sq_x2, sq_y2 = 2 + square_size, 5 + square_size
+    sq_x1, sq_y1 = 2 + offset_x, 5
+    sq_x2, sq_y2 = 2 + offset_x + square_size, 5 + square_size
     
     # Draw square outline with open top-right corner
     # Left side (full height)
@@ -10804,7 +10930,7 @@ def _create_external_link_icon(size=(16, 16), color="#AAAAAA"):
     # Draw arrowhead as filled triangle
     draw.polygon([(tip_x, tip_y), (left_x, left_y), (bottom_x, bottom_y)], fill=color)
     
-    return customtkinter.CTkImage(light_image=image, dark_image=image, size=size)
+    return customtkinter.CTkImage(light_image=image, dark_image=image, size=(size[0] + padding_left, size[1]))
 
 def show_search_context_menu(event):
     """Show the right-click context menu for search results."""
@@ -11053,7 +11179,9 @@ def build_url_from_result(result_data):
 
     if not all([platform, search_type, item_id]): print("[URL Build] Missing data."); return None
 
-    p_lower = platform.lower(); t_lower = search_type.lower()
+    p_lower = platform.lower().replace(" ", "")
+    t_lower = search_type.lower()
+    debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
 
     base_urls = { "qobuz": "https://open.qobuz.com", "tidal": "https://listen.tidal.com", "deezer": "https://www.deezer.com", "beatport": "https://www.beatport.com", "beatsource": "https://www.beatsource.com", "napster": "https://web.napster.com", "idagio": "https://app.idagio.com", "spotify": "https://open.spotify.com", "applemusic": "https://music.apple.com" }
     type_paths = { 
@@ -11072,24 +11200,31 @@ def build_url_from_result(result_data):
     if p_lower == "youtube":
         if t_lower == 'track':
             url = f"https://www.youtube.com/watch?v={item_id}"
-            print(f"[URL Build - YouTube] Constructed video URL: {url}")
+            if debug_mode:
+                print(f"[URL Build - YouTube] Constructed video URL: {url}")
             return url
         elif t_lower == 'playlist' or t_lower == 'album':
             url = f"https://www.youtube.com/playlist?list={item_id}"
-            print(f"[URL Build - YouTube] Constructed playlist URL: {url}")
+            if debug_mode:
+                print(f"[URL Build - YouTube] Constructed playlist URL: {url}")
             return url
         elif t_lower == 'artist' or t_lower == 'channel':
             url = f"https://www.youtube.com/channel/{item_id}"
-            print(f"[URL Build - YouTube] Constructed channel URL: {url}")
+            if debug_mode:
+                print(f"[URL Build - YouTube] Constructed channel URL: {url}")
             return url
         else:
-            print(f"[URL Build - YouTube] Unknown type '{t_lower}'.")
+            if debug_mode:
+                print(f"[URL Build - YouTube] Unknown type '{t_lower}'.")
             return None
 
     if p_lower == "soundcloud":
         if raw_result_obj:
             permalink = getattr(raw_result_obj, 'permalink_url', None)
-            if permalink: print(f"[SC URL] Using permalink: {permalink}"); return permalink            
+            if permalink:
+                if debug_mode:
+                    print(f"[SC URL] Using permalink: {permalink}")
+                return permalink            
         if t_lower == 'track': sc_entity = 'tracks'
         elif t_lower == 'playlist' or t_lower == 'album': sc_entity = 'playlists'
         elif t_lower == 'artist': sc_entity = 'users'
@@ -11098,11 +11233,18 @@ def build_url_from_result(result_data):
         widget_api_url = f'https://api-widget.soundcloud.com/resolve?url={sc_api_url}&format=json&client_id=gqKBMSuBw5rbN9rDRYPqKNvF17ovlObu&app_version=1742894364'
         headers = {'Referer': 'https://w.soundcloud.com/', 'Origin': 'https://w.soundcloud.com/', 'User-Agent': 'Mozilla/5.0'}
         try:
-            print(f"[SC URL] Requesting widget API: {widget_api_url}")
+            if debug_mode:
+                print(f"[SC URL] Requesting widget API: {widget_api_url}")
             response = requests.get(widget_api_url, headers=headers, timeout=10); response.raise_for_status(); data = response.json()
             permalink_from_api = data.get('permalink_url')
-            if permalink_from_api: print(f"[SC URL] Resolved via API: {permalink_from_api}"); return permalink_from_api
-            else: print(f"[SC URL] API Error: No permalink in response: {data}"); return None
+            if permalink_from_api:
+                if debug_mode:
+                    print(f"[SC URL] Resolved via API: {permalink_from_api}")
+                return permalink_from_api
+            else:
+                if debug_mode:
+                    print(f"[SC URL] API Error: No permalink in response: {data}")
+                return None
         except requests.exceptions.RequestException as e: print(f"[SC URL] API Request Error: {e}"); return None
         except json.JSONDecodeError as e: print(f"[SC URL] API JSON Error: {e}"); return None
         except Exception as e: print(f"[SC URL] API Unexpected Error: {e}"); return None
@@ -11115,7 +11257,9 @@ def build_url_from_result(result_data):
                 permalink = getattr(raw_result_obj, 'url', None)
             
             if permalink:
-                print(f"[URL Build - Beatport] Using attribute permalink/url: {permalink}")
+                debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
+                if debug_mode:
+                    print(f"[URL Build - Beatport] Using attribute permalink/url: {permalink}")
                 return permalink
 
             slug = getattr(raw_result_obj, 'slug', None) if not isinstance(raw_result_obj, dict) else raw_result_obj.get('slug')
@@ -11146,23 +11290,30 @@ def build_url_from_result(result_data):
                     print(f"[URL Build - Beatport] Constructed with slug '{slug_str}': {url}")
                     return url
                 else:
-                    print(f"[URL Build - Beatport] Slug (original or derived) was empty after processing. Falling back.")
+                    if debug_mode:
+                        print(f"[URL Build - Beatport] Slug (original or derived) was empty after processing. Falling back.")
             else:
-                print(f"[URL Build - Beatport] No valid slug, or item_id/type invalid for slug path. Slug: {slug}, ID: {item_id}, Type: {t_lower}")
+                if debug_mode:
+                    print(f"[URL Build - Beatport] No valid slug, or item_id/type invalid for slug path. Slug: {slug}, ID: {item_id}, Type: {t_lower}")
         else:
-            print(f"[URL Build - Beatport] raw_result_obj is None. Cannot get permalink or slug.")
+            if debug_mode:
+                print(f"[URL Build - Beatport] raw_result_obj is None. Cannot get permalink or slug.")
 
-        print(f"[URL Build - Beatport] Attempting fallback URL construction (slug not available/derivable or other issue).")
+        if debug_mode:
+            print(f"[URL Build - Beatport] Attempting fallback URL construction (slug not available/derivable or other issue).")
         if p_lower in base_urls and p_lower in type_paths and t_lower in type_paths[p_lower]:
             url_path_segment = type_paths[p_lower][t_lower]
             url = f"{base_urls[p_lower]}/{url_path_segment}/{item_id}"
-            print(f"[URL Build - Beatport] Fallback (no slug/permalink found): {url}")
+            if debug_mode:
+                print(f"[URL Build - Beatport] Fallback (no slug/permalink found): {url}")
             return url
         else:
-            print(f"[URL Build - Beatport] Fallback failed: Path construction not supported for type '{t_lower}'.")
+            if debug_mode:
+                print(f"[URL Build - Beatport] Fallback failed: Path construction not supported for type '{t_lower}'.")
             return None
     elif p_lower == "applemusic":
-        print(f"[URL Build - Apple Music] Building URL for {t_lower} with ID {item_id}")
+        if debug_mode:
+            print(f"[URL Build - Apple Music] Building URL for {t_lower} with ID {item_id}")
         country = "us"
         if raw_result_obj:
             try:
@@ -11200,7 +11351,8 @@ def build_url_from_result(result_data):
             except Exception as e:
                 print(f"[URL Build - Apple Music] Could not extract name from raw result: {e}")
         apple_music_url = f"https://music.apple.com/{country}/{apple_music_type}/{url_name}/{item_id}"
-        print(f"[URL Build - Apple Music] Constructed URL: {apple_music_url}")
+        if debug_mode:
+            print(f"[URL Build - Apple Music] Constructed URL: {apple_music_url}")
         return apple_music_url
     
     elif p_lower == "beatsource":
@@ -11283,10 +11435,16 @@ def build_url_from_result(result_data):
             return None
     
     else:
+        debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
         if p_lower in base_urls and p_lower in type_paths and t_lower in type_paths[p_lower]:
             url_path_segment = type_paths[p_lower][t_lower]; url = f"{base_urls[p_lower]}/{url_path_segment}/{item_id}"
-            print(f"[URL Build - {platform}] Constructed: {url}"); return url
-        else: print(f"[URL Build - {platform}] Not supported for type '{t_lower}'."); return None
+            if debug_mode:
+                print(f"[URL Build - {platform}] Constructed: {url}"); return url
+            return url
+        else: 
+            if debug_mode:
+                print(f"[URL Build - {platform}] Not supported for type '{t_lower}'.")
+            return None
 
 def download_selected():
     global tabview, url_entry, file_download_queue, current_batch_output_path
@@ -11300,7 +11458,9 @@ def download_selected():
             selected_data = selected_items[0]
             url_to_download = build_url_from_result(selected_data)
             if url_to_download:
-                print(f"Switching tab and starting download for: {url_to_download}")
+                debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
+                if debug_mode:
+                    print(f"Switching tab and starting download for: {url_to_download}")
                 if 'tabview' in globals() and tabview and tabview.winfo_exists():
                     tabview.set("Download")
                 if 'url_entry' in globals() and url_entry and url_entry.winfo_exists():
@@ -11671,7 +11831,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         deezer_creds_frame = None
         qobuz_creds_frame = None
         other_creds_frame = None
-        _platforms_with_help = ("AppleMusic", "Beatport", "Beatsource", "SoundCloud", "Spotify", "Tidal", "YouTube")
+        _platforms_with_help = ("Apple Music", "Beatport", "Beatsource", "SoundCloud", "Spotify", "Tidal", "YouTube")
         if platform_name == "Deezer":
             deezer_creds_frame = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
             deezer_creds_frame.pack(fill="x", expand=False, anchor="nw")
@@ -11709,9 +11869,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
             if i == 0:
                 # Adjust top padding for alignment: AppleMusic/YouTube are reference (15), others need +1px (16)
-                top_pad = 15 if platform_name in ["AppleMusic", "YouTube"] else 16
+                top_pad = 15 if platform_name in ["Apple Music", "YouTube"] else 16
                 # Adjust bottom padding: AppleMusic needs -1px (4) to reduce gap to next row
-                bottom_pad = 4 if platform_name == "AppleMusic" else 5
+                bottom_pad = 4 if platform_name == "Apple Music" else 5
                 # YouTube Cookies Path needs more bottom pad (10) because we hide the warning label now
                 if platform_name == "YouTube" and i == 0: bottom_pad = 10
                 pady_config = (top_pad, bottom_pad)
@@ -12069,7 +12229,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     widget.configure(show="*")
                 
                 # For Apple Music and YouTube cookies_path, add Open button like Browse in Global settings
-                if (platform_name == "AppleMusic" or platform_name == "YouTube") and key == "cookies_path":
+                if (platform_name == "Apple Music" or platform_name == "YouTube") and key == "cookies_path":
                     # Use padx=(10, 5) to align left with other fields (10) and spacing for button
                     widget.grid(row=i, column=1, sticky="ew", padx=(10, 5), pady=pady_config)
                     def open_cookies_folder():
@@ -12104,7 +12264,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     )
                     # Align right with Save button (same 5px right padding as save_controls_frame)
                     open_button.grid(row=i, column=2, sticky="e", padx=(5, 5), pady=pady_config)
-                elif platform_name == "AppleMusic":
+                elif platform_name == "Apple Music":
                     # Match cookies_path width by using same column and padding layout
                     widget.grid(row=i, column=1, sticky="ew", padx=(10, 5), pady=pady_config)
                 elif platform_name == "YouTube" and key == "download_pause_seconds":
@@ -12264,7 +12424,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             _add_clear_session_icon(help_frame, "Spotify")
         
         # Add help text for Apple Music module
-        if platform_name == "AppleMusic":
+        if platform_name == "Apple Music":
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
             help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
@@ -12356,7 +12516,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step3_path_frame, text="Path: ", font=("Segoe UI", 12, "italic"), text_color="gray").pack(side="left")
             customtkinter.CTkLabel(step3_path_frame, text="./config/cookies.txt", font=("Segoe UI", 12, "italic"), text_color="gray").pack(side="left")
             
-            _add_clear_session_icon(help_frame, "AppleMusic")
+            _add_clear_session_icon(help_frame, "Apple Music")
         
         # Add help text for YouTube module
         if platform_name == "YouTube":
@@ -13255,7 +13415,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
              # To ensure the frame has height if empty, we might need a dummy label or minsize.
              # However, if it's empty, a height=0 frame might not show.
              # Let's add a generic title if it's a new frame to give it context.
-             if platform_name not in ["Spotify", "AppleMusic", "YouTube", "Deezer", "Qobuz", "SoundCloud", "Tidal", "Beatport", "Beatsource"]:
+             if platform_name not in ["Spotify", "Apple Music", "YouTube", "Deezer", "Qobuz", "SoundCloud", "Tidal", "Beatport", "Beatsource"]:
                  help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
                  help_container.pack(anchor="w", padx=15, pady=12)
                  
@@ -13274,7 +13434,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Add the "See demo" button to the top-right of the help_frame
         # Each platform has its own demo video URL (platforms with their own See demo in-help are excluded here)
         SEE_DEMO_URLS = {
-            "AppleMusic": "https://youtu.be/tbZaCFUnhow",
+            "Apple Music": "https://youtu.be/tbZaCFUnhow",
             "SoundCloud": "https://youtu.be/LEEJosz2CYg",
             "Spotify": "https://youtu.be/aJYDACfilRM",
         }
@@ -13353,7 +13513,7 @@ def update_search_platform_dropdown():
         configured_platforms = []
 
         # Platforms where credentials are completely optional (work without any credentials)
-        platforms_with_optional_credentials = ["YouTube", "AppleMusic", "Deezer", "Qobuz", "Spotify"]
+        platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify"]
 
         for platform_name_iter in base_available_platforms:
             # YouTube, Apple Music, Deezer (public API) always show - no credential check
@@ -13441,13 +13601,15 @@ def _on_hyperlink_click(event):
                 clicked_url = log_textbox.get(start, end)
                 break
         
-        if clicked_url:            
-            if clicked_url.endswith('.') or clicked_url.endswith(')'):
-                 if not any(char.isalnum() for char in clicked_url[-3:]):
-                    clicked_url = clicked_url[:-1]
+            if clicked_url:            
+                if clicked_url.endswith('.') or clicked_url.endswith(')'):
+                     if not any(char.isalnum() for char in clicked_url[-3:]):
+                        clicked_url = clicked_url[:-1]
 
-            print(f"Opening URL: {clicked_url}")
-            webbrowser.open_new_tab(clicked_url)
+                debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
+                if debug_mode:
+                    print(f"Opening URL: {clicked_url}")
+                webbrowser.open_new_tab(clicked_url)
     except Exception as e:
         print(f"Error opening hyperlink: {e}")
 
@@ -14001,7 +14163,7 @@ if __name__ == "__main__":
                 }
             },
             "credentials": {
-                "AppleMusic": { "cookies_path": "./config/cookies.txt", "language": "en-US", "codec": "aac", "quality": "high" },
+                "Apple Music": { "cookies_path": "./config/cookies.txt", "language": "en-US", "codec": "aac", "quality": "high" },
                 "Beatport": { "username": "", "password": "" },
                 "Beatsource": { "username": "", "password": "" },
                 "Bugs": { "username": "", "password": "" },
@@ -14026,7 +14188,7 @@ if __name__ == "__main__":
                 default_credential_platform_names = list(DEFAULT_SETTINGS.get("credentials", {}).keys())
 
                 for platform_key in default_credential_platform_names:
-                    expected_subdir_name = platform_key.lower()
+                    expected_subdir_name = platform_key.lower().replace(" ", "")
                     
                     if expected_subdir_name in module_subdirs_in_dir:
                         installed_platform_keys.append(platform_key)
@@ -14092,6 +14254,9 @@ if __name__ == "__main__":
         # Set initial size
         app.geometry("940x600")
         app.update() # Force update to ensure window is created and resized
+        
+        # Load platform icons now that the Tk root is ready
+        load_platform_icons()
         
         scaling = app._get_window_scaling()
         screen_width = app.winfo_screenwidth()
@@ -14247,14 +14412,16 @@ if __name__ == "__main__":
         customtkinter.CTkLabel(controls_frame, text="Platform").grid(row=0, column=0, padx=(5,1), sticky="nw")
         search_tab_initial_platforms = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
         platform_var = tkinter.StringVar(value=search_tab_initial_platforms[0] if search_tab_initial_platforms else ""); 
-        platform_combo = customtkinter.CTkComboBox(controls_frame, values=search_tab_initial_platforms, variable=platform_var, width=140, state="readonly", height=30, dropdown_fg_color="#2B2B2B"); 
+        # Using custom CTkImageComboBox to show platform icons in dropdown
+        platform_combo = CTkImageComboBox(controls_frame, values=search_tab_initial_platforms, variable=platform_var, width=140, state="readonly", height=30, dropdown_fg_color="#2B2B2B"); 
         platform_combo.grid(row=0, column=1, padx=(5, 6), sticky="n"); 
         platform_var.trace_add("write", on_platform_change)
         platform_var.trace_add("write", lambda *a: clear_focus())
 
         customtkinter.CTkLabel(controls_frame, text="Type").grid(row=0, column=2, padx=(5,5), sticky="nw")
         type_var = tkinter.StringVar()
-        type_combo = customtkinter.CTkComboBox(controls_frame, values=[], variable=type_var, width=100, state="readonly", height=30, dropdown_fg_color="#2B2B2B")
+        # Using custom CTkImageComboBox to show type icons in dropdown
+        type_combo = CTkImageComboBox(controls_frame, values=[], variable=type_var, width=100, state="readonly", height=30, dropdown_fg_color="#2B2B2B")
         type_combo.grid(row=0, column=3, padx=(2, 1), sticky="n")
         type_var.trace_add("write", _update_search_placeholder)
         type_var.trace_add("write", _update_tidal_atmos_visibility)
