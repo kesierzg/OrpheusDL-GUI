@@ -15753,22 +15753,22 @@ Unnecessary Lossless-to-Lossless""",
                             if os.path.exists(app_dir):
                                 os.startfile(app_dir)
 
-                        instr_container = customtkinter.CTkFrame(step2_frame, fg_color="transparent")
-                        instr_container.pack(fill="x", padx=(15, 10), pady=(0, 0))
-
-                        # Part 1: Text before link
-                        part1 = customtkinter.CTkLabel(
-                            instr_container, 
-                            text="Download, unzip, and place the 'ffmpeg.exe' file in the ", 
+                        # Row 1: Instruction text
+                        instr_row1 = customtkinter.CTkLabel(
+                            step2_frame, 
+                            text="Download, unzip, and place 'ffmpeg.exe' in the", 
                             text_color="#999999", font=("", 11),
                             anchor="w"
                         )
-                        part1.pack(side="left", padx=0)
+                        instr_row1.pack(fill="x", padx=15, pady=(0, 0))
 
-                        # Part 2: Link
+                        # Row 2: Link and remaining text
+                        instr_row2 = customtkinter.CTkFrame(step2_frame, fg_color="transparent")
+                        instr_row2.pack(fill="x", padx=(15, 10), pady=(0, 0))
+
                         link_font = customtkinter.CTkFont(size=11, underline=True)
                         part2_link = customtkinter.CTkLabel(
-                            instr_container,
+                            instr_row2,
                             text="same folder",
                             text_color="#3B8ED0",
                             font=link_font,
@@ -15777,9 +15777,8 @@ Unnecessary Lossless-to-Lossless""",
                         part2_link.pack(side="left", padx=0)
                         part2_link.bind("<Button-1>", open_app_folder_win)
 
-                        # Part 3: Text after link
                         part3 = customtkinter.CTkLabel(
-                            instr_container,
+                            instr_row2,
                             text=" as this app.",
                             text_color="#999999", font=("", 11),
                             anchor="w"
@@ -15890,9 +15889,9 @@ Unnecessary Lossless-to-Lossless""",
                     ok_btn.pack(pady=(10, 0))
                     
                     # Center on parent
-                    dialog.update()
-                    parent_x = app.winfo_x()
-                    parent_y = app.winfo_y()
+                    app.update_idletasks()
+                    parent_x = app.winfo_rootx()
+                    parent_y = app.winfo_rooty()
                     parent_width = app.winfo_width()
                     parent_height = app.winfo_height()
                     
