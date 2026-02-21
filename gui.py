@@ -304,7 +304,7 @@ ERROR_COLOR = "#FF6B6B"
 LIGHT_TEXT_COLOR = "#dddddd"
 WHITE_TEXT_COLOR = "#FFFFFF"
 # Cursor for clickable items: macOS uses "pointinghand", Windows/Linux use "hand2" (unified for context menus and tree hover)
-HAND_CURSOR = "pointinghand" if platform.system() == "Darwin" else "hand2"
+HAND_CURSOR = "pointinghand" if sys.platform == "darwin" else "hand2"
 
 def _simple_slugify(text):
     if not text: return None
@@ -15663,7 +15663,7 @@ Unnecessary Lossless-to-Lossless""",
                             text="same folder",
                             text_color="#3B8ED0",
                             font=link_font,
-                            cursor=HAND_CURSOR
+                            cursor="pointinghand" # macOS specific
                         )
                         part2_link.pack(side="left", padx=0)
                         part2_link.bind("<Button-1>", open_app_folder)
@@ -15679,7 +15679,7 @@ Unnecessary Lossless-to-Lossless""",
                         
                         # Hover effects for link
                         def on_enter_link(e): 
-                            part2_link.configure(text_color="#1F6AA5", cursor=HAND_CURSOR)
+                            part2_link.configure(text_color="#1F6AA5", cursor="pointinghand")
                         def on_leave_link(e): 
                             part2_link.configure(text_color="#3B8ED0", cursor="arrow")
                         part2_link.bind("<Enter>", on_enter_link)
@@ -15773,7 +15773,7 @@ Unnecessary Lossless-to-Lossless""",
                             text="same folder",
                             text_color="#3B8ED0",
                             font=link_font,
-                            cursor=HAND_CURSOR
+                            cursor="hand2" # Windows specific
                         )
                         part2_link.pack(side="left", padx=0)
                         part2_link.bind("<Button-1>", open_app_folder_win)
@@ -15788,7 +15788,7 @@ Unnecessary Lossless-to-Lossless""",
                         
                         # Hover effects for link
                         def on_enter_link_win(e): 
-                            part2_link.configure(text_color="#1F6AA5", cursor=HAND_CURSOR)
+                            part2_link.configure(text_color="#1F6AA5", cursor="hand2")
                         def on_leave_link_win(e): 
                             part2_link.configure(text_color="#3B8ED0", cursor="arrow")
                         part2_link.bind("<Enter>", on_enter_link_win)
