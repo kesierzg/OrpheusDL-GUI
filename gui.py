@@ -5680,9 +5680,13 @@ class DownloadCancelledError(Exception):
     pass
 
 class QualityEnum(enum.Enum):
-    HIFI = 1
-    HIGH = 2
-    LOW = 3
+    MINIMUM = 1
+    LOW = 2
+    MEDIUM = 3
+    HIGH = 4
+    LOSSLESS = 5
+    HIFI = 6
+    ATMOS = 7
 
 def deep_merge(dict1, dict2, keys_to_overwrite_if_dicts=None):
     """Deep merge two dictionaries.
@@ -6273,10 +6277,31 @@ def save_settings(show_confirmation: bool = True):
         except Exception as e: error_msg = f"Error processing global setting '{key_path_str}': {e}"; parse_errors.append(error_msg)
     for platform_name, fields in settings_vars.get("credentials", {}).items():
          if platform_name not in updated_gui_settings["credentials"]: updated_gui_settings["credentials"][platform_name] = {}
+         # Get default fields to check for types and valid keys
+         default_fields = DEFAULT_SETTINGS.get("credentials", {}).get(platform_name, {})
          for field_key, var in fields.items():
               if not isinstance(var, tkinter.Variable): continue
               if field_key.startswith('_'): continue  # skip internal UI state
-              updated_gui_settings["credentials"][platform_name][field_key] = str(var.get())
+              
+              # Only save fields that exist in DEFAULT_SETTINGS to keep config clean
+              # (Prevents persistent 'codec' or 'quality' fields if they aren't standard)
+              if field_key not in default_fields: continue
+              
+              raw_val = var.get()
+              default_val = default_fields.get(field_key)
+              
+              if isinstance(default_val, bool):
+                  # Preserve boolean type (especially for use_wrapper)
+                  if isinstance(raw_val, str):
+                      updated_gui_settings["credentials"][platform_name][field_key] = str(raw_val).lower() == 'true'
+                  else:
+                      updated_gui_settings["credentials"][platform_name][field_key] = bool(raw_val)
+              elif isinstance(default_val, int):
+                  try: updated_gui_settings["credentials"][platform_name][field_key] = int(raw_val)
+                  except: updated_gui_settings["credentials"][platform_name][field_key] = default_val # Fallback
+              else:
+                  # Default to string for others
+                  updated_gui_settings["credentials"][platform_name][field_key] = str(raw_val)
     if not validate_codec_conversions():
         return False
 
@@ -6332,6 +6357,17 @@ def save_settings(show_confirmation: bool = True):
             mapped_orpheus_updates["modules"]["qobuz"]["use_id_token"] = str(_val).lower() if _val is not None else "false"
 
     final_settings_to_save = deep_merge(existing_settings, mapped_orpheus_updates, keys_to_overwrite_if_dicts=["codec_conversions", "conversion_flags"])
+    
+    # Prune non-schema keys from modules to keep config clean (removes redundant 'codec', 'quality', etc.)
+    _inv_map = {v: k for k, v in platform_map_to_orpheus.items()}
+    if "modules" in final_settings_to_save:
+        for m_name, m_creds in final_settings_to_save["modules"].items():
+            g_name = _inv_map.get(m_name)
+            if g_name and isinstance(m_creds, dict):
+                allowed = set(DEFAULT_SETTINGS.get("credentials", {}).get(g_name, {}).keys())
+                for k in list(m_creds.keys()):
+                    if k not in allowed: del m_creds[k]
+
     try:
         config_dir = os.path.dirname(CONFIG_FILE_PATH)
         if not os.path.exists(config_dir): os.makedirs(config_dir)
@@ -7902,7 +7938,7 @@ def set_ui_state_searching(is_searching):
             if 'platform_combo' in globals() and platform_combo and platform_combo.winfo_exists(): platform_combo.configure(state=combo_state)
             if 'type_combo' in globals() and type_combo and type_combo.winfo_exists(): type_combo.configure(state=combo_state)
             if 'search_entry' in globals() and search_entry and search_entry.winfo_exists(): search_entry.configure(state=state)
-            if 'tidal_atmos_checkbox' in globals() and tidal_atmos_checkbox and tidal_atmos_checkbox.winfo_exists(): tidal_atmos_checkbox.configure(state=state)
+            if 'atmos_filter_checkbox' in globals() and atmos_filter_checkbox and atmos_filter_checkbox.winfo_exists(): atmos_filter_checkbox.configure(state=state)
             if 'search_progress_bar' in globals() and search_progress_bar and search_progress_bar.winfo_exists():
                 if is_searching: search_progress_bar.configure(mode="indeterminate"); search_progress_bar.start()
                 else: search_progress_bar.stop(); search_progress_bar.set(0); search_progress_bar.configure(mode="determinate")
@@ -8959,6 +8995,30 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                     cleaned_mp3_flags = {"qscale:a": fresh_global_settings["advanced"]["conversion_flags"]["mp3"]["qscale:a"]}
                     downloader_settings["advanced"]["conversion_flags"]["mp3"] = cleaned_mp3_flags
 
+        # Move module detection earlier to handle quality fallbacks
+        parsed_url = urlparse(url); components = parsed_url.path.split('/'); module_name = None
+        for netloc_pattern, mod_name in orpheus.module_netloc_constants.items():
+            if re.findall(netloc_pattern, parsed_url.netloc): module_name = mod_name; break
+
+        # Smart Atmos Fallback: If quality is set to 'atmos' but platform/track doesn't support it, fall back to 'hifi'
+        if downloader_settings.get("general", {}).get("download_quality") == "atmos":
+            is_atmos_possible = False
+            # These platforms potentially support Atmos
+            if module_name in ('applemusic', 'apple music', 'tidal'):
+                if search_result_data:
+                    # Check if 'atmos' is in the search result's additional info
+                    addl = str(search_result_data.get('additional', '')).lower()
+                    if 'atmos' in addl:
+                        is_atmos_possible = True
+                else:
+                    # Direct URL input - let the module try to find Atmos, but we could also check the URL here if needed
+                    is_atmos_possible = True
+            
+            if not is_atmos_possible:
+                downloader_settings["general"]["download_quality"] = "hifi"
+                platform_display_name = module_name if module_name else "This platform"
+                print(f"|GRAY|Notice: '{platform_display_name}' or this specific track does not support Dolby Atmos. Falling back to highest available quality.|RESET|")
+
         yield_to_gui()
 
         module_controls_dict = orpheus.module_controls
@@ -8973,9 +9033,6 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         module_defaults = settings_global_for_defaults.get("module_defaults", {})
         third_party_modules_dict = { ModuleModes.lyrics: module_defaults.get("lyrics") if module_defaults.get("lyrics") != "default" else None, ModuleModes.covers: module_defaults.get("covers") if module_defaults.get("covers") != "default" else None, ModuleModes.credits: module_defaults.get("credits") if module_defaults.get("credits") != "default" else None }
         downloader.third_party_modules = third_party_modules_dict
-        parsed_url = urlparse(url); components = parsed_url.path.split('/'); module_name = None
-        for netloc_pattern, mod_name in orpheus.module_netloc_constants.items():
-            if re.findall(netloc_pattern, parsed_url.netloc): module_name = mod_name; break
         if not module_name: raise ValueError(f"Could not determine module for URL host: {parsed_url.netloc}")
         
         yield_to_gui()
@@ -9052,6 +9109,21 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                 downloader.service = orpheus.load_module(module_name)
             downloader.service_name = module_name
             downloader.download_mode = media_type
+            
+            # Dynamically map global quality to Apple Music codec since the module lacks a distinct GUI option
+            if module_name in ('applemusic', 'apple music'):
+                if not hasattr(downloader, 'extra_kwargs') or downloader.extra_kwargs is None:
+                    downloader.extra_kwargs = {}
+                global_quality = downloader_settings.get("general", {}).get("download_quality", "high").lower()
+                if global_quality == 'atmos':
+                    downloader.extra_kwargs['song_codec'] = 'atmos'
+                elif global_quality == 'hifi':
+                    downloader.extra_kwargs['song_codec'] = 'alac-hi-res'
+                elif global_quality == 'lossless':
+                    downloader.extra_kwargs['song_codec'] = 'alac-lossless'
+                else:
+                    downloader.extra_kwargs['song_codec'] = 'aac'
+                    
             queue_writer.media_type = media_type
             _current_download_context = media_type
             
@@ -9582,29 +9654,29 @@ def update_search_types(platform):
     except Exception as e: print(f"Error updating search types: {e}")
     # Show/hide Tidal ATMOS checkbox: only when Tidal AND type is not artist
     try:
-        if 'tidal_atmos_frame' in globals() and tidal_atmos_frame and tidal_atmos_frame.winfo_exists():
+        if 'atmos_filter_frame' in globals() and atmos_filter_frame and atmos_filter_frame.winfo_exists():
             current_type = (type_var.get() or "").strip().lower() if ('type_var' in globals() and type_var) else ""
-            if (platform or "").strip().lower() == "tidal" and current_type != "artist":
-                tidal_atmos_frame.pack(side="top", anchor="w", pady=(6, 0))
+            if (platform or "").strip().lower() in ("tidal", "applemusic", "apple music") and current_type != "artist":
+                atmos_filter_frame.pack(side="top", anchor="w", pady=(6, 0))
             else:
-                tidal_atmos_frame.pack_forget()
+                atmos_filter_frame.pack_forget()
     except (NameError, tkinter.TclError, Exception):
         pass
     _update_search_placeholder()
 
-def _update_tidal_atmos_visibility(*args):
+def _update_atmos_filter_visibility(*args):
     """Show ATMOS checkbox only when Platform is Tidal and Type is not artist."""
     try:
-        if 'tidal_atmos_frame' not in globals() or not tidal_atmos_frame or not tidal_atmos_frame.winfo_exists():
+        if 'atmos_filter_frame' not in globals() or not atmos_filter_frame or not atmos_filter_frame.winfo_exists():
             return
         if 'platform_var' not in globals() or not platform_var or 'type_var' not in globals() or not type_var:
             return
         platform = (platform_var.get() or "").strip().lower()
         current_type = (type_var.get() or "").strip().lower()
-        if platform == "tidal" and current_type != "artist":
-            tidal_atmos_frame.pack(side="top", anchor="w", pady=(6, 0))
+        if platform in ("tidal", "applemusic", "apple music") and current_type != "artist":
+            atmos_filter_frame.pack(side="top", anchor="w", pady=(6, 0))
         else:
-            tidal_atmos_frame.pack_forget()
+            atmos_filter_frame.pack_forget()
     except (NameError, tkinter.TclError, Exception):
         pass
 
@@ -9624,12 +9696,12 @@ def _update_search_placeholder(*args):
             return
         platform = (platform_var.get() or "").strip().lower()
         atmos_enabled = False
-        if platform == "tidal" and 'tidal_atmos_var' in globals() and tidal_atmos_var:
+        if platform in ("tidal", "applemusic", "apple music") and 'atmos_filter_var' in globals() and atmos_filter_var:
             try:
-                atmos_enabled = tidal_atmos_var.get()
+                atmos_enabled = atmos_filter_var.get()
             except (tkinter.TclError, Exception):
                 pass
-        if platform == "tidal" and atmos_enabled:
+        if platform in ("tidal", "applemusic", "apple music") and atmos_enabled:
             placeholder = "Enter search query or hit search to explore..."
         else:
             placeholder = "Enter search query..."
@@ -9886,11 +9958,11 @@ def display_results(results):
     except:
         pass
 
-TIDAL_EXPLORE_TYPES = ("track (ATMOS)", "album (ATMOS)", "playlist (ATMOS)", "album  ◗◖ ᴀᴛᴍᴏs", "track  ◗◖ ᴀᴛᴍᴏs", "playlist  ◗◖ ᴀᴛᴍᴏs")
+ATMOS_EXPLORE_TYPES = ("track (ATMOS)", "album (ATMOS)", "playlist (ATMOS)", "album  ◗◖ ᴀᴛᴍᴏs", "track  ◗◖ ᴀᴛᴍᴏs", "playlist  ◗◖ ᴀᴛᴍᴏs")
 
 def _result_has_dolby_atmos(quality_str, raw_result):
-    """True if the result is Dolby Atmos (from quality string or raw Tidal audioModes)."""
-    if quality_str and 'Dolby Atmos' in str(quality_str):
+    """True if the result is Dolby Atmos (from quality string, 'Spatial' string, or raw Tidal audioModes)."""
+    if quality_str and ('Atmos' in str(quality_str) or 'Spatial' in str(quality_str)):
         return True
     if isinstance(raw_result, dict) and 'DOLBY_ATMOS' in (raw_result.get('audioModes') or []):
         return True
@@ -9901,11 +9973,17 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
     local_DownloadTypeEnum = DownloadTypeEnum
     # Normalize ATMOS type for branching (e.g., "album  ◗◖ ᴀᴛᴍᴏs" → "album (ATMOS)")
     normalized_type = search_type_str.replace("  ◗◖ ᴀᴛᴍᴏs", " (ATMOS)").replace("( ◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs)", "(ATMOS)").replace("(◗◖ atmos)", "(ATMOS)").replace("(◗◖ atmos )", "(ATMOS)").replace("(◗◖atmos )", "(ATMOS)").replace("(◗◖ATMOS )", "(ATMOS)").strip() if search_type_str else ""
-    is_tidal_atmos = platform_name and platform_name.lower() == 'tidal' and search_type_str in TIDAL_EXPLORE_TYPES
+    is_atmos_filter = platform_name and platform_name.lower() in ('tidal', 'apple music', 'applemusic') and search_type_str in ATMOS_EXPLORE_TYPES
     query_stripped = (query or "").strip()
 
-    # Tidal ATMOS with a search query: run normal search by base type, then filter to Dolby Atmos only
-    if is_tidal_atmos and query_stripped:
+    # Apply empty query injection for Apple Music Atmos Explore
+    if is_atmos_filter and platform_name.strip().lower() in ('applemusic', 'apple music') and not query_stripped:
+        explore_map = {"track (ATMOS)": "track", "album (ATMOS)": "album", "playlist (ATMOS)": "playlist"}
+        _base_type = explore_map.get(normalized_type)
+        query_stripped = "Spatial Audio" if _base_type == "track" else "Atmos"
+
+    # Tidal ATMOS or Apple Music ATMOS with a search query: run normal search by base type, then filter to Dolby Atmos only
+    if is_atmos_filter and query_stripped:
         explore_map = {"track (ATMOS)": "track", "album (ATMOS)": "album", "playlist (ATMOS)": "playlist"}
         base_type = explore_map.get(normalized_type)
         if base_type is None:
@@ -9913,7 +9991,7 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
         search_type_map = {"track": local_DownloadTypeEnum.track, "album": local_DownloadTypeEnum.album, "playlist": local_DownloadTypeEnum.playlist}
         query_type = search_type_map.get(base_type)
         # For playlist ATMOS, search for "dolby " + user query so results are Dolby-related playlists
-        search_query = ("dolby " + query_stripped) if base_type == 'playlist' else query_stripped
+        search_query = ("dolby " + query_stripped) if (platform_name.strip().lower() == 'tidal' and base_type == 'playlist') else query_stripped
         try:
             orpheus_platform = platform_name.lower().replace(" ", "")
             if output_queue:
@@ -9939,8 +10017,8 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             if raw_result is None:
                 raw_result = result
             quality_str = ', '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
-            # Playlists don't have audioModes; only filter by Atmos for tracks/albums
-            if base_type != 'playlist' and not _result_has_dolby_atmos(quality_str, raw_result):
+            # Tidal Playlists don't have audioModes so they pass; filter by Atmos for everything else (including AM playlists)
+            if (not (platform_name.strip().lower() == 'tidal' and base_type == 'playlist')) and not _result_has_dolby_atmos(quality_str, raw_result):
                 continue
             cover_url = getattr(result, 'image_url', None)
             _yr = getattr(result, 'year', None)
@@ -9972,7 +10050,7 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
         return formatted_results, None
 
     # Tidal explore: browse Dolby Atmos by format (no query) – only show Atmos items
-    if is_tidal_atmos and not query_stripped:
+    if is_atmos_filter and platform_name.strip().lower() == 'tidal' and not query_stripped:
         explore_map = {
             "track (ATMOS)": ("atmos", "tracks"),
             "album (ATMOS)": ("atmos", "albums"),
@@ -10300,12 +10378,12 @@ def start_search():
 
         query = search_entry.get().strip(); platform_name = platform_var.get(); search_type_str = type_var.get()
         # When Tidal + ATMOS checkbox: effective type is e.g. "album (ATMOS)" for explore/search
-        if platform_name and platform_name.strip().lower() == 'tidal' and ('tidal_atmos_var' in globals() and tidal_atmos_var and tidal_atmos_var.get()):
+        if platform_name and platform_name.strip().lower() in ('tidal', 'apple music', 'applemusic') and ('atmos_filter_var' in globals() and atmos_filter_var and atmos_filter_var.get()):
             base = (search_type_str or "").strip().lower()
             if base in ("album", "playlist", "track"):
                 search_type_str = ("track (ATMOS)" if base == "track" else "album (ATMOS)" if base == "album" else "playlist (ATMOS)")
-        is_tidal_explore = platform_name and platform_name.lower() == 'tidal' and search_type_str in TIDAL_EXPLORE_TYPES
-        if not query and not is_tidal_explore: show_centered_messagebox("Info", "Please enter a search query.", dialog_type="warning"); return
+        is_atmos_explore = platform_name and platform_name.strip().lower() in ('tidal', 'apple music', 'applemusic') and search_type_str in ATMOS_EXPLORE_TYPES
+        if not query and not is_atmos_explore: show_centered_messagebox("Info", "Please enter a search query.", dialog_type="warning"); return
         if not platform_name: show_centered_messagebox("Info", "Please select a platform.", dialog_type="warning"); return
         if not search_type_str: show_centered_messagebox("Info", "Please select a search type.", dialog_type="warning"); return
         if search_process_active: show_centered_messagebox("Busy", "A search is already in progress!", dialog_type="warning"); return
@@ -10497,9 +10575,9 @@ def _create_search_context_menu():
         # Wrapper: fixed width; menu frame and spacer also fixed width so menu doesn't grow
         _search_context_menu_wrapper = customtkinter.CTkFrame(app, fg_color="transparent", width=CONTEXT_MENU_WIDTH)
         # Main context menu frame - fixed width; rounded corners
-        _search_context_menu = customtkinter.CTkFrame(_search_context_menu_wrapper, border_width=1, border_color="#565B5E", fg_color="#242424", width=CONTEXT_MENU_WIDTH)
+        _search_context_menu = customtkinter.CTkFrame(_search_context_menu_wrapper, border_width=1, border_color="#565B5E", fg_color="#2b2b2b", width=CONTEXT_MENU_WIDTH)
         _search_context_menu.configure(cursor=HAND_CURSOR)
-        button_color = "#242424"
+        button_color = "#2b2b2b"
         
         # Open URL button - same style as copy/paste buttons (icon color = text color)
         external_link_icon = _create_external_link_icon(color=CONTEXT_MENU_TEXT_COLOR)
@@ -10512,7 +10590,7 @@ def _create_search_context_menu():
             width=100,
             height=24,
             font=("Segoe UI", 11),
-            fg_color= "#242424",
+            fg_color= "#2b2b2b",
             hover_color="#474747",
             corner_radius=0,
             text_color=CONTEXT_MENU_TEXT_COLOR,
@@ -10535,7 +10613,8 @@ def _create_search_context_menu():
             ("Lossless", "hifi"),
             ("High Quality", "high"),
             ("Low Quality", "low"),
-            ("Low Quality", "low")  # 4th button for TIDAL (will be reconfigured dynamically)
+            ("Low Quality", "low"),  # 4th button for TIDAL
+            ("Low Quality", "low")   # 5th button for TIDAL / Apple Music Atmos
         ]
         
         _search_quality_buttons.clear()  # Clear any existing button references
@@ -10547,7 +10626,7 @@ def _create_search_context_menu():
                 width=100,
                 height=24,
                 font=("Segoe UI", 11),
-                fg_color="#242424",
+                fg_color="#2b2b2b",
                 hover_color="#474747",
                 corner_radius=0,
                 text_color=CONTEXT_MENU_TEXT_COLOR,
@@ -10578,11 +10657,34 @@ def _create_search_context_menu():
 
 def _select_quality_and_download(quality_value):
     """Set quality and start download."""
-    global _search_context_menu, settings_vars
+    global _search_context_menu, settings_vars, current_settings
     
     _hide_search_context_menu()
     
     try:
+        # Determine platform to set specific settings if needed
+        selected_items = get_selected_items_data()
+        platform_name = ""
+        if selected_items:
+            platform_name = selected_items[0].get('platform', '').lower()
+            
+        if platform_name in ('applemusic', 'apple music'):
+            # Determine correct AM codec based on selected quality
+            if quality_value == 'atmos':
+                am_codec = 'atmos'
+            elif quality_value == 'hifi':
+                am_codec = 'alac-hi-res'
+            elif quality_value == 'lossless':
+                am_codec = 'alac-lossless'
+            else:
+                am_codec = 'aac'
+            
+            # Pass as override to immediately affect the current download without clobbering persistent settings
+            for item in selected_items:
+                if 'extra_kwargs' not in item:
+                    item['extra_kwargs'] = {}
+                item['extra_kwargs']['song_codec'] = am_codec
+
         # Update the global quality setting
         if 'settings_vars' in globals() and settings_vars:
             quality_var = settings_vars.get("globals", {}).get("general.quality")
@@ -10957,9 +11059,44 @@ def show_search_context_menu(event):
         # Determine available qualities based on platform
         selected_items = get_selected_items_data()
         platform_name = ""
+        has_atmos = False
+        has_alac = False
+        has_hires = False
         if selected_items:
             # Use the first selected item's platform
             platform_name = selected_items[0].get('platform', '').lower()
+            if platform_name in ('applemusic', 'apple music'):
+                # Check GUI first (authoritative for current session)
+                use_wrapper = None
+                if 'settings_vars' in globals() and 'credentials' in settings_vars:
+                    am_settings = settings_vars['credentials'].get('Apple Music', {})
+                    if 'use_wrapper' in am_settings:
+                        val = am_settings['use_wrapper'].get()
+                        # CTkVariables .get() can return various types; ensure boolean
+                        use_wrapper = bool(val) if not isinstance(val, str) else val.lower() == 'true'
+                
+                # If not in GUI Vars or not found, check current_settings
+                if use_wrapper is None and 'current_settings' in globals():
+                    use_wrapper = current_settings.get('credentials', {}).get('Apple Music', {}).get('use_wrapper', False)
+                
+                # Default to False if still unknown
+                if use_wrapper is None: use_wrapper = False
+                
+                if use_wrapper:
+                    has_alac = True
+                    for item in selected_items:
+                        addl = str(item.get('additional', '')).lower()
+                        if 'atmos' in addl:
+                            has_atmos = True
+                        if 'hi res lossless' in addl:
+                            has_hires = True
+            elif platform_name == 'tidal':
+                # Check for Atmos support in Tidal results
+                for item in selected_items:
+                    addl = str(item.get('additional', '')).lower()
+                    if 'atmos' in addl:
+                        has_atmos = True
+                        break
         
         # Define platform-specific button configurations
         # Each platform has: (label, quality_value) tuples for buttons
@@ -10971,6 +11108,7 @@ def show_search_context_menu(event):
                 ("MP3 320", "high")
             ],
             'tidal': [
+                ("◗◖ ᴀᴛᴍᴏs", "atmos"),
                 ("HiFi", "hifi"),
                 ("FLAC", "lossless"),
                 ("AAC 320", "high"),
@@ -10987,11 +11125,15 @@ def show_search_context_menu(event):
                 ("MP3", "low")
             ],
             'applemusic': [
+                ("◗◖ ᴀᴛᴍᴏs", "atmos"),
+                ("HiFi", "hifi"),
                 ("ALAC", "lossless"),
                 ("AAC 256", "high"),
                 ("AAC 128", "low")
             ],
             'apple music': [
+                ("◗◖ ᴀᴛᴍᴏs", "atmos"),
+                ("HiFi", "hifi"),
                 ("ALAC", "lossless"),
                 ("AAC 256", "high"),
                 ("AAC 128", "low")
@@ -11021,13 +11163,27 @@ def show_search_context_menu(event):
         
         # Define available qualities per platform
         # Ensure all options in button configs are marked as available
+        
+        am_quals = ['high']
+        if platform_name in ('applemusic', 'apple music'):
+            if has_alac:
+                am_quals.append('lossless')
+                if has_hires:
+                    am_quals.append('hifi')
+            if has_atmos:
+                am_quals.append('atmos')
+                
+        tidal_quals = ['hifi', 'lossless', 'high', 'low']
+        if has_atmos:
+            tidal_quals.insert(0, 'atmos')
+            
         platform_available_qualities = {
-            'applemusic': ['high'],
-            'apple music': ['high'],
+            'applemusic': am_quals,
+            'apple music': am_quals,
             'soundcloud': ['high'],
             'spotify': ['hifi', 'high'],
             'qobuz': ['hifi', 'lossless', 'high'],
-            'tidal': ['hifi', 'lossless', 'high', 'low'],
+            'tidal': tidal_quals,
             'youtube': ['hifi', 'high', 'low'],
             'beatport': ['lossless', 'high', 'low'],
             'beatsource': ['lossless', 'high', 'low'],
@@ -11049,6 +11205,10 @@ def show_search_context_menu(event):
             if btn and btn.winfo_exists():
                 btn.pack_forget()
 
+        # Determine which button is the last one that will be visible
+        visible_indices = [idx for idx, (_, val) in enumerate(button_config) if val in available_qualities]
+        last_visible_idx = visible_indices[-1] if visible_indices else -1
+        
         # Update button labels, commands, states, and visibility based on platform
         for i, btn in enumerate(_search_quality_buttons):
             if btn and btn.winfo_exists():
@@ -11057,22 +11217,31 @@ def show_search_context_menu(event):
                     is_available = quality_value in available_qualities
                     
                     if is_available:
-                        # Create and store icons (icon color = text color)
+                        # Use standard download icon for all quality options
                         icon = _create_download_icon(color=CONTEXT_MENU_TEXT_COLOR)
+                            
                         btn.image = icon  # Keep reference
                         
+                        # Use larger font for Atmos logo text
+                        if "ᴀᴛᴍᴏs" in label:
+                            btn_font = ("Segoe UI", 13)
+                        else:
+                            btn_font = ("Segoe UI", 11)
+                            
                         # Update button text, icon and command
                         btn.configure(
                             text=label,
                             image=icon,
                             compound="left",
                             command=lambda v=quality_value: _select_quality_and_download(v),
-                            state="normal"
+                            state="normal",
+                            font=btn_font
                         )
-                        # Last visible button: less bottom pady for 3+ option platforms; a bit more for SoundCloud/Apple Music (1 option)
-                        is_last_visible = i == len(button_config) - 1
-                        if is_last_visible and platform_name in ('soundcloud', 'applemusic', 'apple music'):
-                            btn.pack(pady=(1, 4), padx=2, fill="x")
+                        # Match Spotify design: last visible button gets 2px bottom padding
+                        is_last_visible = i == last_visible_idx
+                        if is_last_visible and platform_name.lower() in ('soundcloud', 'applemusic', 'apple music'):
+                            # Use 2px to match Spotify exactly, or 4px if SoundCloud needs it
+                            btn.pack(pady=(1, 4 if platform_name.lower() == 'soundcloud' else 2), padx=2, fill="x")
                         else:
                             btn.pack(pady=(1, 2) if is_last_visible else 1, padx=2, fill="x")
                     else:
@@ -11084,7 +11253,9 @@ def show_search_context_menu(event):
         
         # For SoundCloud/Apple Music: show "No other formats available" below the quality button
         if _search_context_menu_bottom_label and _search_context_menu_bottom_label.winfo_exists():
-            if platform_name in ('soundcloud', 'applemusic', 'apple music'):
+            if platform_name.lower() == 'soundcloud':
+                _search_context_menu_bottom_label.pack(side="bottom", pady=(2, 4), padx=6, anchor="w")
+            elif platform_name.lower() in ('applemusic', 'apple music') and not use_wrapper:
                 _search_context_menu_bottom_label.pack(side="bottom", pady=(2, 4), padx=6, anchor="w")
             else:
                 _search_context_menu_bottom_label.pack_forget()
@@ -12108,6 +12279,10 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 var = tkinter.BooleanVar(value=current_value)
                 widget = customtkinter.CTkCheckBox(grid_parent, text="", variable=var)
                 widget.grid(row=i, column=1, sticky="w", padx=10, pady=pady_config)
+                
+                if key == "use_wrapper":
+                    CTkToolTip(widget, message="Enable this if you are running an external decryption server (like amdecrypt)\nto download ALAC and Atmos tracks that require FairPlay.", bg_color=TOOLTIP_MENU_BG, text_color=LIGHT_TEXT_COLOR)
+                    CTkToolTip(label, message="Enable this if you are running an external decryption server (like amdecrypt)\nto download ALAC and Atmos tracks that require FairPlay.", bg_color=TOOLTIP_MENU_BG, text_color=LIGHT_TEXT_COLOR)
 
 
             elif platform_name == "YouTube" and key == "cookies_path":
@@ -14163,7 +14338,7 @@ if __name__ == "__main__":
                 }
             },
             "credentials": {
-                "Apple Music": { "cookies_path": "./config/cookies.txt", "language": "en-US", "codec": "aac", "quality": "high" },
+                "Apple Music": { "cookies_path": "./config/cookies.txt", "language": "en-US", "use_wrapper": False, "wrapper_decrypt_ip": "127.0.0.1:10020" },
                 "Beatport": { "username": "", "password": "" },
                 "Beatsource": { "username": "", "password": "" },
                 "Bugs": { "username": "", "password": "" },
@@ -14424,7 +14599,7 @@ if __name__ == "__main__":
         type_combo = CTkImageComboBox(controls_frame, values=[], variable=type_var, width=100, state="readonly", height=30, dropdown_fg_color="#2B2B2B")
         type_combo.grid(row=0, column=3, padx=(2, 1), sticky="n")
         type_var.trace_add("write", _update_search_placeholder)
-        type_var.trace_add("write", _update_tidal_atmos_visibility)
+        type_var.trace_add("write", _update_atmos_filter_visibility)
         type_var.trace_add("write", lambda *a: clear_focus())
         search_input_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent"); search_input_frame.grid(row=0, column=4, sticky="new", padx=(10, 5)); search_input_frame.grid_columnconfigure(0, weight=1); search_input_frame.bind("<Button-1>", clear_focus)
         search_entry_row = customtkinter.CTkFrame(search_input_frame, fg_color="transparent"); search_entry_row.pack(side="top", fill="x")
@@ -14435,22 +14610,22 @@ if __name__ == "__main__":
         search_entry.bind("<FocusOut>", lambda e, w=search_entry: (handle_focus_out(w), _update_search_placeholder()))
         clear_search_button = customtkinter.CTkButton(search_entry_row, text="Clear", command=clear_search_entry, width=100, height=30, fg_color="#343638", hover_color="#1F6AA5"); clear_search_button.pack(side="left", padx=(10, 0))
         # Tidal ATMOS checkbox: under search field, left-aligned; text ◗◖ ᴀᴛᴍᴏs with smaller font; visible only when Tidal + type is album/playlist/track
-        tidal_atmos_var = tkinter.BooleanVar(value=False)
-        tidal_atmos_frame = customtkinter.CTkFrame(search_input_frame, fg_color="transparent")
-        tidal_atmos_checkbox = customtkinter.CTkCheckBox(tidal_atmos_frame, text="◗◖ ᴀᴛᴍᴏs", variable=tidal_atmos_var, width=100, height=22, font=("Segoe UI", 13), command=lambda: (_update_search_placeholder(), app.focus_set()))
-        tidal_atmos_checkbox.pack(side="left")
+        atmos_filter_var = tkinter.BooleanVar(value=False)
+        atmos_filter_frame = customtkinter.CTkFrame(search_input_frame, fg_color="transparent")
+        atmos_filter_checkbox = customtkinter.CTkCheckBox(atmos_filter_frame, text="◗◖ ᴀᴛᴍᴏs", variable=atmos_filter_var, width=100, height=22, font=("Segoe UI", 13), command=lambda: (_update_search_placeholder(), app.focus_set()))
+        atmos_filter_checkbox.pack(side="left")
         # Tooltip styled like Global settings tooltips
         CTkToolTip(
-            tidal_atmos_checkbox,
+            atmos_filter_checkbox,
             message="Search for Dolby Atmos format only.\nOr hit search to explore the latest releases.",
             bg_color=TOOLTIP_MENU_BG,
             text_color=LIGHT_TEXT_COLOR,
         )
-        tidal_atmos_var.trace_add("write", lambda *a: _update_search_placeholder())
-        tidal_atmos_frame.pack_forget()  # Shown by update_search_types when Tidal and type != artist
-        globals()["tidal_atmos_var"] = tidal_atmos_var
-        globals()["tidal_atmos_frame"] = tidal_atmos_frame
-        globals()["tidal_atmos_checkbox"] = tidal_atmos_checkbox
+        atmos_filter_var.trace_add("write", lambda *a: _update_search_placeholder())
+        atmos_filter_frame.pack_forget()  # Shown by update_search_types when Tidal and type != artist
+        globals()["atmos_filter_var"] = atmos_filter_var
+        globals()["atmos_filter_frame"] = atmos_filter_frame
+        globals()["atmos_filter_checkbox"] = atmos_filter_checkbox
         button_search_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent"); button_search_frame.grid(row=0, column=5, padx=(5,0), sticky="n")
         search_button = customtkinter.CTkButton(button_search_frame, text="Search", command=start_search, width=100, height=30, fg_color="#343638", hover_color="#1F6AA5", state="disabled"); search_button.pack(side="left", padx=(0, 6))
         update_search_types(platform_var.get())
@@ -14920,9 +15095,9 @@ Unnecessary Lossless-to-Lossless""",
                                                                border_color=None)
                             browse_btn.grid(row=row, column=2, sticky="w", padx=(5, 5))
                          elif section_key == "general" and field == "quality":
-                            quality_options = ["hifi", "lossless", "high", "low"]
+                            quality_options = ["atmos", "hifi", "lossless", "high", "low"]
                             current_val_str = var.get().lower()
-                            if current_val_str not in quality_options: var.set(quality_options[0])
+                            if current_val_str not in quality_options: var.set(quality_options[1]) # default to hifi if invalid
                             widget = customtkinter.CTkComboBox(global_settings_frame, variable=var, values=quality_options, state="readonly", dropdown_fg_color="#2B2B2B")
                             widget.grid(row=row, column=1, sticky="ew", padx=(5, 5), pady=2)
                          elif section_key == "general" and field == "concurrent_downloads":
