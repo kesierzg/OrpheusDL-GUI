@@ -5140,13 +5140,14 @@ def resource_path(relative_path):
 
 def find_system_ffmpeg():
     """
-    Find FFmpeg on macOS or Linux. Returns (found: bool, path: str).
+    Find FFmpeg on macOS, Linux, or Windows. Returns (found: bool, path: str).
     Checks common locations first, then system PATH.
     """
     import subprocess
     
+    system = platform.system()
     # Common FFmpeg locations by platform
-    if platform.system() == 'Darwin':
+    if system == 'Darwin':
         # macOS - Homebrew locations
         common_paths = [
             '/opt/homebrew/bin/ffmpeg',   # Apple Silicon
@@ -5159,13 +5160,26 @@ def find_system_ffmpeg():
             common_paths.append(os.path.join(get_script_directory(), 'ffmpeg'))
         except Exception:
             pass
-    elif platform.system() == 'Linux':
+    elif system == 'Linux':
         # Linux - common package manager locations
         common_paths = [
             '/usr/bin/ffmpeg',            # apt, dnf, pacman
             '/usr/local/bin/ffmpeg',      # manual install
             '/snap/bin/ffmpeg',           # snap
         ]
+    elif system == 'Windows':
+        # Windows - common chocolatey/scoop/manual locations
+        common_paths = [
+            'C:/ProgramData/chocolatey/bin/ffmpeg.exe',
+            os.path.expandvars('%USERPROFILE%/scoop/shims/ffmpeg.exe'),
+            'C:/ffmpeg/bin/ffmpeg.exe',
+        ]
+        # Add local app directories
+        try:
+            common_paths.append(os.path.join(get_data_directory(), 'ffmpeg.exe'))
+            common_paths.append(os.path.join(get_script_directory(), 'ffmpeg.exe'))
+        except Exception:
+            pass
     else:
         common_paths = []
     
@@ -5178,12 +5192,13 @@ def find_system_ffmpeg():
             except:
                 pass
     
-    # Try system PATH using 'which' (works on both macOS and Linux)
+    # Try system PATH using 'which' (macOS/Linux) or 'where' (Windows)
     try:
-        result = subprocess.run(['which', 'ffmpeg'], capture_output=True, timeout=3)
+        cmd = 'where' if system == 'Windows' else 'which'
+        result = subprocess.run([cmd, 'ffmpeg' if system != 'Windows' else 'ffmpeg.exe'], capture_output=True, timeout=3)
         if result.returncode == 0:
-            ffmpeg_path = result.stdout.decode().strip()
-            if ffmpeg_path:
+            ffmpeg_path = result.stdout.decode().strip().split('\n')[0].strip()
+            if ffmpeg_path and os.path.isfile(ffmpeg_path):
                 return True, ffmpeg_path
     except:
         pass
@@ -15479,8 +15494,8 @@ Unnecessary Lossless-to-Lossless""",
             button.grid(row=row, column=col, padx=button_padx, pady=button_pady, sticky="nw")
 
         
-        # Check for FFmpeg on macOS/Linux and show helpful message if missing
-        if platform.system() in ('Darwin', 'Linux'):
+        # Check for FFmpeg on Windows/macOS/Linux and show helpful message if missing
+        if platform.system() in ('Windows', 'Darwin', 'Linux'):
             ffmpeg_found, ffmpeg_path = find_system_ffmpeg()
             if not ffmpeg_found:
                 def _show_ffmpeg_install_message():
@@ -15591,12 +15606,12 @@ Unnecessary Lossless-to-Lossless""",
                         step4_label = customtkinter.CTkLabel(step4_frame, text="Alternative: Manual Install", anchor="w", font=("", 12, "bold"))
                         step4_label.pack(fill="x", padx=10, pady=(8, 2))
 
-                        def open_ffmpeg_site():
+                        def open_ffmpeg_site_mac():
                             webbrowser.open("https://evermeet.cx/ffmpeg/")
 
                         download_btn = customtkinter.CTkButton(
                             step4_frame, text="Download FFmpeg (evermeet.cx)", 
-                            command=open_ffmpeg_site,
+                            command=open_ffmpeg_site_mac,
                             height=24,
                             fg_color="transparent", 
                             text_color="#3B8ED0",
@@ -15681,6 +15696,105 @@ Unnecessary Lossless-to-Lossless""",
                             anchor="w"
                         )
                         part4.pack(fill="x", padx=(15, 10), pady=(0, 8))
+
+                    elif platform.system() == 'Windows':
+                        # Windows instructions
+                        dialog.geometry("620x560")
+                        
+                        # Option 1: winget (Recommended)
+                        step1_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
+                        step1_frame.pack(fill="x", pady=5)
+                        
+                        step1_label = customtkinter.CTkLabel(step1_frame, text="1. Install via winget (Windows Package Manager):", anchor="w")
+                        step1_label.pack(fill="x", padx=10, pady=(8, 2))
+                        
+                        winget_cmd = 'winget install ffmpeg'
+                        cmd1_frame = customtkinter.CTkFrame(step1_frame, fg_color="#1E1E1E", corner_radius=5)
+                        cmd1_frame.pack(fill="x", padx=10, pady=(2, 8))
+                        
+                        cmd1_label = customtkinter.CTkLabel(cmd1_frame, text=winget_cmd, font=("Segoe UI", 11), anchor="w", text_color="#98C379")
+                        cmd1_label.pack(side="left", fill="x", expand=True, padx=10, pady=8)
+                        
+                        copy1_btn = customtkinter.CTkButton(
+                            cmd1_frame, text="⧉", width=24, height=24, 
+                            font=("Segoe UI", 14),
+                            fg_color="#2B2B2B", hover_color="#3B3B3B", 
+                            text_color="#999999", corner_radius=3,
+                            command=lambda: copy_command(winget_cmd, copy1_btn)
+                        )
+                        copy1_btn.pack(side="right", padx=8, pady=5)
+                        copy1_btn.bind("<Enter>", lambda e: copy1_btn.configure(text_color="#FFFFFF"))
+                        copy1_btn.bind("<Leave>", lambda e: copy1_btn.configure(text_color="#999999"))
+                        
+                        # Option 2: Manual Download
+                        step2_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
+                        step2_frame.pack(fill="x", pady=5)
+                        
+                        step2_label = customtkinter.CTkLabel(step2_frame, text="2. Manual Install (Alternative):", anchor="w", font=("", 12, "bold"))
+                        step2_label.pack(fill="x", padx=10, pady=(8, 2))
+                        
+                        def open_ffmpeg_site_win():
+                            webbrowser.open("https://www.gyan.dev/ffmpeg/builds/")
+                            
+                        download_btn = customtkinter.CTkButton(
+                            step2_frame, text="Download FFmpeg (gyan.dev)", 
+                            command=open_ffmpeg_site_win,
+                            height=24,
+                            fg_color="transparent", 
+                            text_color="#3B8ED0",
+                            hover_color="#2B2B2B",
+                            anchor="w"
+                        )
+                        download_btn.pack(padx=10, pady=(0, 0), anchor="w")
+                        
+                        def open_app_folder_win(event=None):
+                            app_dir = get_data_directory()
+                            if not app_dir: app_dir = get_script_directory()
+                            os.startfile(app_dir)
+
+                        instr_container = customtkinter.CTkFrame(step2_frame, fg_color="transparent")
+                        instr_container.pack(fill="x", padx=(15, 10), pady=(0, 0))
+
+                        part1 = customtkinter.CTkLabel(
+                            instr_container, 
+                            text="Download, unzip, and place 'ffmpeg.exe' in the ", 
+                            text_color="#999999", font=("", 11),
+                            anchor="w"
+                        )
+                        part1.pack(side="left", padx=0)
+
+                        link_font = customtkinter.CTkFont(size=11, underline=True)
+                        part2_link = customtkinter.CTkLabel(
+                            instr_container,
+                            text="same folder",
+                            text_color="#3B8ED0",
+                            font=link_font,
+                            cursor="pointinghand"
+                        )
+                        part2_link.pack(side="left", padx=0)
+                        part2_link.bind("<Button-1>", open_app_folder_win)
+
+                        part3 = customtkinter.CTkLabel(
+                            instr_container,
+                            text=" as this app.",
+                            text_color="#999999", font=("", 11),
+                            anchor="w"
+                        )
+                        part3.pack(side="left", padx=0)
+                        
+                        target_dir = get_data_directory()
+                        if not target_dir: target_dir = get_script_directory()
+                        
+                        part4 = customtkinter.CTkLabel(
+                            step2_frame,
+                            text=f"Default: {target_dir}",
+                            text_color="#888888", font=("", 10),
+                            anchor="w"
+                        )
+                        part4.pack(fill="x", padx=(15, 10), pady=(0, 8))
+                        
+                        step3_label = customtkinter.CTkLabel(main_frame, text="3. Then restart OrpheusDL GUI", anchor="w")
+                        step3_label.pack(fill="x", pady=(15, 5), padx=10)
                         
                     else:  # Linux
                         dialog.geometry("520x500")
