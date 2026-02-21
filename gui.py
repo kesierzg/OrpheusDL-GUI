@@ -15753,12 +15753,13 @@ Unnecessary Lossless-to-Lossless""",
                             if os.path.exists(app_dir):
                                 os.startfile(app_dir)
 
-                        # Row 1: Instruction text
+                        # Row 1: Instruction text (wrappable to prevent cutoff)
                         instr_row1 = customtkinter.CTkLabel(
                             step2_frame, 
                             text="Download, unzip, and place 'ffmpeg.exe' in the", 
                             text_color="#999999", font=("", 11),
-                            anchor="w"
+                            anchor="w",
+                            wraplength=550
                         )
                         instr_row1.pack(fill="x", padx=15, pady=(0, 0))
 
@@ -15888,12 +15889,15 @@ Unnecessary Lossless-to-Lossless""",
                     ok_btn = customtkinter.CTkButton(main_frame, text="OK", command=on_close, width=100)
                     ok_btn.pack(pady=(10, 0))
                     
-                    # Center on parent
+                    # Center on parent (DPI aware)
                     app.update_idletasks()
-                    parent_x = app.winfo_rootx()
-                    parent_y = app.winfo_rooty()
-                    parent_width = app.winfo_width()
-                    parent_height = app.winfo_height()
+                    scaling = app._get_window_scaling()
+                    
+                    # Parent root coordinates (physical pixels)
+                    p_x = app.winfo_rootx()
+                    p_y = app.winfo_rooty()
+                    p_w = app.winfo_width()
+                    p_h = app.winfo_height()
                     
                     if platform.system() == 'Darwin':
                         dialog_width = 620
@@ -15904,9 +15908,18 @@ Unnecessary Lossless-to-Lossless""",
                     else:
                         dialog_width = 520
                         dialog_height = 500
-                        
-                    center_x = parent_x + (parent_width // 2) - (dialog_width // 2)
-                    center_y = parent_y + (parent_height // 2) - (dialog_height // 2)
+                    
+                    # Target physical center of parent
+                    p_mid_x = p_x + p_w // 2
+                    p_mid_y = p_y + p_h // 2
+                    
+                    # Convert to logical coordinates for geometry()
+                    l_mid_x = p_mid_x / scaling
+                    l_mid_y = p_mid_y / scaling
+                    
+                    center_x = int(l_mid_x - (dialog_width // 2))
+                    center_y = int(l_mid_y - (dialog_height // 2))
+                    
                     dialog.geometry(f"{dialog_width}x{dialog_height}+{center_x}+{center_y}")
                     
                     dialog.grab_set()
