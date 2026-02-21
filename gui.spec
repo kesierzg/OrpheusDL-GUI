@@ -136,7 +136,9 @@ a = Analysis(
         'pywidevine',
         'yt_dlp',
         'aiohttp',
-        'aiofiles'
+        'aiofiles',
+        'httpx',
+        'async_lru'
     ] + ffmpeg_hiddenimports,
     excludes=['torch', 'cuda', 'pytorch', 'matplotlib', 'pandas', 'numpy'],
     hookspath=['.'],
