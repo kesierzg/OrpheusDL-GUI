@@ -15750,19 +15750,22 @@ Unnecessary Lossless-to-Lossless""",
                         def open_app_folder_win(event=None):
                             app_dir = get_data_directory()
                             if not app_dir: app_dir = get_script_directory()
-                            os.startfile(app_dir)
+                            if os.path.exists(app_dir):
+                                os.startfile(app_dir)
 
                         instr_container = customtkinter.CTkFrame(step2_frame, fg_color="transparent")
                         instr_container.pack(fill="x", padx=(15, 10), pady=(0, 0))
 
+                        # Part 1: Text before link
                         part1 = customtkinter.CTkLabel(
                             instr_container, 
-                            text="Download, unzip, and place 'ffmpeg.exe' in the ", 
+                            text="Download, unzip, and place the 'ffmpeg.exe' file in the ", 
                             text_color="#999999", font=("", 11),
                             anchor="w"
                         )
                         part1.pack(side="left", padx=0)
 
+                        # Part 2: Link
                         link_font = customtkinter.CTkFont(size=11, underline=True)
                         part2_link = customtkinter.CTkLabel(
                             instr_container,
@@ -15774,6 +15777,7 @@ Unnecessary Lossless-to-Lossless""",
                         part2_link.pack(side="left", padx=0)
                         part2_link.bind("<Button-1>", open_app_folder_win)
 
+                        # Part 3: Text after link
                         part3 = customtkinter.CTkLabel(
                             instr_container,
                             text=" as this app.",
@@ -15781,6 +15785,14 @@ Unnecessary Lossless-to-Lossless""",
                             anchor="w"
                         )
                         part3.pack(side="left", padx=0)
+                        
+                        # Hover effects for link
+                        def on_enter_link_win(e): 
+                            part2_link.configure(text_color="#1F6AA5", cursor="pointinghand")
+                        def on_leave_link_win(e): 
+                            part2_link.configure(text_color="#3B8ED0", cursor="arrow")
+                        part2_link.bind("<Enter>", on_enter_link_win)
+                        part2_link.bind("<Leave>", on_leave_link_win)
                         
                         target_dir = get_data_directory()
                         if not target_dir: target_dir = get_script_directory()
@@ -15878,16 +15890,25 @@ Unnecessary Lossless-to-Lossless""",
                     ok_btn.pack(pady=(10, 0))
                     
                     # Center on parent
-                    dialog.update_idletasks()
+                    dialog.update()
                     parent_x = app.winfo_x()
                     parent_y = app.winfo_y()
                     parent_width = app.winfo_width()
                     parent_height = app.winfo_height()
-                    dialog_width = dialog.winfo_width()
-                    dialog_height = dialog.winfo_height()
+                    
+                    if platform.system() == 'Darwin':
+                        dialog_width = 620
+                        dialog_height = 600
+                    elif platform.system() == 'Windows':
+                        dialog_width = 620
+                        dialog_height = 560
+                    else:
+                        dialog_width = 520
+                        dialog_height = 500
+                        
                     center_x = parent_x + (parent_width // 2) - (dialog_width // 2)
                     center_y = parent_y + (parent_height // 2) - (dialog_height // 2)
-                    dialog.geometry(f"+{center_x}+{center_y}")
+                    dialog.geometry(f"{dialog_width}x{dialog_height}+{center_x}+{center_y}")
                     
                     dialog.grab_set()
                     
