@@ -15607,7 +15607,7 @@ Unnecessary Lossless-to-Lossless""",
                         step4_label.pack(fill="x", padx=10, pady=(8, 2))
 
                         def open_ffmpeg_site_mac():
-                            webbrowser.open("https://evermeet.cx/ffmpeg/")
+                            webbrowser.open("https://evermeet.cx/ffmpeg/ffmpeg-8.0.1.zip")
 
                         download_btn = customtkinter.CTkButton(
                             step4_frame, text="Download FFmpeg (evermeet.cx)", 
