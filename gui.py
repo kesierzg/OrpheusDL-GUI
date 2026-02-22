@@ -15537,7 +15537,7 @@ Unnecessary Lossless-to-Lossless""",
                     # Description
                     desc_label = customtkinter.CTkLabel(
                         main_frame,
-                        text="FFmpeg is required for audio conversion (e.g., FLAC to MP3/ALAC).\nDownloads will work, but conversion will be skipped.",
+                        text="FFmpeg is required for audio conversion and audio previews.\nDownloads will work, but conversion will be skipped.",
                         justify="center"
                     )
                     desc_label.pack(pady=(0, 15))
@@ -15645,30 +15645,26 @@ Unnecessary Lossless-to-Lossless""",
                         instr_container = customtkinter.CTkFrame(step4_frame, fg_color="transparent")
                         instr_container.pack(fill="x", padx=(15, 10), pady=(0, 0))
 
-                        # Part 1: Text before link
+                        # Instruction parts on one line
                         part1 = customtkinter.CTkLabel(
                             instr_container, 
-                            text="Download, unzip, and place the 'ffmpeg' file in the ", 
+                            text="Download, unzip, and place 'ffmpeg' in the ", 
                             text_color="#999999", font=("", 11),
                             anchor="w"
                         )
                         part1.pack(side="left", padx=0)
 
-                        # Part 2: Link (Label instead of Button for better spacing)
-                        # Use CTkFont for proper underlining
                         link_font = customtkinter.CTkFont(size=11, underline=True)
-                        
                         part2_link = customtkinter.CTkLabel(
                             instr_container,
                             text="same folder",
                             text_color="#3B8ED0",
                             font=link_font,
-                            cursor="pointinghand" # macOS specific
+                            cursor="pointinghand"
                         )
                         part2_link.pack(side="left", padx=0)
                         part2_link.bind("<Button-1>", open_app_folder)
 
-                        # Part 3: Text after link
                         part3 = customtkinter.CTkLabel(
                             instr_container,
                             text=" as this app.",
@@ -15734,7 +15730,7 @@ Unnecessary Lossless-to-Lossless""",
                         step2_label.pack(fill="x", padx=10, pady=(8, 2))
                         
                         def open_ffmpeg_site_win():
-                            webbrowser.open("https://www.gyan.dev/ffmpeg/builds/")
+                            webbrowser.open("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip")
                             
                         download_btn = customtkinter.CTkButton(
                             step2_frame, text="Download FFmpeg (gyan.dev)", 
@@ -15753,33 +15749,31 @@ Unnecessary Lossless-to-Lossless""",
                             if os.path.exists(app_dir):
                                 os.startfile(app_dir)
 
-                        # Row 1: Instruction text (wrappable to prevent cutoff)
-                        instr_row1 = customtkinter.CTkLabel(
-                            step2_frame, 
-                            text="Download, unzip, and place 'ffmpeg.exe' in the", 
-                            text_color="#999999", font=("", 11),
-                            anchor="w",
-                            wraplength=550
-                        )
-                        instr_row1.pack(fill="x", padx=15, pady=(0, 0))
+                        # Single container for instructions on one line
+                        instr_container = customtkinter.CTkFrame(step2_frame, fg_color="transparent")
+                        instr_container.pack(fill="x", padx=(15, 10), pady=(0, 0))
 
-                        # Row 2: Link and remaining text
-                        instr_row2 = customtkinter.CTkFrame(step2_frame, fg_color="transparent")
-                        instr_row2.pack(fill="x", padx=(15, 10), pady=(0, 0))
+                        part1 = customtkinter.CTkLabel(
+                            instr_container, 
+                            text="Download, unzip, and place 'ffmpeg.exe' in the ", 
+                            text_color="#999999", font=("", 11),
+                            anchor="w"
+                        )
+                        part1.pack(side="left", padx=0)
 
                         link_font = customtkinter.CTkFont(size=11, underline=True)
                         part2_link = customtkinter.CTkLabel(
-                            instr_row2,
+                            instr_container,
                             text="same folder",
                             text_color="#3B8ED0",
                             font=link_font,
-                            cursor="hand2" # Windows specific
+                            cursor="hand2"
                         )
                         part2_link.pack(side="left", padx=0)
                         part2_link.bind("<Button-1>", open_app_folder_win)
 
                         part3 = customtkinter.CTkLabel(
-                            instr_row2,
+                            instr_container,
                             text=" as this app.",
                             text_color="#999999", font=("", 11),
                             anchor="w"
@@ -15913,12 +15907,16 @@ Unnecessary Lossless-to-Lossless""",
                     p_mid_x = p_x + p_w // 2
                     p_mid_y = p_y + p_h // 2
                     
-                    # Convert to logical coordinates for geometry()
-                    l_mid_x = p_mid_x / scaling
-                    l_mid_y = p_mid_y / scaling
-                    
-                    center_x = int(l_mid_x - (dialog_width // 2))
-                    center_y = int(l_mid_y - (dialog_height // 2))
+                    if platform.system() == 'Windows':
+                        # On Windows, geometry position (+x+y) often needs physical pixels
+                        center_x = int(p_mid_x - (dialog_width * scaling // 2))
+                        center_y = int(p_mid_y - (dialog_height * scaling // 2))
+                    else:
+                        # On other platforms, use logical coordinates
+                        l_mid_x = p_mid_x / scaling
+                        l_mid_y = p_mid_y / scaling
+                        center_x = int(l_mid_x - (dialog_width // 2))
+                        center_y = int(l_mid_y - (dialog_height // 2))
                     
                     dialog.geometry(f"{dialog_width}x{dialog_height}+{center_x}+{center_y}")
                     
