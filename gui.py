@@ -3591,6 +3591,7 @@ def _track_to_result_entry(track, index, parent_data, parent_iid, platform_str):
         name = f"Track {index}"
         artist_str = (parent_data.get('artist') or parent_data.get('title') or '').strip() or ''
         duration_str = year_str = ''
+        additional = ''
         explicit_str = ''
         cover_url = ''
         preview_url = None
@@ -3599,7 +3600,7 @@ def _track_to_result_entry(track, index, parent_data, parent_iid, platform_str):
         tid = getattr(track, 'id', None) or (track.get('id') if isinstance(track, dict) else None) or ''
         name = getattr(track, 'name', None) or (track.get('name') if isinstance(track, dict) else None) or (track.get('title') if isinstance(track, dict) else None) or ''
         artists = getattr(track, 'artists', None) or (track.get('artists') if isinstance(track, dict) else []) or []
-        artist_str = ', '.join([str(a) for a in artists]) if artists else ''
+        artist_str = ', '.join([(a.get('name') if isinstance(a, dict) else str(a)) for a in artists]) if artists else ''
         dur = getattr(track, 'duration', None)
         if dur is None and isinstance(track, dict):
             dur = track.get('duration')
@@ -3624,7 +3625,7 @@ def _track_to_result_entry(track, index, parent_data, parent_iid, platform_str):
             # Check for literal 'artists' list first, then 'artist' singular string
             artists_data = (track.get('artists') if isinstance(track, dict) else []) or []
             if artists_data:
-                artist_str = ', '.join([str(a) for a in artists_data])
+                artist_str = ', '.join([(a.get('name') if isinstance(a, dict) else str(a)) for a in artists_data])
             else:
                 artist_str = (track.get('artist') if isinstance(track, dict) else (parent_data.get('artist') or '')).strip() or ''
         additional = getattr(track, 'additional', None) or (track.get('additional') if isinstance(track, dict) else None) or ''
@@ -3841,6 +3842,23 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                     if not entry.get('duration') and not entry.get('duration_seconds'):
                         continue
                     track_entries.append(entry)
+                # Inject album quality into tracks that have no additional info of their own
+                # (e.g. Qobuz album tracks shown as plain IDs don't carry quality per-track)
+                # Only inject if quality is genuinely hi-res (not standard 44.1kHz/16bit CD quality)
+                if item_type == 'album' and track_entries:
+                    album_quality = getattr(info, 'quality', None)
+                    if album_quality and '44.1kHz/16bit' not in album_quality and '44.1kHz 16bit' not in album_quality:
+                        for entry in track_entries:
+                            if not entry.get('additional'):
+                                entry['additional'] = album_quality
+                # For playlists: inherit Hi-Res label from the parent playlist row when present
+                if item_type == 'playlist' and track_entries:
+                    parent_additional = item_data.get('additional') or []
+                    parent_additional_str = ' '.join(parent_additional) if isinstance(parent_additional, list) else str(parent_additional)
+                    if 'HI-RES' in parent_additional_str:
+                        for entry in track_entries:
+                            if not entry.get('additional'):
+                                entry['additional'] = '\U0001f177 HI-RES'
             except Exception as e:
                 # Spotify 429 rate limit: show popup recommending right-click → Open Link
                 if 'RateLimit' in type(e).__name__:
@@ -9672,16 +9690,8 @@ def update_search_types(platform):
     except NameError: pass
     except tkinter.TclError as e: print(f"TclError updating search types (widget destroyed?): {e}")
     except Exception as e: print(f"Error updating search types: {e}")
-    # Show/hide Tidal ATMOS checkbox: only when Tidal AND type is not artist
-    try:
-        if 'atmos_filter_frame' in globals() and atmos_filter_frame and atmos_filter_frame.winfo_exists():
-            current_type = (type_var.get() or "").strip().lower() if ('type_var' in globals() and type_var) else ""
-            if (platform or "").strip().lower() in ("tidal", "applemusic", "apple music") and current_type != "artist":
-                atmos_filter_frame.pack(side="top", anchor="w", pady=(6, 0))
-            else:
-                atmos_filter_frame.pack_forget()
-    except (NameError, tkinter.TclError, Exception):
-        pass
+    # Show/hide Tidal ATMOS checkbox: only when Tidal/Apple Music AND type is not artist
+    _update_atmos_filter_visibility()
     _update_search_placeholder()
 
 def _update_atmos_filter_visibility(*args):
@@ -9694,9 +9704,9 @@ def _update_atmos_filter_visibility(*args):
         platform = (platform_var.get() or "").strip().lower()
         current_type = (type_var.get() or "").strip().lower()
         if platform in ("tidal", "applemusic", "apple music") and current_type != "artist":
-            atmos_filter_frame.pack(side="top", anchor="w", pady=(6, 0))
+            atmos_filter_frame.grid(row=1, column=0, sticky="w", pady=(4, 0))
         else:
-            atmos_filter_frame.pack_forget()
+            atmos_filter_frame.grid_remove()
     except (NameError, tkinter.TclError, Exception):
         pass
 
@@ -9852,7 +9862,7 @@ def display_results(results):
             dur_sec = _parse_duration_str_to_seconds(result.get('duration') or duration_str)
         result_type = result.get('type', current_search_type_str) or current_search_type_str
         # Normalize: strip emoji from inside parentheses if present for comparison
-        normalized_result_type = result_type.replace("  ◗◖ ᴀᴛᴍᴏs", " (ATMOS)").replace("  ◗◖ ᴀᴛᴍᴏs", " (ATMOS)").replace("( ◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs)", "(ATMOS)").replace("(◗◖ atmos)", "(ATMOS)").replace("(◗◖atmos)", "(ATMOS)").replace("(◗◖ATMOS)", "(ATMOS)").strip()
+        normalized_result_type = result_type.replace("  ◗◖ ᴀᴛᴍᴏs", " (ATMOS)").replace("( ◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs)", "(ATMOS)").replace("(◗◖ atmos)", "(ATMOS)").replace("(◗◖atmos)", "(ATMOS)").replace("(◗◖ATMOS)", "(ATMOS)").strip()
         if normalized_result_type in ("track (ATMOS)", "album (ATMOS)"):
             result_type = 'track' if 'track' in normalized_result_type.lower() else 'album'
         # Hide entries that have no Time/Duration when we expect a track row
@@ -9982,7 +9992,7 @@ ATMOS_EXPLORE_TYPES = ("track (ATMOS)", "album (ATMOS)", "playlist (ATMOS)", "al
 
 def _result_has_dolby_atmos(quality_str, raw_result):
     """True if the result is Dolby Atmos (from quality string, 'Spatial' string, or raw Tidal audioModes)."""
-    if quality_str and ('Atmos' in str(quality_str) or 'Spatial' in str(quality_str)):
+    if quality_str and ('Atmos' in str(quality_str) or 'Spatial' in str(quality_str) or '◗◖' in str(quality_str) or 'ᴀᴛᴍᴏs' in str(quality_str)):
         return True
     if isinstance(raw_result, dict) and 'DOLBY_ATMOS' in (raw_result.get('audioModes') or []):
         return True
@@ -10039,8 +10049,8 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             quality_str = ', '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
             # For Tidal playlists in Atmos mode, ensure quality_str includes "Dolby Atmos"
             if platform_name.strip().lower() == 'tidal' and base_type == 'playlist':
-                if 'atmos' not in quality_str.lower():
-                    quality_str = ("Dolby Atmos, " + quality_str) if quality_str else "Dolby Atmos"
+                if 'atmos' not in quality_str.lower() and '◗◖' not in quality_str:
+                    quality_str = (quality_str + ", ◗◖ ATMOS") if quality_str else "◗◖ ATMOS"
             # Tidal Playlists don't have audioModes so they pass; filter by Atmos for everything else (including AM playlists)
             if (not (platform_name.strip().lower() == 'tidal' and base_type == 'playlist')) and not _result_has_dolby_atmos(quality_str, raw_result):
                 continue
@@ -10102,17 +10112,19 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             quality_str = ', '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
             # Playlists don't have audioModes; only filter by Atmos for tracks/albums
             if content_type == 'playlists':
-                if 'atmos' not in quality_str.lower():
-                    quality_str = ("Dolby Atmos, " + quality_str) if quality_str else "Dolby Atmos"
-                # If quality_str is just "Dolby Atmos", try to add track count for better UI
-                if quality_str == "Dolby Atmos" and raw_result and isinstance(raw_result, dict):
+                if 'ATMOS' not in quality_str.upper() and '◗◖' not in quality_str:
+                    quality_str = (quality_str + ", ◗◖ ATMOS") if quality_str else "◗◖ ATMOS"
+                # If quality_str is "◗◖ ATMOS" (meaning no tracks yet), try to put track count BEFORE it
+                if quality_str == "◗◖ ATMOS" and raw_result and isinstance(raw_result, dict):
                     t = (raw_result.get('tracks') or {}).get('total')
                     if t is not None and t > 0:
-                        quality_str += (", 1 track" if t == 1 else f", {t} tracks")
+                        track_str = "1 track" if t == 1 else f"{t} tracks"
+                        quality_str = f"{track_str}, ◗◖ ATMOS"
                     else:
                         tc = (raw_result.get('attributes') or {}).get('trackCount')
                         if tc is not None and tc > 0:
-                            quality_str += (", 1 track" if tc == 1 else f", {tc} tracks")
+                            track_str = "1 track" if tc == 1 else f"{tc} tracks"
+                            quality_str = f"{track_str}, ◗◖ ATMOS"
 
             if content_type != 'playlists' and not _result_has_dolby_atmos(quality_str, raw_result):
                 continue
@@ -11122,32 +11134,48 @@ def show_search_context_menu(event):
                 if use_wrapper:
                     has_alac = True
                     for item in selected_items:
-                        addl = str(item.get('additional', '')).lower()
-                        if 'atmos' in addl:
+                        addl = str(item.get('additional', ''))
+                        if 'atmos' in addl.lower() or '◗◖' in addl:
                             has_atmos = True
-                        if 'hi res lossless' in addl:
+                        if 'hi res lossless' in addl.lower() or '🅷' in addl or 'ʜɪ-ʀᴇs' in addl or 'hi-res' in addl.lower():
                             has_hires = True
             elif platform_name == 'tidal':
                 # Check for Atmos/Hi-Res support in Tidal results
                 for item in selected_items:
-                    addl = str(item.get('additional', '')).lower()
-                    if 'atmos' in addl:
+                    addl = str(item.get('additional', ''))
+                    if 'atmos' in addl.lower() or '◗◖' in addl:
                         has_atmos = True
-                    if 'hi res lossless' in addl:
+                    if 'hi res lossless' in addl.lower() or '🅷' in addl or 'ʜɪ-ʀᴇs' in addl or 'hi-res' in addl.lower():
                         has_hires = True
+            elif platform_name == 'qobuz':
+                # Check for Hi-Res in Qobuz results (from quality tag or kHz/bit info)
+                for item in selected_items:
+                    addl = str(item.get('additional', ''))
+                    if '🅷' in addl or 'HI-RES' in addl:
+                        has_hires = True
+                    elif addl and 'kHz' in addl:
+                        # Parse sample rate and bit depth from e.g. "96kHz/24bit" or "44.1kHz/24bit"
+                        try:
+                            sr = float(addl.split('kHz')[0].strip().split()[-1])
+                            bd_part = addl.split('kHz')[1] if 'kHz' in addl else ''
+                            bd = int(''.join(filter(str.isdigit, bd_part.split('bit')[0]))) if 'bit' in bd_part else 16
+                            if sr > 44.1 or bd > 16:
+                                has_hires = True
+                        except (ValueError, IndexError):
+                            pass
         
         # Define platform-specific button configurations
         # Each platform has: (label, quality_value) tuples for buttons
         # Most platforms use 3 buttons, TIDAL uses 4
         platform_button_configs = {
             'qobuz': [
-                ("HiFi", "hifi"),
+                ("🅷  HI-RES", "hifi"),
                 ("FLAC", "lossless"),
                 ("MP3 320", "high")
             ],
             'tidal': [
-                ("◗◖ ᴀᴛᴍᴏs", "atmos"),
-                ("HiFi", "hifi"),
+                ("◗◖ ATMOS", "atmos"),
+                ("🅷  HI-RES", "hifi"),
                 ("FLAC", "lossless"),
                 ("AAC 320", "high"),
                 ("AAC 96", "low")
@@ -11163,15 +11191,15 @@ def show_search_context_menu(event):
                 ("MP3", "low")
             ],
             'applemusic': [
-                ("◗◖ ᴀᴛᴍᴏs", "atmos"),
-                ("HiFi", "hifi"),
+                ("◗◖ ATMOS", "atmos"),
+                ("🅷  HI-RES", "hifi"),
                 ("ALAC", "lossless"),
                 ("AAC 256", "high"),
                 ("AAC 128", "low")
             ],
             'apple music': [
-                ("◗◖ ᴀᴛᴍᴏs", "atmos"),
-                ("HiFi", "hifi"),
+                ("◗◖ ATMOS", "atmos"),
+                ("🅷  HI-RES", "hifi"),
                 ("ALAC", "lossless"),
                 ("AAC 256", "high"),
                 ("AAC 128", "low")
@@ -11222,7 +11250,7 @@ def show_search_context_menu(event):
             'apple music': am_quals,
             'soundcloud': ['high'],
             'spotify': ['hifi', 'high'],
-            'qobuz': ['hifi', 'lossless', 'high'],
+            'qobuz': ['hifi', 'lossless', 'high'] if has_hires else ['lossless', 'high'],
             'tidal': tidal_quals,
             'youtube': ['hifi', 'high', 'low'],
             'beatport': ['lossless', 'high', 'low'],
@@ -11262,11 +11290,7 @@ def show_search_context_menu(event):
                             
                         btn.image = icon  # Keep reference
                         
-                        # Use larger font for Atmos logo text
-                        if "ᴀᴛᴍᴏs" in label:
-                            btn_font = ("Segoe UI", 13)
-                        else:
-                            btn_font = ("Segoe UI", 11)
+                        btn_font = ("Segoe UI", 11)
                             
                         # Update button text, icon and command
                         btn.configure(
@@ -11795,6 +11819,7 @@ def _parse_additional_quality(s):
             pass
     # Tidal: fixed labels (order = quality tier, higher = better)
     tidal_order = (
+        ("◗◖ ᴀᴛᴍᴏs", 100004),
         ("dolby atmos", 100004),
         ("360 reality audio", 100003),
         ("mqa", 100002),
@@ -11802,7 +11827,7 @@ def _parse_additional_quality(s):
     )
     lower = s.lower()
     for label, score in tidal_order:
-        if label in lower:
+        if label in lower or (label == 'hifi' and ('🅷' in s or 'ʜɪ-ʀᴇs' in s or 'hi-res' in lower)):
             return (score, True)
     return (None, False)
 
@@ -11814,7 +11839,7 @@ def sort_results(column):
         is_duration = column == "Duration"
 
         def sort_key(item):
-            key_map = {"#": "number", "Year": "year", "Title": "title", "Artist": "artist", "Duration": "duration", "Additional": "additional", "Explicit": "explicit", "ID": "id"}
+            key_map = {"#0": "platform", "#": "number", "Year": "year", "Title": "title", "Artist": "artist", "Duration": "duration", "Additional": "additional", "Explicit": "explicit", "ID": "id"}
             dict_key = key_map.get(column, column); value = item.get(dict_key, "")
             if value is None: value = ""
             if is_duration:
@@ -11891,7 +11916,7 @@ def sort_results(column):
             except NameError: break
             except tkinter.TclError as e: print(f"TclError repopulating sorted treeview (widget destroyed?): {e}"); break
             except Exception as e: print(f"Error repopulating sorted treeview: {e}")
-        defined_columns = ("Preview", "#", "Title", "Artist", "Duration", "Year", "Additional", "Explicit", "ID")
+        defined_columns = ("#0", "Preview", "#", "Title", "Artist", "Duration", "Year", "Additional", "Explicit", "ID")
         for col in defined_columns:
             if 'tree' in globals() and tree and tree.winfo_exists():
                 try:
@@ -14619,11 +14644,12 @@ if __name__ == "__main__":
         def clear_focus(event=None):
             app.focus_set()
         
-        search_main_frame.bind("<Button-1>", clear_focus)
         # Add extra top padding to align with download tab (which has 2 input rows)
         controls_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); controls_frame.pack(fill="x", pady=(5, 0)); controls_frame.grid_columnconfigure(4, weight=1); controls_frame.bind("<Button-1>", clear_focus)
         # Fixed row height for all platforms so RESULTS starts at same position (matches Tidal with ATMOS checkbox: entry + gap + checkbox)
-        controls_frame.grid_rowconfigure(0, minsize=60)
+        controls_frame.grid_propagate(False)
+        controls_frame.configure(height=62)
+        controls_frame.grid_rowconfigure(0, minsize=62)
         customtkinter.CTkLabel(controls_frame, text="Platform").grid(row=0, column=0, padx=(5,1), sticky="nw")
         search_tab_initial_platforms = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
         platform_var = tkinter.StringVar(value=search_tab_initial_platforms[0] if search_tab_initial_platforms else ""); 
@@ -14641,8 +14667,8 @@ if __name__ == "__main__":
         type_var.trace_add("write", _update_search_placeholder)
         type_var.trace_add("write", _update_atmos_filter_visibility)
         type_var.trace_add("write", lambda *a: clear_focus())
-        search_input_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent"); search_input_frame.grid(row=0, column=4, sticky="new", padx=(10, 5)); search_input_frame.grid_columnconfigure(0, weight=1); search_input_frame.bind("<Button-1>", clear_focus)
-        search_entry_row = customtkinter.CTkFrame(search_input_frame, fg_color="transparent"); search_entry_row.pack(side="top", fill="x")
+        search_input_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent", height=62); search_input_frame.grid(row=0, column=4, sticky="new", padx=(10, 5)); search_input_frame.grid_columnconfigure(0, weight=1); search_input_frame.bind("<Button-1>", clear_focus)
+        search_entry_row = customtkinter.CTkFrame(search_input_frame, fg_color="transparent", height=1); search_entry_row.grid(row=0, column=0, sticky="ew")
         search_entry = customtkinter.CTkEntry(search_entry_row, placeholder_text="Enter search query...", height=30, placeholder_text_color="#7F7F7F"); search_entry.pack(side="left", fill="x", expand=True, padx=(0, 0))
         search_entry.bind("<Return>", lambda e: start_search()); search_entry.bind("<Button-3>", show_context_menu); search_entry.bind("<Button-2>", show_context_menu); search_entry.bind("<Control-Button-1>", show_context_menu)
         search_entry.bind("<Control-c>", _handle_ctrl_c_copy); search_entry.bind("<Control-C>", _handle_ctrl_c_copy)
@@ -14651,9 +14677,27 @@ if __name__ == "__main__":
         clear_search_button = customtkinter.CTkButton(search_entry_row, text="Clear", command=clear_search_entry, width=100, height=30, fg_color="#343638", hover_color="#1F6AA5"); clear_search_button.pack(side="left", padx=(10, 0))
         # Tidal ATMOS checkbox: under search field, left-aligned; text ◗◖ ᴀᴛᴍᴏs with smaller font; visible only when Tidal + type is album/playlist/track
         atmos_filter_var = tkinter.BooleanVar(value=False)
-        atmos_filter_frame = customtkinter.CTkFrame(search_input_frame, fg_color="transparent")
-        atmos_filter_checkbox = customtkinter.CTkCheckBox(atmos_filter_frame, text="◗◖ ᴀᴛᴍᴏs", variable=atmos_filter_var, width=100, height=22, font=("Segoe UI", 13), command=lambda: (_update_search_placeholder(), app.focus_set()))
+        atmos_filter_frame = customtkinter.CTkFrame(search_input_frame, fg_color="transparent", height=1)
+        
+        # Split checkbox into checkbox + separate label for larger icon + separate label for text
+        # This allows independent font sizing for the icon and the text
+        atmos_filter_checkbox = customtkinter.CTkCheckBox(atmos_filter_frame, text="", variable=atmos_filter_var, width=24, height=22, command=lambda: (_update_search_placeholder(), app.focus_set()))
         atmos_filter_checkbox.pack(side="left")
+        
+        def _toggle_atmos_checkbox(event=None):
+            atmos_filter_var.set(not atmos_filter_var.get())
+            _update_search_placeholder()
+            app.focus_set()
+
+        # Larger icon label
+        atmos_icon_label = customtkinter.CTkLabel(atmos_filter_frame, text="◗◖", font=("Segoe UI", 15), text_color=CONTEXT_MENU_TEXT_COLOR, cursor="hand2")
+        atmos_icon_label.pack(side="left", padx=(0, 4))
+        atmos_icon_label.bind("<Button-1>", _toggle_atmos_checkbox)
+        
+        # Standard size text label
+        atmos_text_label = customtkinter.CTkLabel(atmos_filter_frame, text="ATMOS", font=("Segoe UI", 11), text_color=CONTEXT_MENU_TEXT_COLOR, cursor="hand2")
+        atmos_text_label.pack(side="left", pady=(2, 0))
+        atmos_text_label.bind("<Button-1>", _toggle_atmos_checkbox)
         # Tooltip styled like Global settings tooltips
         CTkToolTip(
             atmos_filter_checkbox,
@@ -14678,7 +14722,7 @@ if __name__ == "__main__":
         selection_entry.bind("<FocusIn>", lambda e, w=selection_entry: handle_focus_in(w))
         selection_entry.bind("<FocusOut>", lambda e, w=selection_entry: handle_focus_out(w))
         search_download_button = customtkinter.CTkButton(selection_controls_frame, text="Download", command=download_selected, width=100, height=30, state="disabled", fg_color="#343638", hover_color="#1F6AA5"); search_download_button.pack(side="left", padx=(5, 6))
-        # Now pack the results frame which will expand to fill remaining space
+        # Now pack the results frame; bottom padding of 15 creates a 20px gap to bottom section (same as download tab)
         results_outer_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); results_outer_frame.pack(fill="both", expand=True, pady=(0, 15)); results_outer_frame.bind("<Button-1>", clear_focus)
         # Results header: optional "← Back" (left), then RESULTS / Album: ... label, then volume
         results_header_frame = customtkinter.CTkFrame(results_outer_frame, fg_color="transparent"); results_header_frame.pack(fill="x", padx=0, pady=0)
@@ -14731,9 +14775,9 @@ if __name__ == "__main__":
                 print(f"[Style] Error getting scaling factor: {e}. Defaulting to 1.0")
                 scaling_factor = 1.0
             if scaling_factor > 1.5:
-                base_font_size = 6
+                base_font_size = 5.5
             else:
-                base_font_size = 7
+                base_font_size = 6.5
 
             scaled_font_size = max(8, round(base_font_size * scaling_factor))
             if scaling_factor > 1.5:
@@ -14748,7 +14792,7 @@ if __name__ == "__main__":
             heading_font_config = (tree_font_family, scaled_font_size)
 
         else:
-            scaled_font_size = 13
+            scaled_font_size = 11
             scaled_row_height = max(COVER_SIZE + 4, round(scaled_font_size * 2.2))  # Ensure row fits cover image
             tree_font_family = None
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
@@ -14789,8 +14833,8 @@ if __name__ == "__main__":
         columns = ("Preview", "#", "Title", "Artist", "Duration", "Year", "Additional", "Explicit", "ID"); tree = ttk.Treeview(treeview_container, columns=columns, show="tree headings", selectmode="extended", style="Custom.Treeview"); tree.grid(row=0, column=0, sticky="nsew", padx=(4,0), pady=3)
         # Configure tree column (#0) for cover images (tight fit, left-aligned)
         tree.column("#0", width=COVER_SIZE + 6, minwidth=COVER_SIZE + 6, stretch=False, anchor="w")
-        tree.heading("#0", text="", anchor="center")
-        col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Preview": {"text": "▶", "width": 56, "anchor": "center"}, "Title": {"text": "Title", "width": 120, "anchor": "w"}, "Artist": {"text": "Artist", "width": 80, "anchor": "w"}, "Duration": {"text": "Time", "width": 60, "anchor": "center"}, "Year": {"text": "Year", "width": 55, "anchor": "center"}, "Additional": {"text": "Additional", "width": 120, "anchor": "w"}, "Explicit": {"text": "🅴", "width": 30, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
+        tree.heading("#0", text="", anchor="center", command=lambda: sort_results("#0"))
+        col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Preview": {"text": "▶", "width": 56, "anchor": "center"}, "Title": {"text": "Title", "width": 120, "anchor": "w"}, "Artist": {"text": "Artist", "width": 80, "anchor": "w"}, "Duration": {"text": "Time", "width": 60, "anchor": "center"}, "Year": {"text": "Year", "width": 55, "anchor": "center"}, "Additional": {"text": "Additional", "width": 123, "anchor": "w"}, "Explicit": {"text": "🅴", "width": 22, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
         for col in columns: cfg = col_configs[col]; tree.heading(col, text=cfg["text"], anchor=cfg["anchor"], command=lambda c=col: sort_results(c) if c not in ("Preview",) else None); tree.column(col, width=cfg["width"], anchor=cfg["anchor"], stretch=False)
         tree.column("Title", stretch=True); tree.column("Artist", stretch=True)
         # Omit ID from display so theme never draws zero-width slot (avoids right-edge streak)
