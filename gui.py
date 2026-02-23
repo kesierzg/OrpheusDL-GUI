@@ -921,6 +921,7 @@ TREEVIEW_BG_HEX = "#1D1E1E"  # Match Custom.Treeview fieldbackground
 CONTEXT_MENU_WIDTH = 100
 # Icon and text color for context menu items (match so icons = text)
 CONTEXT_MENU_TEXT_COLOR = "#DCE4EE"
+CONTEXT_MENU_HOVER_COLOR = "#1F6AA5" if platform.system() == "Darwin" else "#474747"
 CONTEXT_MENU_TEXT_DISABLED = "#808080"  # gray (hex for PIL and CTk)
 # Background for all tooltips and right-click context menus
 TOOLTIP_MENU_BG = "#222323"
@@ -3268,7 +3269,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     menu_frame = customtkinter.CTkFrame(context_menu, border_width=1, height=1, border_color="#565B5E", fg_color="#242424", width=80)
                                     menu_frame.pack(fill="both", expand=True, padx=0, pady=0)
                                     button_color = "#242424"
-                                    hover_color_artwork = "#474747"
+                                    hover_color_artwork = CONTEXT_MENU_HOVER_COLOR
                                     
                                     # macOS: plain tk rows + motion-based hover (Enter/Leave often don't fire in overrideredirect on macOS)
                                     if platform.system() == "Darwin":
@@ -7017,7 +7018,7 @@ def show_log_viewer(title="Application Logs", parent=None):
     
     dialog.grab_set()
 
-def _bind_hover_effect(widget, hover_color=None, normal_color=CONTEXT_MENU_TEXT_COLOR, hover_bg="#474747", normal_bg=None, hover_image=None, normal_image=None):
+def _bind_hover_effect(widget, hover_color=None, normal_color=CONTEXT_MENU_TEXT_COLOR, hover_bg=CONTEXT_MENU_HOVER_COLOR, normal_bg=None, hover_image=None, normal_image=None):
     """Binds Enter/Leave events to change text color, background color, and image on hover."""
     if hover_color is None: hover_color = normal_color
     def _on_enter(e):
@@ -7079,7 +7080,7 @@ def _create_menu():
         height=24, 
         font=("Segoe UI", 11),
         fg_color=button_color, 
-        hover_color="#474747", 
+        hover_color=CONTEXT_MENU_HOVER_COLOR, 
         corner_radius=0,
         text_color=CONTEXT_MENU_TEXT_COLOR,
         text_color_disabled=CONTEXT_MENU_TEXT_DISABLED, 
@@ -7107,7 +7108,7 @@ def _create_menu():
         height=24, 
         font=("Segoe UI", 11),
         fg_color=button_color, 
-        hover_color="#474747", 
+        hover_color=CONTEXT_MENU_HOVER_COLOR, 
         corner_radius=0,
         text_color=CONTEXT_MENU_TEXT_COLOR,
         text_color_disabled=CONTEXT_MENU_TEXT_DISABLED, 
@@ -7131,7 +7132,7 @@ def _create_menu():
         height=24, 
         font=("Segoe UI", 11),
         fg_color=button_color, 
-        hover_color="#474747", 
+        hover_color=CONTEXT_MENU_HOVER_COLOR, 
         corner_radius=0,
         text_color=CONTEXT_MENU_TEXT_COLOR,
         text_color_disabled=CONTEXT_MENU_TEXT_DISABLED, 
@@ -10640,7 +10641,7 @@ def _create_search_context_menu():
             height=24,
             font=("Segoe UI", 11),
             fg_color= "#2b2b2b",
-            hover_color="#474747",
+            hover_color=CONTEXT_MENU_HOVER_COLOR,
             corner_radius=0,
             text_color=CONTEXT_MENU_TEXT_COLOR,
             text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
@@ -10676,7 +10677,7 @@ def _create_search_context_menu():
                 height=24,
                 font=("Segoe UI", 11),
                 fg_color="#2b2b2b",
-                hover_color="#474747",
+                hover_color=CONTEXT_MENU_HOVER_COLOR,
                 corner_radius=0,
                 text_color=CONTEXT_MENU_TEXT_COLOR,
                 text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
