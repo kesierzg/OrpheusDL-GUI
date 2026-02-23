@@ -201,10 +201,7 @@ def load_platform_icons():
         except Exception as e:
             print(f"[UI] Error creating blank icon: {e}")
 
-        if getattr(sys, 'frozen', False):
-            _PLATFORM_DIR = os.path.join(os.path.dirname(sys.executable), "platforms")
-        else:
-            _PLATFORM_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "platforms")
+        _PLATFORM_DIR = resource_path("platforms")
 
         if os.path.exists(_PLATFORM_DIR):
             for icon_file in os.listdir(_PLATFORM_DIR):
@@ -939,15 +936,13 @@ _platform_icon_cache_lock = threading.Lock()
 _platform_icon_photo_refs = []  # Unused (platform icons drawn on cover in column #0)
 
 def _platform_icon_path(platform_name):
-    """Return path to platform icon file in application_path/platforms, or None if not found.
-    When frozen (e.g. macOS .app), bundled datas live in sys._MEIPASS, not next to the executable."""
+    """Return path to platform icon file in application_path/platforms, or None if not found."""
     if not platform_name:
         return None
-    # Use _MEIPASS for bundled resources (macOS .app, Windows onefile); else use application_path
-    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        base = os.path.join(sys._MEIPASS, "platforms")
-    else:
-        base = os.path.join(application_path, "platforms")
+    
+    # Use resource_path for consistent resolution across dev and frozen (Win/Mac)
+    base = resource_path("platforms")
+    
     for name in (platform_name, platform_name.replace(" ", ""), platform_name.lower().replace(" ", "")):
         for ext in (".png", ".jpg", ".jpeg", ".webp"):
             p = os.path.join(base, name + ext)
@@ -5141,26 +5136,32 @@ def get_data_directory():
     return result
     
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        try:
-             base_path = os.path.dirname(os.path.abspath(__file__))
-        except NameError:
-             base_path = os.path.abspath(".")
-        if not os.path.isdir(base_path):
-             base_path = get_script_directory()
-
-    final_path = os.path.join(base_path, relative_path)
+    """ Get absolute path to resource, works for dev and for PyInstaller/macOS bundles """
+    # 1. Try PyInstaller _MEIPASS (onefile mode or temporary resources)
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        path = os.path.join(sys._MEIPASS, relative_path)
+        if os.path.exists(path):
+            return path
     
-    # Fallback: if the file doesn't exist at the calculated path, check the current working directory
-    if not os.path.exists(final_path):
-        cwd_path = os.path.join(os.getcwd(), relative_path)
-        if os.path.exists(cwd_path):
-            return cwd_path
+    # 2. Try macOS .app bundle Resources folder
+    if platform.system() == "Darwin" and getattr(sys, 'frozen', False):
+        # sys.executable is .../Contents/MacOS/OrpheusDL_GUI
+        base = os.path.join(os.path.dirname(sys.executable), "..", "Resources")
+        path = os.path.join(base, relative_path)
+        if os.path.exists(path):
+            return path
+
+    # 3. Use application_path or script directory (standard fallback)
+    path = os.path.join(application_path, relative_path)
+    if os.path.exists(path):
+        return path
+
+    # 4. Fallback: if the file doesn't exist at the calculated path, check the current working directory
+    cwd_path = os.path.join(os.getcwd(), relative_path)
+    if os.path.exists(cwd_path):
+        return cwd_path
             
-    return final_path
+    return path
 
 def find_system_ffmpeg():
     """
