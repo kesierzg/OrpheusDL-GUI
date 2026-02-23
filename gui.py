@@ -3658,7 +3658,7 @@ def _insert_album_playlist_children(parent_iid, parent_data, track_entries):
             values = (
                 preview_icon, entry.get('number', ''),
                 entry.get('title', ''), entry.get('artist', ''),
-                entry.get('duration', ''), entry.get('year', ''), entry.get('additional', ''), entry.get('explicit', ''),
+                entry.get('duration', ''), entry.get('year', ''), _to_small_caps(entry.get('additional', '')), entry.get('explicit', ''),
                 entry.get('id', '')
             )
             row_tag = "oddrow" if (int(entry.get('number', 0) or 0) % 2 == 1) else "evenrow"
@@ -4387,7 +4387,7 @@ def _show_artist_albums_view(artist_item_data, album_entries, context_kind="Arti
                 item_data.get('artist', ''),
                 item_data.get('duration', ''),
                 item_data.get('year', ''),
-                item_data.get('additional', ''),
+                _to_small_caps(item_data.get('additional', '')),
                 item_data.get('explicit', ''),
                 item_data.get('id', '')
             )
@@ -4483,7 +4483,7 @@ def _show_album_track_list_view(album_item_data, track_entries):
                 item_data.get('artist', ''),
                 item_data.get('duration', ''),
                 item_data.get('year', ''),
-                item_data.get('additional', ''),
+                _to_small_caps(item_data.get('additional', '')),
                 item_data.get('explicit', ''),
                 item_data.get('id', '')
             )
@@ -4615,7 +4615,7 @@ def _back_to_search_results():
                     preview_icon = PREVIEW_STOP_ICON if (_currently_playing_preview_iid == tree_iid) else PREVIEW_PLAY_ICON
                 else:
                     preview_icon = PREVIEW_UNAVAILABLE
-                values = (preview_icon, item_data.get('number', ''), item_data.get('title', ''), item_data.get('artist', ''), item_data.get('duration', ''), item_data.get('year', ''), item_data.get('additional', ''), item_data.get('explicit', ''), item_data.get('id', ''))
+                values = (preview_icon, item_data.get('number', ''), item_data.get('title', ''), item_data.get('artist', ''), item_data.get('duration', ''), item_data.get('year', ''), _to_small_caps(item_data.get('additional', '')), item_data.get('explicit', ''), item_data.get('id', ''))
                 row_tag = "oddrow" if (idx % 2 == 0) else "evenrow"
                 is_playing = _currently_playing_preview_iid == tree_iid
                 tags = (row_tag, "playing") if (is_playing and preview_url) else (row_tag,)
@@ -9929,7 +9929,7 @@ def display_results(results):
                         result_entry["artist"],
                         "",
                         "",
-                        additional_str,
+                        _to_small_caps(additional_str),
                         explicit,
                         res_id
                     )
@@ -9941,7 +9941,7 @@ def display_results(results):
                         artist_str,
                         duration_str,
                         year,
-                        additional_str,
+                        _to_small_caps(additional_str),
                         explicit,
                         res_id
                     )
@@ -11831,6 +11831,43 @@ def _parse_additional_quality(s):
             return (score, True)
     return (None, False)
 
+def _to_small_caps(s):
+    """Selectively converts specific keywords (ATMOS, HI-RES) to a visually 'smaller' version using Unicode small caps."""
+    if not s: return ""
+    s = str(s)
+    
+    # Mapping for small caps (a-z) and subscripts/small versions for numbers/symbols
+    mapping = {
+        'a': 'ᴀ', 'b': 'ʙ', 'c': 'ᴄ', 'd': 'ᴅ', 'e': 'ᴇ', 'f': 'ꜰ', 'g': 'ɢ', 'h': 'ʜ', 
+        'i': 'ɪ', 'j': 'ᴊ', 'k': 'ᴋ', 'l': 'ʟ', 'm': 'ᴍ', 'n': 'ɴ', 'o': 'ᴏ', 'p': 'ᴘ', 
+        'q': 'ǫ', 'r': 'ʀ', 's': 's', 't': 'ᴛ', 'u': 'ᴜ', 'v': 'ᴠ', 'w': 'ᴡ', 'x': 'x', 
+        'y': 'ʏ', 'z': 'ᴢ',
+        '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
+        '.': '.', '/': '/', '(': '(', ')': ')', ' ': ' ', ':': ':', ',': ',', '+': '₊', '-': '₋'
+    }
+
+    def transform(word):
+        res = ""
+        for char in word:
+            lower_char = char.lower()
+            res += mapping.get(lower_char, char)
+        return res
+
+    # Targeted keywords (case-insensitive search)
+    keywords = ["ATMOS", "HI-RES", "Dolby Atmos", "360 Reality Audio"]
+    
+    import re
+    result = s
+    for kw in keywords:
+        # Use case-insensitive regex to find and replace only the keywords
+        pattern = re.compile(re.escape(kw), re.IGNORECASE)
+        matches = pattern.findall(result)
+        # Sort matches by length descending to avoid partial replacements if keywords overlap (though unlikely here)
+        for m in sorted(set(matches), key=len, reverse=True):
+            result = result.replace(m, transform(m))
+            
+    return result
+
 def sort_results(column):
     global sort_states, search_results_data, tree, _currently_playing_preview_iid, _cover_hover_cache, _cover_hover_iid, _expanded_album_playlist_iids
     try:
@@ -11898,7 +11935,11 @@ def sort_results(column):
                         preview_icon = PREVIEW_STOP_ICON if is_playing else PREVIEW_PLAY_ICON
                     else:
                         preview_icon = PREVIEW_UNAVAILABLE
-                    values = ( preview_icon, item_data.get('number', ''), item_data.get('title', ''), item_data.get('artist', ''), item_data.get('duration', ''), item_data.get('year', ''), item_data.get('additional', ''), item_data.get('explicit', ''), item_data.get('id', '') )
+                    additional_val = item_data.get('additional', '')
+                    # Apply small caps to Additional column for smaller visual effect
+                    display_additional = _to_small_caps(additional_val)
+                    
+                    values = ( preview_icon, item_data.get('number', ''), item_data.get('title', ''), item_data.get('artist', ''), item_data.get('duration', ''), item_data.get('year', ''), display_additional, item_data.get('explicit', ''), item_data.get('id', '') )
                     row_tag = "oddrow" if (idx % 2 == 0) else "evenrow"
                     tags = (row_tag, "playing") if (is_playing and preview_url) else (row_tag,)
                     global _cover_hover_iid
