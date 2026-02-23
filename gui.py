@@ -72,6 +72,8 @@ os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 from utils.vendor_bootstrap import bootstrap_vendor_paths
 bootstrap_vendor_paths()
 
+from utils.utils import find_system_ffmpeg
+
 import copy
 import customtkinter
 import datetime
@@ -119,6 +121,18 @@ if platform.system() == "Windows":
     import ctypes
     from ctypes import wintypes
 
+
+# FFmpeg PATH auto-setup for macOS and Linux
+try:
+    _found, _ffmpeg_path = find_system_ffmpeg()
+    if _found and _ffmpeg_path and os.path.isfile(_ffmpeg_path):
+        _ffmpeg_dir = os.path.dirname(_ffmpeg_path)
+        _current_path = os.environ.get("PATH", "")
+        if _ffmpeg_dir not in _current_path.split(os.pathsep):
+            os.environ["PATH"] = _ffmpeg_dir + os.pathsep + _current_path
+            print(f"[FFmpeg] Added {_ffmpeg_dir} to PATH")
+except Exception as e:
+    print(f"[FFmpeg] Error setting up PATH: {e}")
 
 # Log capture system for debugging initialization errors
 class LogCapture:
@@ -329,6 +343,14 @@ def _get_ffmpeg_path():
     local_ffmpeg = os.path.join(script_dir, 'ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg')
     if os.path.exists(local_ffmpeg):
         return local_ffmpeg
+    
+    # Try using the robust finder from utils
+    try:
+        found, system_ffmpeg = find_system_ffmpeg()
+        if found:
+            return system_ffmpeg
+    except:
+        pass
     
     # Fall back to PATH
     return 'ffmpeg'
