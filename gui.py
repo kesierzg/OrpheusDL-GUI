@@ -6,6 +6,10 @@
 # ============================================================================
 import ssl
 import sys as _sys
+import os as _os
+
+# Mark that we're running in GUI mode so modules can detect it
+_os.environ['ORPHEUS_GUI'] = '1'
 
 if getattr(_sys, 'frozen', False) and _sys.platform == 'darwin':
     # Method 1: Patch the default HTTPS context factory
@@ -3623,10 +3627,11 @@ def _track_to_result_entry(track, index, parent_data, parent_iid, platform_str):
                 artist_str = ', '.join([str(a) for a in artists_data])
             else:
                 artist_str = (track.get('artist') if isinstance(track, dict) else (parent_data.get('artist') or '')).strip() or ''
+        additional = getattr(track, 'additional', None) or (track.get('additional') if isinstance(track, dict) else None) or ''
     child_iid = f"{parent_iid}_t{index}"
     return {
         "id": str(tid), "number": str(index), "title": name, "artist": artist_str,
-        "duration": duration_str, "year": year_str, "additional": "", "explicit": explicit_str,
+        "duration": duration_str, "year": year_str, "additional": additional, "explicit": explicit_str,
         "platform": platform_str, "type": "track", "raw_result": raw, "tree_iid": child_iid,
         "preview_url": preview_url, "cover_url": cover_url, "parent_iid": parent_iid,
         "has_full_meta": not is_plain_id,
@@ -10032,6 +10037,10 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             if raw_result is None:
                 raw_result = result
             quality_str = ', '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
+            # For Tidal playlists in Atmos mode, ensure quality_str includes "Dolby Atmos"
+            if platform_name.strip().lower() == 'tidal' and base_type == 'playlist':
+                if 'atmos' not in quality_str.lower():
+                    quality_str = ("Dolby Atmos, " + quality_str) if quality_str else "Dolby Atmos"
             # Tidal Playlists don't have audioModes so they pass; filter by Atmos for everything else (including AM playlists)
             if (not (platform_name.strip().lower() == 'tidal' and base_type == 'playlist')) and not _result_has_dolby_atmos(quality_str, raw_result):
                 continue
@@ -10092,6 +10101,19 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             raw_result = extra_kwargs.get('raw_result', result)
             quality_str = ', '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
             # Playlists don't have audioModes; only filter by Atmos for tracks/albums
+            if content_type == 'playlists':
+                if 'atmos' not in quality_str.lower():
+                    quality_str = ("Dolby Atmos, " + quality_str) if quality_str else "Dolby Atmos"
+                # If quality_str is just "Dolby Atmos", try to add track count for better UI
+                if quality_str == "Dolby Atmos" and raw_result and isinstance(raw_result, dict):
+                    t = (raw_result.get('tracks') or {}).get('total')
+                    if t is not None and t > 0:
+                        quality_str += (", 1 track" if t == 1 else f", {t} tracks")
+                    else:
+                        tc = (raw_result.get('attributes') or {}).get('trackCount')
+                        if tc is not None and tc > 0:
+                            quality_str += (", 1 track" if tc == 1 else f", {tc} tracks")
+
             if content_type != 'playlists' and not _result_has_dolby_atmos(quality_str, raw_result):
                 continue
             cover_url = getattr(result, 'image_url', None)
@@ -11106,12 +11128,13 @@ def show_search_context_menu(event):
                         if 'hi res lossless' in addl:
                             has_hires = True
             elif platform_name == 'tidal':
-                # Check for Atmos support in Tidal results
+                # Check for Atmos/Hi-Res support in Tidal results
                 for item in selected_items:
                     addl = str(item.get('additional', '')).lower()
                     if 'atmos' in addl:
                         has_atmos = True
-                        break
+                    if 'hi res lossless' in addl:
+                        has_hires = True
         
         # Define platform-specific button configurations
         # Each platform has: (label, quality_value) tuples for buttons
@@ -11188,7 +11211,9 @@ def show_search_context_menu(event):
             if has_atmos:
                 am_quals.append('atmos')
                 
-        tidal_quals = ['hifi', 'lossless', 'high', 'low']
+        tidal_quals = ['lossless', 'high', 'low']
+        if has_hires:
+            tidal_quals.insert(0, 'hifi')
         if has_atmos:
             tidal_quals.insert(0, 'atmos')
             
@@ -14765,7 +14790,7 @@ if __name__ == "__main__":
         # Configure tree column (#0) for cover images (tight fit, left-aligned)
         tree.column("#0", width=COVER_SIZE + 6, minwidth=COVER_SIZE + 6, stretch=False, anchor="w")
         tree.heading("#0", text="", anchor="center")
-        col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Preview": {"text": "▶", "width": 56, "anchor": "center"}, "Title": {"text": "Title", "width": 300, "anchor": "w"}, "Artist": {"text": "Artist", "width": 200, "anchor": "w"}, "Duration": {"text": "Time", "width": 65, "anchor": "center"}, "Year": {"text": "Year", "width": 60, "anchor": "center"}, "Additional": {"text": "Additional", "width": 120, "anchor": "w"}, "Explicit": {"text": "🅴", "width": 30, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
+        col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Preview": {"text": "▶", "width": 56, "anchor": "center"}, "Title": {"text": "Title", "width": 120, "anchor": "w"}, "Artist": {"text": "Artist", "width": 80, "anchor": "w"}, "Duration": {"text": "Time", "width": 60, "anchor": "center"}, "Year": {"text": "Year", "width": 55, "anchor": "center"}, "Additional": {"text": "Additional", "width": 120, "anchor": "w"}, "Explicit": {"text": "🅴", "width": 30, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
         for col in columns: cfg = col_configs[col]; tree.heading(col, text=cfg["text"], anchor=cfg["anchor"], command=lambda c=col: sort_results(c) if c not in ("Preview",) else None); tree.column(col, width=cfg["width"], anchor=cfg["anchor"], stretch=False)
         tree.column("Title", stretch=True); tree.column("Artist", stretch=True)
         # Omit ID from display so theme never draws zero-width slot (avoids right-edge streak)
