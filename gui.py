@@ -12732,7 +12732,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
         if platform_name == "Apple Music":
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color="#1D1E1E", corner_radius=5)
             help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
-            help_frame.grid_columnconfigure(0, weight=1)
+            help_frame.grid_columnconfigure(0, weight=1, uniform="help_cols")
+            help_frame.grid_columnconfigure(1, weight=1, uniform="help_cols")
             
             # --- Single Column: How to set up ---
             left_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
@@ -12757,6 +12758,20 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 text_color="#DCE4EE"
             )
             title_label.pack(side="left")
+
+            # See demo button for "How to set up"
+            am_demo_btn = customtkinter.CTkButton(
+                help_frame,
+                text="See demo",
+                width=80,
+                height=24,
+                font=("Segoe UI", 11),
+                fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
+                hover_color="#1F6AA5",
+                command=lambda: webbrowser.open("https://youtu.be/tbZaCFUnhow")
+            )
+            # Position at the right of the first column
+            am_demo_btn.place(relx=0.5, y=20, anchor="ne", x=-15)
             
             # Instructions
             # Step 1
@@ -12820,6 +12835,75 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step3_path_frame, text="", width=35).pack(side="left") # Indent
             customtkinter.CTkLabel(step3_path_frame, text="Path: ", font=("Segoe UI", 12, "italic"), text_color="gray").pack(side="left")
             customtkinter.CTkLabel(step3_path_frame, text="./config/cookies.txt", font=("Segoe UI", 12, "italic"), text_color="gray").pack(side="left")
+            
+            # --- Right Column: How to set up wrapper ---
+            right_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            right_col.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+            
+            # Header
+            right_header = customtkinter.CTkFrame(right_col, fg_color="transparent")
+            right_header.pack(anchor="w", pady=(0, 0)) # Remove padding here as subtitle will be inside
+            
+            icon_label_wrapper = customtkinter.CTkLabel(
+                right_header, 
+                text="💡", 
+                font=("Segoe UI", 20), 
+                text_color=WARNING_COLOR
+            )
+            icon_label_wrapper.pack(side="left", padx=(5, 10), anchor="n")
+            
+            # Text Frame for Title + Subtitle (aligned with icon)
+            wrapper_text_frame = customtkinter.CTkFrame(right_header, fg_color="transparent")
+            wrapper_text_frame.pack(side="left", anchor="w")
+
+            title_label_wrapper = customtkinter.CTkLabel(
+                wrapper_text_frame, 
+                text="How to set up wrapper", 
+                font=("Segoe UI", 16, "bold"), 
+                text_color="#DCE4EE"
+            )
+            title_label_wrapper.pack(anchor="w")
+
+            # Optional text - now inside header text frame for closer spacing
+            optional_label = customtkinter.CTkLabel(
+                wrapper_text_frame, 
+                text="(Optional: to download in Dolby Atmos / ALAC)", 
+                font=("Segoe UI", 12), 
+                text_color="#DCE4EE"
+            )
+            optional_label.pack(anchor="w")
+            
+            # See demo button for "How to set up wrapper"
+            wrapper_demo_urls = {
+                "Windows": "https://youtu.be/dummy_windows",
+                "Darwin": "https://youtu.be/dummy_macos",
+                "Linux": "https://youtu.be/dummy_linux"
+            }
+            current_os = platform.system()
+            wrapper_url = wrapper_demo_urls.get(current_os, "https://youtu.be/dummy_linux")
+            
+            wrapper_demo_btn = customtkinter.CTkButton(
+                help_frame,
+                text="See demo",
+                width=80,
+                height=24,
+                font=("Segoe UI", 11),
+                fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
+                hover_color="#1F6AA5",
+                command=lambda u=wrapper_url: webbrowser.open(u)
+            )
+            # Position at the far right (where the global button used to be)
+            wrapper_demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
+
+            # Description text - aligned with title text
+            desc_label = customtkinter.CTkLabel(
+                right_col, 
+                text="See demo / description below the video", 
+                font=("Segoe UI", 12), 
+                text_color="gray"
+            )
+            # Use same padding from icon edge (5+20+10 = 35) to align with title text
+            desc_label.pack(anchor="w", padx=(35, 0), pady=(15, 0))
             
             _add_clear_session_icon(help_frame, "Apple Music")
         
@@ -13739,7 +13823,6 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Add the "See demo" button to the top-right of the help_frame
         # Each platform has its own demo video URL (platforms with their own See demo in-help are excluded here)
         SEE_DEMO_URLS = {
-            "Apple Music": "https://youtu.be/tbZaCFUnhow",
             "SoundCloud": "https://youtu.be/LEEJosz2CYg",
             "Spotify": "https://youtu.be/aJYDACfilRM",
         }
