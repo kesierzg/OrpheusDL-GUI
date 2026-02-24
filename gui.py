@@ -116,6 +116,52 @@ if sys.platform == "win32":
     except Exception as e:
         print(f"[Patch] WARNING: Failed to set asyncio.WindowsProactorEventLoopPolicy(): {e}")
 
+# ============================================================================
+# Global Subprocess Patches for Windows (Hide Console Windows)
+# ============================================================================
+if platform.system() == "Windows":
+    import subprocess
+    import asyncio
+    
+    # Patch subprocess.Popen
+    _original_popen = subprocess.Popen
+    class _PatchedPopen(_original_popen):
+        def __init__(self, *args, **kwargs):
+            if 'creationflags' not in kwargs:
+                kwargs['creationflags'] = 0
+            kwargs['creationflags'] |= subprocess.CREATE_NO_WINDOW
+            if 'startupinfo' not in kwargs:
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+                kwargs['startupinfo'] = startupinfo
+            super().__init__(*args, **kwargs)
+    subprocess.Popen = _PatchedPopen
+
+    # Patch asyncio.create_subprocess_exec/shell
+    _original_create_exec = asyncio.create_subprocess_exec
+    _original_create_shell = asyncio.create_subprocess_shell
+
+    async def _patched_create_exec(*args, **kwargs):
+        if 'creationflags' not in kwargs:
+            kwargs['creationflags'] = 0
+        kwargs['creationflags'] |= subprocess.CREATE_NO_WINDOW
+        return await _original_create_exec(*args, **kwargs)
+
+    async def _patched_create_shell(*args, **kwargs):
+        if 'creationflags' not in kwargs:
+            kwargs['creationflags'] = 0
+        kwargs['creationflags'] |= subprocess.CREATE_NO_WINDOW
+        return await _original_create_shell(*args, **kwargs)
+
+    asyncio.create_subprocess_exec = _patched_create_exec
+    asyncio.create_subprocess_shell = _patched_create_shell
+    
+    try:
+        print("[Patch] Applied global subprocess & asyncio patches to suppress console windows on Windows.")
+    except Exception: pass
+# ============================================================================
+
 # Native Audio Playback Imports
 if platform.system() == "Windows":
     import ctypes
@@ -4566,7 +4612,7 @@ def _update_results_header_context(full_title):
     if type_str and '_content_type_badge' in globals() and _content_type_badge and _content_type_badge_label and _content_type_badge_label.winfo_exists():
         _content_type_badge_label.configure(text=type_str)
         # Slightly wider badge for "Channel"; on macOS "Playlist" also needs 60 (same as channel) to avoid truncation
-        badge_width = 60 if type_str == "channel" or (platform.system() == "Darwin" and type_str == "playlist") else 50
+        badge_width = 60 if type_str in ("channel", "playlist") or (platform.system() == "Darwin" and type_str == "playlist") else 60
         _content_type_badge.configure(width=badge_width)
         _content_type_badge.pack(side="left", anchor="w", padx=(0, 8), pady=0)
     if 'results_label' in globals() and results_label and results_label.winfo_exists():
@@ -5635,32 +5681,6 @@ os.get_terminal_size = _patched_get_terminal_size
 try:
     print("[Patch] Applied os.get_terminal_size monkey-patch.", file=sys.stderr)
 except Exception: pass
-if platform.system() == "Windows":
-    import subprocess
-    _original_popen = subprocess.Popen
-    
-    class _PatchedPopen(_original_popen):
-        """Patched subprocess.Popen class to suppress console windows on Windows."""
-        def __init__(self, *args, **kwargs):
-            try:
-                if 'creationflags' not in kwargs:
-                    kwargs['creationflags'] = 0
-                kwargs['creationflags'] |= subprocess.CREATE_NO_WINDOW
-                if 'startupinfo' not in kwargs:
-                    startupinfo = subprocess.STARTUPINFO()
-                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                    startupinfo.wShowWindow = subprocess.SW_HIDE
-                    kwargs['startupinfo'] = startupinfo
-                    
-            except Exception as e:
-                print(f"[Patch Warning] Could not set subprocess flags to hide console: {e}", file=sys.__stderr__)
-            
-            super().__init__(*args, **kwargs)
-    
-    subprocess.Popen = _PatchedPopen
-    try:
-        print("[Patch] Applied subprocess.Popen patch to suppress console windows on Windows.", file=sys.__stdout__)
-    except Exception: pass
 
 try:
     from customtkinter.windows.widgets import CTkEntry, CTkCheckBox, CTkComboBox
@@ -14891,13 +14911,13 @@ if __name__ == "__main__":
         globals()["_expand_loading_label"] = customtkinter.CTkLabel(results_header_frame, text="", text_color="#898c8d", font=("Segoe UI", 11))
         _expand_loading_label.pack_forget()
         # Content-type badge (Album / Playlist / Artist) with border; tight padding so border sits close to text
-        _content_type_badge = customtkinter.CTkFrame(results_header_frame, fg_color="transparent", border_width=1, border_color="#565B5E", corner_radius=6, width=50, height=22)
+        _content_type_badge = customtkinter.CTkFrame(results_header_frame, fg_color="transparent", border_width=1, border_color="#565B5E", corner_radius=6, width=60, height=24)
         try:
             _content_type_badge.pack_propagate(False)  # keep fixed size
         except AttributeError:
             pass
         _content_type_badge_label = customtkinter.CTkLabel(_content_type_badge, text="Album", text_color="#898c8d", font=("Segoe UI", 11))
-        _content_type_badge_label.pack(padx=8, pady=1)  # tight horizontal padding so border is close to text
+        _content_type_badge_label.pack(padx=8, pady=(1, 1))  # tight horizontal padding; pady balanced to avoid clipping at 125% scale
         # Badge is not packed here; _update_results_header_context() packs it when showing album/playlist/artist view
         # Volume control frame (Windows only; macOS/Linux cannot regulate volume from GUI)
         if platform.system() == "Windows":
