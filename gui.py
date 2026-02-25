@@ -982,8 +982,8 @@ COVER_FADE_IN_STEP_MS = 45
 COVER_FADE_MAX_CONCURRENT = 4  # Max fades at once; excess show immediately to avoid GUI freeze
 TREEVIEW_BG_HEX = "#1D1E1E"  # Match Custom.Treeview fieldbackground
 
-# Fixed width for all right-click context menus (matches main action buttons: 100)
-CONTEXT_MENU_WIDTH = 100
+# Fixed width for all right-click context menus
+CONTEXT_MENU_WIDTH = 130
 # Icon and text color for context menu items (match so icons = text)
 CONTEXT_MENU_TEXT_COLOR = "#DCE4EE"
 CONTEXT_MENU_HOVER_COLOR = "#1F6AA5" if platform.system() == "Darwin" else "#474747"
@@ -3367,7 +3367,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                         _artwork_copy_photo = ImageTk.PhotoImage(_artwork_copy_pil())
                                         _artwork_save_photo = ImageTk.PhotoImage(_artwork_download_pil())
                                         
-                                        copy_row_tk = tkinter.Frame(menu_frame, bg=button_color, height=24, width=CONTEXT_MENU_WIDTH, cursor="", highlightthickness=0)
+                                        copy_row_tk = tkinter.Frame(menu_frame, bg=button_color, height=26, width=CONTEXT_MENU_WIDTH, cursor="", highlightthickness=0)
                                         copy_row_tk.pack(pady=(2, 1), padx=2)
                                         copy_row_tk.pack_propagate(False)
                                         copy_lbl_tk = tkinter.Label(copy_row_tk, text=" Copy Image", image=_artwork_copy_photo, compound="left", bg=button_color, fg=text_fg, font=("Segoe UI", 11), anchor="w", cursor="", highlightthickness=0)
@@ -3378,7 +3378,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                         sep_tk.pack(fill="x", padx=2, pady=2)
                                         sep_tk.pack_propagate(False)
                                         
-                                        save_row_tk = tkinter.Frame(menu_frame, bg=button_color, height=24, width=CONTEXT_MENU_WIDTH, cursor="", highlightthickness=0)
+                                        save_row_tk = tkinter.Frame(menu_frame, bg=button_color, height=26, width=CONTEXT_MENU_WIDTH, cursor="", highlightthickness=0)
                                         save_row_tk.pack(pady=(1, 2), padx=2)
                                         save_row_tk.pack_propagate(False)
                                         save_lbl_tk = tkinter.Label(save_row_tk, text=" Save as...", image=_artwork_save_photo, compound="left", bg=button_color, fg=text_fg, font=("Segoe UI", 11), anchor="w", cursor="", highlightthickness=0)
@@ -3449,7 +3449,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                             compound="left",
                                             anchor="w",
                                             width=100,
-                                            height=24,
+                                            height=26,
                                             font=("Segoe UI", 11),
                                             fg_color=button_color,
                                             hover_color=hover_color_artwork,
@@ -3473,7 +3473,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                             compound="left",
                                             anchor="w",
                                             width=100,
-                                            height=24,
+                                            height=26,
                                             font=("Segoe UI", 11),
                                             fg_color=button_color,
                                             hover_color=hover_color_artwork,
@@ -3922,7 +3922,7 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                     if 'HI-RES' in parent_additional_str:
                         for entry in track_entries:
                             if not entry.get('additional'):
-                                entry['additional'] = '\U0001f177 HI-RES'
+                                entry['additional'] = '🅷 HI-RES'
             except Exception as e:
                 # Spotify 429 rate limit: show popup recommending right-click → Open Link
                 if 'RateLimit' in type(e).__name__:
@@ -4177,7 +4177,7 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                             additional_parts.append(f"1 track" if tc == 1 else f"{tc} tracks")
                             if platform_name and platform_name.lower() == 'beatport' and album_dict.get('catalog_number'):
                                 additional_parts.append(f"Cat: {album_dict['catalog_number']}")
-                            additional_str = ", ".join(additional_parts) if additional_parts else ""
+                            additional_str = " · ".join(additional_parts) if additional_parts else ""
                             # Duration if release has total length (seconds or ms); format like album search
                             duration_str = ""
                             sec = None
@@ -6739,7 +6739,7 @@ def _add_clear_session_icon(parent_frame, platform_name):
         parent_frame,
         text="🗑",
         width=24,
-        height=24,
+        height=26,
         font=("Segoe UI", _font_size),
         fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
         hover_color="#E53935",
@@ -7120,7 +7120,7 @@ def _create_menu():
         compound="left",
         command=_undo_text, 
         width=100, 
-        height=24, 
+        height=26, 
         font=("Segoe UI", 11),
         fg_color=button_color, 
         hover_color=CONTEXT_MENU_HOVER_COLOR, 
@@ -7148,7 +7148,7 @@ def _create_menu():
         compound="left",
         command=copy_text, 
         width=100, 
-        height=24, 
+        height=26, 
         font=("Segoe UI", 11),
         fg_color=button_color, 
         hover_color=CONTEXT_MENU_HOVER_COLOR, 
@@ -7172,7 +7172,7 @@ def _create_menu():
         compound="left",
         command=paste_text, 
         width=100, 
-        height=24, 
+        height=26, 
         font=("Segoe UI", 11),
         fg_color=button_color, 
         hover_color=CONTEXT_MENU_HOVER_COLOR, 
@@ -10090,11 +10090,11 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
                         raw_result = next(iter(data.values()))
             if raw_result is None:
                 raw_result = result
-            quality_str = ', '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
+            quality_str = ' · '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
             # For Tidal playlists in Atmos mode, ensure quality_str includes "Dolby Atmos"
             if platform_name.strip().lower() == 'tidal' and base_type == 'playlist':
                 if 'atmos' not in quality_str.lower() and '◗◖' not in quality_str:
-                    quality_str = (quality_str + ", ◗◖ ATMOS") if quality_str else "◗◖ ATMOS"
+                    quality_str = (quality_str + " · ◗◖ ATMOS") if quality_str else "◗◖ ATMOS"
             # Tidal Playlists don't have audioModes so they pass; filter by Atmos for everything else (including AM playlists)
             if (not (platform_name.strip().lower() == 'tidal' and base_type == 'playlist')) and not _result_has_dolby_atmos(quality_str, raw_result):
                 continue
@@ -10153,22 +10153,22 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             media_type = extra_kwargs.get('media_type')
             result_type = (media_type.name.lower() if media_type and hasattr(media_type, 'name') else content_type.rstrip('s'))
             raw_result = extra_kwargs.get('raw_result', result)
-            quality_str = ', '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
+            quality_str = ' · '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
             # Playlists don't have audioModes; only filter by Atmos for tracks/albums
             if content_type == 'playlists':
                 if 'ATMOS' not in quality_str.upper() and '◗◖' not in quality_str:
-                    quality_str = (quality_str + ", ◗◖ ATMOS") if quality_str else "◗◖ ATMOS"
+                    quality_str = (quality_str + " · ◗◖ ATMOS") if quality_str else "◗◖ ATMOS"
                 # If quality_str is "◗◖ ATMOS" (meaning no tracks yet), try to put track count BEFORE it
                 if quality_str == "◗◖ ATMOS" and raw_result and isinstance(raw_result, dict):
                     t = (raw_result.get('tracks') or {}).get('total')
                     if t is not None and t > 0:
                         track_str = "1 track" if t == 1 else f"{t} tracks"
-                        quality_str = f"{track_str}, ◗◖ ATMOS"
+                        quality_str = f"{track_str} · ◗◖ ATMOS"
                     else:
                         tc = (raw_result.get('attributes') or {}).get('trackCount')
                         if tc is not None and tc > 0:
                             track_str = "1 track" if tc == 1 else f"{tc} tracks"
-                            quality_str = f"{track_str}, ◗◖ ATMOS"
+                            quality_str = f"{track_str} · ◗◖ ATMOS"
 
             if content_type != 'playlists' and not _result_has_dolby_atmos(quality_str, raw_result):
                 continue
@@ -10248,7 +10248,7 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
                 raw_duration_seconds = None
         _name = str(getattr(result, 'name', '') or '')
         _artists_str = ', '.join([str(a) for a in getattr(result, 'artists', []) or []]) or ''
-        quality_str = ', '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
+        quality_str = ' · '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
         if not quality_str and search_type_str and search_type_str.lower() in ('album', 'playlist') and raw_result and isinstance(raw_result, dict):
             t = (raw_result.get('tracks') or {}).get('total')
             if t is not None and t > 0:
@@ -10680,8 +10680,8 @@ def _create_search_context_menu():
             image=external_link_icon,
             compound="left",
             command=_open_selected_url,
-            width=100,
-            height=24,
+            width=CONTEXT_MENU_WIDTH - 4,
+            height=26,
             font=("Segoe UI", 11),
             fg_color= "#2b2b2b",
             hover_color=CONTEXT_MENU_HOVER_COLOR,
@@ -10716,8 +10716,8 @@ def _create_search_context_menu():
                 _search_context_menu,
                 text=label,
                 command=lambda v=value: _select_quality_and_download(v),
-                width=100,
-                height=24,
+                width=CONTEXT_MENU_WIDTH - 4,
+                height=26,
                 font=("Segoe UI", 11),
                 fg_color="#2b2b2b",
                 hover_color=CONTEXT_MENU_HOVER_COLOR,
@@ -10890,6 +10890,8 @@ def _dolby_double_d_photoimage(size=(16, 16), color="#E0E0E0"):
     image = image.resize(size, Image.Resampling.LANCZOS)
     photo = ImageTk.PhotoImage(image)
     return image, photo
+
+
 
 def _create_undo_icon(size=(16, 16), color="#AAAAAA"):
     """Creates an undo icon (side-U curved arrow pointing left)."""
@@ -11176,13 +11178,15 @@ def show_search_context_menu(event):
                 if use_wrapper is None: use_wrapper = False
                 
                 if use_wrapper:
-                    has_alac = True
                     for item in selected_items:
                         addl = str(item.get('additional', ''))
                         if 'atmos' in addl.lower() or '◗◖' in addl:
                             has_atmos = True
                         if 'hi res lossless' in addl.lower() or '🅷' in addl or 'ʜɪ-ʀᴇs' in addl or 'hi-res' in addl.lower():
                             has_hires = True
+                            has_alac = True # Hi-Res implies ALAC
+                        if 'aac only' not in addl.lower() and 'ᴀᴀᴄ only' not in addl and 'ᴀᴀᴄ' not in addl and 'aac' not in addl.lower():
+                            has_alac = True
             elif platform_name == 'tidal':
                 # Check for Atmos/Hi-Res support in Tidal results
                 for item in selected_items:
@@ -11213,13 +11217,13 @@ def show_search_context_menu(event):
         # Most platforms use 3 buttons, TIDAL uses 4
         platform_button_configs = {
             'qobuz': [
-                ("🅷  HI-RES", "hifi"),
+                ("🅷 HI-RES", "hifi"),
                 ("FLAC", "lossless"),
                 ("MP3 320", "high")
             ],
             'tidal': [
                 ("◗◖ ATMOS", "atmos"),
-                ("🅷  HI-RES", "hifi"),
+                ("🅷 HI-RES", "hifi"),
                 ("FLAC", "lossless"),
                 ("AAC 320", "high"),
                 ("AAC 96", "low")
@@ -11236,14 +11240,14 @@ def show_search_context_menu(event):
             ],
             'applemusic': [
                 ("◗◖ ATMOS", "atmos"),
-                ("🅷  HI-RES", "hifi"),
+                ("🅷 HI-RES", "hifi"),
                 ("ALAC", "lossless"),
                 ("AAC 256", "high"),
                 ("AAC 128", "low")
             ],
             'apple music': [
                 ("◗◖ ATMOS", "atmos"),
-                ("🅷  HI-RES", "hifi"),
+                ("🅷 HI-RES", "hifi"),
                 ("ALAC", "lossless"),
                 ("AAC 256", "high"),
                 ("AAC 128", "low")
@@ -11331,14 +11335,19 @@ def show_search_context_menu(event):
                     if is_available:
                         # Use standard download icon for all quality options
                         icon = _create_download_icon(color=CONTEXT_MENU_TEXT_COLOR)
-                            
                         btn.image = icon  # Keep reference
                         
                         btn_font = ("Segoe UI", 11)
+                        
+                        # Use standard caps for Atmos/Hi-Res (matching GUI checkbox), small caps for others
+                        if "ATMOS" in label.upper() or "HI-RES" in label.upper():
+                            btn_text = label
+                        else:
+                            btn_text = _to_small_caps(label)
                             
                         # Update button text, icon and command
                         btn.configure(
-                            text=label,
+                            text=btn_text,
                             image=icon,
                             compound="left",
                             command=lambda v=quality_value: _select_quality_and_download(v),
@@ -11898,7 +11907,7 @@ def _to_small_caps(s):
         return res
 
     # Targeted keywords (case-insensitive search)
-    keywords = ["ATMOS", "HI-RES", "Dolby Atmos", "360 Reality Audio"]
+    keywords = ["ATMOS", "HI-RES", "360 Reality Audio", "AAC only"]
     
     import re
     result = s
@@ -12784,7 +12793,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 help_frame,
                 text="See demo",
                 width=80,
-                height=24,
+                height=26,
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
@@ -12906,7 +12915,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 help_frame,
                 text="See demo",
                 width=80,
-                height=24,
+                height=26,
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
@@ -13118,7 +13127,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 help_frame,
                 text="See demo",
                 width=80,
-                height=24,
+                height=26,
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
@@ -13175,7 +13184,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 help_frame,
                 text="See demo",
                 width=80,
-                height=24,
+                height=26,
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
@@ -13344,7 +13353,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 help_frame,
                 text="See demo",
                 width=80,
-                height=24,
+                height=26,
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
@@ -13852,7 +13861,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 help_frame,
                 text="See demo",
                 width=80,
-                height=24,
+                height=26,
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
@@ -14898,7 +14907,7 @@ if __name__ == "__main__":
             results_header_frame,
             text="← Back",
             width=80,
-            height=24,
+            height=26,
             font=("Segoe UI", 11),
             fg_color=BUTTON_COLOR,
             hover_color="#1F6AA5",
@@ -15002,7 +15011,7 @@ if __name__ == "__main__":
         # Configure tree column (#0) for cover images (tight fit, left-aligned)
         tree.column("#0", width=COVER_SIZE + 6, minwidth=COVER_SIZE + 6, stretch=False, anchor="w")
         tree.heading("#0", text="", anchor="center", command=lambda: sort_results("#0"))
-        col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Preview": {"text": "▶", "width": 56, "anchor": "center"}, "Title": {"text": "Title", "width": 120, "anchor": "w"}, "Artist": {"text": "Artist", "width": 80, "anchor": "w"}, "Duration": {"text": "Time", "width": 60, "anchor": "center"}, "Year": {"text": "Year", "width": 55, "anchor": "center"}, "Additional": {"text": "Additional", "width": 123, "anchor": "w"}, "Explicit": {"text": "🅴", "width": 22, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
+        col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Preview": {"text": "▶", "width": 56, "anchor": "center"}, "Title": {"text": "Title", "width": 120, "anchor": "w"}, "Artist": {"text": "Artist", "width": 80, "anchor": "w"}, "Duration": {"text": "Time", "width": 60, "anchor": "center"}, "Year": {"text": "Year", "width": 55, "anchor": "center"}, "Additional": {"text": "Additional", "width": 125, "anchor": "w"}, "Explicit": {"text": "🅴", "width": 22, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
         for col in columns: cfg = col_configs[col]; tree.heading(col, text=cfg["text"], anchor=cfg["anchor"], command=lambda c=col: sort_results(c) if c not in ("Preview",) else None); tree.column(col, width=cfg["width"], anchor=cfg["anchor"], stretch=False)
         tree.column("Title", stretch=True); tree.column("Artist", stretch=True)
         # Omit ID from display so theme never draws zero-width slot (avoids right-edge streak)
@@ -15849,7 +15858,7 @@ Unnecessary Lossless-to-Lossless""",
                         download_btn = customtkinter.CTkButton(
                             step4_frame, text="Download FFmpeg (evermeet.cx)", 
                             command=open_ffmpeg_site_mac,
-                            height=24,
+                            height=26,
                             fg_color="transparent", 
                             text_color="#3B8ED0",
                             hover_color="#2B2B2B",
@@ -15972,7 +15981,7 @@ Unnecessary Lossless-to-Lossless""",
                         download_btn = customtkinter.CTkButton(
                             step2_frame, text="Download FFmpeg (gyan.dev)", 
                             command=open_ffmpeg_site_win,
-                            height=24,
+                            height=26,
                             fg_color="transparent", 
                             text_color="#3B8ED0",
                             hover_color="#2B2B2B",
