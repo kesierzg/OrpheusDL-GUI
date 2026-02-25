@@ -9098,8 +9098,7 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
             
             if not is_atmos_possible:
                 downloader_settings["general"]["download_quality"] = "hifi"
-                platform_display_name = module_name if module_name else "This platform"
-                print(f"|GRAY|Notice: '{platform_display_name}' or this specific track does not support Dolby Atmos. Falling back to highest available quality.|RESET|")
+                print(f"|GRAY|Warning: This specific track does not support Dolby Atmos. Falling back to highest available quality.|RESET|")
 
         yield_to_gui()
 
