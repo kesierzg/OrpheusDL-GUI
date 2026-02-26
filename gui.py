@@ -12440,8 +12440,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 widget.grid(row=i, column=1, sticky="w", padx=10, pady=pady_config)
                 
                 if key == "use_wrapper":
-                    CTkToolTip(widget, message="Enable this if you are running an external decryption server (like amdecrypt)\nto download ALAC and Atmos tracks that require FairPlay.", bg_color=TOOLTIP_MENU_BG, text_color=LIGHT_TEXT_COLOR)
-                    CTkToolTip(label, message="Enable this if you are running an external decryption server (like amdecrypt)\nto download ALAC and Atmos tracks that require FairPlay.", bg_color=TOOLTIP_MENU_BG, text_color=LIGHT_TEXT_COLOR)
+                    CTkToolTip(widget, message="Enable this, if you are running an external decryption server\nto download Dolby Atmos / ALAC.", bg_color=TOOLTIP_MENU_BG, text_color=LIGHT_TEXT_COLOR)
+                    CTkToolTip(label, message="Enable this, if you are running an external decryption server\nto download Dolby Atmos / ALAC.", bg_color=TOOLTIP_MENU_BG, text_color=LIGHT_TEXT_COLOR)
 
 
             elif platform_name == "YouTube" and key == "cookies_path":
@@ -12896,7 +12896,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             # Optional text - now inside header text frame for closer spacing
             optional_label = customtkinter.CTkLabel(
                 wrapper_text_frame, 
-                text="(Optional: to download in Dolby Atmos / ALAC)", 
+                text="(Optional: to download Dolby Atmos / ALAC)", 
                 font=("Segoe UI", 12), 
                 text_color="#DCE4EE"
             )
