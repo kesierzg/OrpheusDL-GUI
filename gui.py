@@ -9768,13 +9768,14 @@ def _update_search_placeholder(*args):
         if has_focus:
             return
         platform = (platform_var.get() or "").strip().lower()
+        current_type = (type_var.get() or "").strip().lower()
         atmos_enabled = False
         if platform in ("tidal", "applemusic", "apple music") and 'atmos_filter_var' in globals() and atmos_filter_var:
             try:
                 atmos_enabled = atmos_filter_var.get()
             except (tkinter.TclError, Exception):
                 pass
-        if platform in ("tidal", "applemusic", "apple music") and atmos_enabled:
+        if platform in ("tidal", "applemusic", "apple music") and atmos_enabled and current_type != "artist":
             placeholder = "Enter search query or hit search to explore..."
         else:
             placeholder = "Enter search query..."
