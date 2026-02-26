@@ -11896,7 +11896,7 @@ def _to_small_caps(s):
         'q': 'ǫ', 'r': 'ʀ', 's': 's', 't': 'ᴛ', 'u': 'ᴜ', 'v': 'ᴠ', 'w': 'ᴡ', 'x': 'x', 
         'y': 'ʏ', 'z': 'ᴢ',
         '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
-        '.': '.', '/': '/', '(': '(', ')': ')', ' ': ' ', ':': ':', ',': ',', '+': '₊', '-': '₋'
+        '.': '.', '/': '/', '(': '(', ')': ')', ' ': ' ', ':': ':', ',': ',', '+': '₊', '-': '-'
     }
 
     def transform(word):
@@ -12904,8 +12904,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             # See demo button for "How to set up wrapper"
             wrapper_demo_urls = {
-                "Windows": "https://youtu.be/dummy_windows",
-                "Darwin": "https://youtu.be/dummy_macos",
+                "Windows": "https://youtu.be/VyEThfMFDYs",
+                "Darwin": "https://youtu.be/LuywCOPOKo0",
                 "Linux": "https://youtu.be/dummy_linux"
             }
             current_os = platform.system()
