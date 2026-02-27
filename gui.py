@@ -12906,10 +12906,10 @@ def _create_credential_tab_content(platform_name, tab_frame):
             wrapper_demo_urls = {
                 "Windows": "https://youtu.be/VyEThfMFDYs",
                 "Darwin": "https://youtu.be/LuywCOPOKo0",
-                "Linux": "https://youtu.be/dummy_linux"
+                "Linux": "https://youtu.be/CEGKyGgMpks"
             }
             current_os = platform.system()
-            wrapper_url = wrapper_demo_urls.get(current_os, "https://youtu.be/dummy_linux")
+            wrapper_url = wrapper_demo_urls.get(current_os, "https://youtu.be/CEGKyGgMpks")
             
             wrapper_demo_btn = customtkinter.CTkButton(
                 help_frame,
@@ -16285,3 +16285,4 @@ Unnecessary Lossless-to-Lossless""",
     else:
         print(f"[Child Process {os.getpid()}] Detected, exiting.")
         os._exit(0)
+@gui
