@@ -383,6 +383,11 @@ def _get_ffmpeg_path():
         bundled = os.path.join(app_dir, 'ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg')
         if os.path.exists(bundled):
             return bundled
+        
+        if platform.system() == 'Darwin':
+            app_support_ffmpeg = os.path.expanduser("~/Library/Application Support/OrpheusDL GUI/ffmpeg")
+            if os.path.exists(app_support_ffmpeg):
+                return app_support_ffmpeg
     
     # Check script directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -463,7 +468,7 @@ def play_audio(source):
     
     # For streams, convert to WAV using ffmpeg first (limited to 30 seconds) on Windows, or non-SoundCloud streams on other platforms.
     # On macOS and Linux, SoundCloud previews (e.g. M4A) are played natively after download; WAV conversion can break playback.
-    if is_stream and not (system == "Linux" and is_soundcloud_stream):
+    if is_stream and not (system in ("Linux", "Darwin") and is_soundcloud_stream):
         try:
             import tempfile
             ffmpeg_path = _get_ffmpeg_path()
