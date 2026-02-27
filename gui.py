@@ -466,9 +466,9 @@ def play_audio(source):
     is_soundcloud_stream = 'sndcdn.com' in source_lower
     is_stream = is_hls_stream or is_soundcloud_stream
     
-    # For streams, convert to WAV using ffmpeg first (limited to 30 seconds) on Windows, or non-SoundCloud streams on other platforms.
-    # On macOS and Linux, SoundCloud previews (e.g. M4A) are played natively after download; WAV conversion can break playback.
-    if is_stream and not (system in ("Linux", "Darwin") and is_soundcloud_stream):
+    # For streams, convert to WAV using ffmpeg first (limited to 30 seconds) on Windows.
+    # We now also do this for macOS and Linux because native players (afplay) can sometimes fail to play M4A streams correctly without conversion.
+    if is_stream:
         try:
             import tempfile
             ffmpeg_path = _get_ffmpeg_path()
