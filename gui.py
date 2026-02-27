@@ -3559,6 +3559,8 @@ def on_tree_click(event):
         
         # Identify the clicked region
         region = tree.identify("region", event.x, event.y)
+        if region == "heading":
+            return
         
         # Identify the column
         column = tree.identify_column(event.x)
@@ -3591,9 +3593,7 @@ def on_tree_click(event):
         is_over_preview_column = (PREVIEW_COLUMN_START < event.x <= PREVIEW_COLUMN_START + PREVIEW_COLUMN_WIDTH)
         if not is_over_preview_column:
             return
-        # Only reject header clicks; accept any row region (ttk can report "cell", "tree", or empty for child rows)
-        if region == "heading":
-            return
+        # Only reject header clicks (already checked at top); accept any row region (ttk can report "cell", "tree", or empty for child rows)
         
         # Preview column click: label/artist → show releases/albums (or tracks); album/playlist → show tracks
         if (item_data.get('type') or '').lower() == 'label':
@@ -4460,7 +4460,7 @@ def _show_artist_albums_view(artist_item_data, album_entries, context_kind="Arti
         # When showing albums list (artist or label), 4th column is Artist; ensure heading says "Artist"
         try:
             if 'tree' in globals() and tree and tree.winfo_exists():
-                tree.heading("Artist", text="Artist")
+                tree.heading("Artist", text="Artist", command=lambda: sort_results("Artist"))
         except (tkinter.TclError, Exception):
             pass
         _update_preview_column_heading(True)  # ≡ for artist albums list
@@ -4563,7 +4563,7 @@ def _show_album_track_list_view(album_item_data, track_entries):
         _update_preview_column_heading(False)  # ▶ for track list
         try:
             if 'tree' in globals() and tree and tree.winfo_exists():
-                tree.heading("Artist", text="Artist")  # Track list always shows Artist, not Channel
+                tree.heading("Artist", text="Artist", command=lambda: sort_results("Artist"))  # Track list always shows Artist, not Channel
         except (NameError, tkinter.TclError, Exception):
             pass
         if '_back_to_search_button' in globals() and _back_to_search_button and _back_to_search_button.winfo_exists():
@@ -4698,7 +4698,7 @@ def _back_to_search_results():
         # Restore column header to "Label" when going back to label search results
         try:
             if saved and len(saved) > 0 and (saved[0].get('type') or '').lower() == 'label' and 'tree' in globals() and tree and tree.winfo_exists():
-                tree.heading("Artist", text="Label")
+                tree.heading("Artist", text="Label", command=lambda: sort_results("Artist"))
         except (tkinter.TclError, Exception):
             pass
         # Restore header for this level (e.g. "Artist: Name" when going back from album tracks)
@@ -9871,7 +9871,7 @@ def display_results(results):
                 artist_col_text = "Channel"
             else:
                 artist_col_text = "Artist"
-            tree.heading("Artist", text=artist_col_text)
+            tree.heading("Artist", text=artist_col_text, command=lambda: sort_results("Artist"))
     except (NameError, tkinter.TclError, Exception):
         pass
 
@@ -11907,19 +11907,15 @@ def _to_small_caps(s):
         return res
 
     # Targeted keywords (case-insensitive search)
-    keywords = ["ATMOS", "HI-RES", "360 Reality Audio", "AAC only"]
+    keywords = ["ATMOS", "HI-RES", "360 Reality Audio", "AAC only", "Surround"]
     
-    import re
-    result = s
-    for kw in keywords:
-        # Use case-insensitive regex to find and replace only the keywords
-        pattern = re.compile(re.escape(kw), re.IGNORECASE)
-        matches = pattern.findall(result)
-        # Sort matches by length descending to avoid partial replacements if keywords overlap (though unlikely here)
-        for m in sorted(set(matches), key=len, reverse=True):
-            result = result.replace(m, transform(m))
-            
-    return result
+    # Use case-insensitive regex to find and replace only the keywords
+    pattern = re.compile("|".join(re.escape(k) for k in keywords), re.IGNORECASE)
+    
+    def replacer(match):
+        return transform(match.group(0))
+        
+    return pattern.sub(replacer, s)
 
 def sort_results(column):
     global sort_states, search_results_data, tree, _currently_playing_preview_iid, _cover_hover_cache, _cover_hover_iid, _expanded_album_playlist_iids
@@ -11929,7 +11925,7 @@ def sort_results(column):
         is_duration = column == "Duration"
 
         def sort_key(item):
-            key_map = {"#0": "platform", "#": "number", "Year": "year", "Title": "title", "Artist": "artist", "Duration": "duration", "Additional": "additional", "Explicit": "explicit", "ID": "id"}
+            key_map = {"#0": "cover_url", "#": "number", "Year": "year", "Title": "title", "Artist": "artist", "Duration": "duration", "Additional": "additional", "Explicit": "explicit", "ID": "id"}
             dict_key = key_map.get(column, column); value = item.get(dict_key, "")
             if value is None: value = ""
             if is_duration:
@@ -11978,7 +11974,7 @@ def sort_results(column):
                     platform_str = item_data.get('platform', 'Unknown')
                     search_type_str = item_data.get('type', 'track')
                     is_track_search = search_type_str.lower() == "track"
-                    can_lazy_load_preview = (platform_str.lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal')) and is_track_search
+                    can_lazy_load_preview = (platform_str.lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic')) and is_track_search
                     is_youtube_track = (platform_str.lower() == 'youtube') and is_track_search
                     is_album_playlist = item_data.get('is_album_playlist')
                     is_artist = item_data.get('is_artist')
@@ -16285,4 +16281,3 @@ Unnecessary Lossless-to-Lossless""",
     else:
         print(f"[Child Process {os.getpid()}] Detected, exiting.")
         os._exit(0)
-@gui
