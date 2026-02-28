@@ -377,22 +377,25 @@ def _simple_slugify(text):
 
 def _get_ffmpeg_path():
     """Get the path to ffmpeg executable."""
+    def is_valid_ffmpeg(path):
+        return os.path.isfile(path) and os.access(path, os.X_OK)
+
     # Check bundled ffmpeg first (for frozen apps)
     if getattr(sys, 'frozen', False):
         app_dir = os.path.dirname(sys.executable)
         bundled = os.path.join(app_dir, 'ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg')
-        if os.path.exists(bundled):
+        if is_valid_ffmpeg(bundled):
             return bundled
         
         if platform.system() == 'Darwin':
             app_support_ffmpeg = os.path.expanduser("~/Library/Application Support/OrpheusDL GUI/ffmpeg")
-            if os.path.exists(app_support_ffmpeg):
+            if is_valid_ffmpeg(app_support_ffmpeg):
                 return app_support_ffmpeg
     
     # Check script directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
     local_ffmpeg = os.path.join(script_dir, 'ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg')
-    if os.path.exists(local_ffmpeg):
+    if is_valid_ffmpeg(local_ffmpeg):
         return local_ffmpeg
     
     # Try using the robust finder from utils
