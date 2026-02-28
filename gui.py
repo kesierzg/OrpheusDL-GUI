@@ -6477,15 +6477,16 @@ def save_settings(show_confirmation: bool = True):
                 current_settings["globals"]["advanced"]["conversion_flags"]["mp3"] = clean_conversion_flags_from_ui["mp3"].copy()
         if orpheus_instance:
             try:
-                orpheus_instance.settings = json.load(open(CONFIG_FILE_PATH, 'r', encoding='utf-8'))
-                if hasattr(orpheus_instance, 'loaded_modules'):
-                    orpheus_instance.loaded_modules.clear()
+                # To guarantee modules fetch the updated settings strings (like SoundCloud web_access_token),
+                # we force a full re-initialization rather than just clearing loaded_modules.
+                orpheus_instance = None
+                initialize_orpheus()
                 
                 if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                    print("Settings reloaded in existing Orpheus instance and module cache cleared")
+                    print("Orpheus instance reinitialized to apply new settings")
             except Exception as reload_e:
                 if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                    print(f"Warning: Could not reload settings in existing orpheus instance: {reload_e}")
+                    print(f"Warning: Could not reload settings: {reload_e}")
                 orpheus_instance = None
                 initialize_orpheus()
         else:
@@ -11262,8 +11263,8 @@ def show_search_context_menu(event):
             ],
             'soundcloud': [
                 ("FLAC", "lossless"),
-                ("AAC 256", "high"),
-                ("AAC 128", "low")
+                ("MP3 128", "high"),
+                ("MP3 64", "low")
             ],
             'beatport': [
                 ("FLAC", "lossless"),
@@ -11301,6 +11302,122 @@ def show_search_context_menu(event):
         if has_atmos:
             tidal_quals.insert(0, 'atmos')
             
+        if platform_name == 'soundcloud':
+            # Dynamically determine the available formats
+            best_aac = 0
+            best_mp3 = 0
+            for dict_item in selected_items:
+                try:
+                    raw = dict_item.get('raw_result')
+                    if not raw: continue
+                    track_data = None
+                    
+                    if dict_item.get('type') != 'track':
+                        # Collections (Albums, Playlists) have their tracks embedded.
+                        # Extract the first track's metadata to sample the format.
+                        
+                        # First check if raw_result was already unpacked into a dictionary by the GUI search worker
+                        if isinstance(raw, dict) and 'tracks' in raw and isinstance(raw['tracks'], list) and len(raw['tracks']) > 0:
+                            track_data = raw['tracks'][0]
+                        else:
+                            # Fallback for custom URL parses where raw is still a SearchResult object wrapper
+                            ek = raw.get('extra_kwargs', {}) if isinstance(raw, dict) else getattr(raw, 'extra_kwargs', {}) or {}
+                            ek_data = ek.get('data', {}) if isinstance(ek, dict) else {}
+                            t_id = dict_item.get('id', '') or (raw.get('result_id', '') if isinstance(raw, dict) else getattr(raw, 'result_id', ''))
+                            
+                            album_data = None
+                            if t_id in ek_data: album_data = ek_data[t_id]
+                            elif str(t_id) in ek_data: album_data = ek_data[str(t_id)]
+                            else:
+                                try:
+                                    if int(t_id) in ek_data: album_data = ek_data[int(t_id)]
+                                except (ValueError, TypeError): pass
+                            
+                            if not album_data and ek_data:
+                                try: album_data = list(ek_data.values())[0]
+                                except Exception: pass
+                                
+                            if isinstance(album_data, dict) and 'tracks' in album_data and isinstance(album_data['tracks'], list) and len(album_data['tracks']) > 0:
+                                track_data = album_data['tracks'][0]
+                            else:
+                                continue
+                            
+                    elif isinstance(raw, dict) and ('media' in raw or 'transcodings' in raw):
+                        # Standard search passes the extracted track dictionary directly
+                        track_data = raw
+                    else:
+                        # Custom URL parse passes the SearchResult object
+                        ek = raw.get('extra_kwargs', {}) if isinstance(raw, dict) else getattr(raw, 'extra_kwargs', {}) or {}
+                        ek_data = ek.get('data', {}) if isinstance(ek, dict) else {}
+                        t_id = dict_item.get('id', '')
+                        
+                        # Try direct lookup, string cast lookup, and int cast lookup
+                        if t_id in ek_data:
+                            track_data = ek_data[t_id]
+                        elif str(t_id) in ek_data:
+                            track_data = ek_data[str(t_id)]
+                        else:
+                            try:
+                                if int(t_id) in ek_data: track_data = ek_data[int(t_id)]
+                            except (ValueError, TypeError): pass
+                            
+                            if not track_data and ek_data:
+                                try: track_data = list(ek_data.values())[0]
+                                except Exception: pass
+
+                    if isinstance(track_data, dict):
+                        # Account for native artist direct downloads or premium stream logic.
+                        # We need to know if the user has a token.
+                        has_sc_token = False
+                        try:
+                            if 'settings_vars' in globals() and 'credentials' in settings_vars:
+                                sc_settings = settings_vars['credentials'].get('SoundCloud', {})
+                                if 'web_access_token' in sc_settings:
+                                    val = sc_settings['web_access_token'].get()
+                                    has_sc_token = bool(val)
+                            if not has_sc_token and 'current_settings' in globals():
+                                has_sc_token = bool(current_settings.get('credentials', {}).get('SoundCloud', {}).get('web_access_token'))
+                        except: pass
+                        
+                        if not has_sc_token:
+                            try:
+                                import json
+                                local_settings = json.load(open('config/settings.json', 'r', encoding='utf-8'))
+                                has_sc_token = bool(local_settings.get('credentials', {}).get('SoundCloud', {}).get('web_access_token'))
+                            except: pass
+
+                        transcodings = track_data.get('media', {}).get('transcodings', [])
+                        if not transcodings and 'transcodings' in track_data:
+                            transcodings = track_data['transcodings']
+                            
+                        for transcoding in transcodings:
+                            protocol = transcoding.get('format', {}).get('protocol', '')
+                            if not has_sc_token and 'encrypted' in protocol: continue
+                            preset = transcoding.get('preset', '')
+                            if preset.startswith('aac_'):
+                                if 'k' in preset:
+                                    try: best_aac = max(best_aac, int(preset.split('_')[1].replace('k', '')))
+                                    except: pass
+                                elif preset in ['aac_1_0', 'aac_hq']:
+                                    best_aac = max(best_aac, 256)
+                            elif preset.startswith('mp3_'):
+                                best_mp3 = 128
+                        
+                        is_downloadable = track_data.get('downloadable') and track_data.get('has_downloads_left')
+                        if is_downloadable and has_sc_token:
+                            # Interface.py intercepts this before transcodings, and usually retrieves Original Master / AAC 256 quality.
+                            best_aac = max(best_aac, 256)
+
+                    else:
+                        print(f"SoundCloud parsing warning: track_data type is {type(track_data)}")
+                except Exception as e:
+                    print(f"Error parsing SoundCloud transcodings: {e}")
+            
+            if best_aac > 0:
+                platform_button_configs['soundcloud'] = [("FLAC", "lossless"), (f"AAC {best_aac}", "high"), ("AAC 128", "low")]
+            elif best_mp3 > 0:
+                platform_button_configs['soundcloud'] = [("FLAC", "lossless"), (f"MP3 {best_mp3}", "high"), ("MP3 64", "low")]
+
         platform_available_qualities = {
             'applemusic': am_quals,
             'apple music': am_quals,
@@ -13934,7 +14051,7 @@ def update_search_platform_dropdown():
         configured_platforms = []
 
         # Platforms where credentials are completely optional (work without any credentials)
-        platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify"]
+        platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify", "SoundCloud"]
 
         for platform_name_iter in base_available_platforms:
             # YouTube, Apple Music, Deezer (public API) always show - no credential check
