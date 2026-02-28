@@ -72,7 +72,7 @@ os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 from utils.vendor_bootstrap import bootstrap_vendor_paths
 bootstrap_vendor_paths()
 
-from utils.utils import find_system_ffmpeg
+from utils.utils import find_system_ffmpeg, get_clean_env
 
 import copy
 import customtkinter
@@ -423,7 +423,7 @@ def _convert_to_wav(input_path, output_path):
             '-ac', '2',               # Stereo
             output_path
         ]
-        result = subprocess.run(cmd, capture_output=True, timeout=15)
+        result = subprocess.run(cmd, capture_output=True, timeout=15, env=get_clean_env())
         if result.returncode == 0 and os.path.exists(output_path):
             file_size = os.path.getsize(output_path)
             if _audio_debug():
@@ -496,7 +496,7 @@ def play_audio(source):
             ]
             
             # Run conversion synchronously (blocking)
-            result = subprocess.run(convert_cmd, capture_output=True, timeout=30)
+            result = subprocess.run(convert_cmd, capture_output=True, timeout=30, env=get_clean_env())
             
             if result.returncode == 0 and os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
                 if _audio_debug():
@@ -651,7 +651,7 @@ def play_audio(source):
         elif system == "Darwin":
             # macOS - use afplay (supports M4A natively)
             # We use Popen to not block the GUI and track process for stopping
-            _audio_process = subprocess.Popen(["afplay", source], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _audio_process = subprocess.Popen(["afplay", source], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=get_clean_env())
             return True
             
         elif system == "Linux":
@@ -681,7 +681,7 @@ def play_audio(source):
             if _audio_debug():
                 print(f"[Audio] Playing with command: {' '.join(player_cmd)}")
 
-            _audio_process = subprocess.Popen(player_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _audio_process = subprocess.Popen(player_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=get_clean_env())
             return True
             
     except Exception as e:
@@ -722,7 +722,7 @@ def stop_audio():
             ctypes.windll.winmm.mciSendStringW("close all", None, 0, 0)
         elif system == "Darwin":
             # Kill any afplay processes
-            subprocess.run(["killall", "afplay"], capture_output=True)
+            subprocess.run(["killall", "afplay"], capture_output=True, env=get_clean_env())
     except Exception as e:
         if _audio_debug():
             print(f"[Audio] Error stopping audio: {e}")
