@@ -15183,6 +15183,10 @@ if __name__ == "__main__":
         if platform.system() == "Darwin":
             def handle_macos_click(event):
                 """Handle macOS-specific multi-selection with Command/Shift keys."""
+                # Allow native heading click to pass through to sorting logic
+                if tree.identify_region(event.x, event.y) == "heading":
+                    return
+
                 # First, check if this is a click on the Preview column or Cover column
                 column = tree.identify_column(event.x)
                 if column == "#1" or column == "#0":  # Preview column or Cover column
