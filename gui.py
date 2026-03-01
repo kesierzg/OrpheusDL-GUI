@@ -1108,7 +1108,7 @@ def get_searchable_platforms(settings, installed_platform_keys, app_path):
     """Return list of platform names that can be searched: YouTube, Apple Music, and Deezer always (optional credentials); others if credentials are set.
     Tidal is excluded until the user has successfully logged in (saved sessions exist), since loading it without sessions opens the browser."""
     base = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
-    platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify"]
+    platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify", "SoundCloud", "Beatport", "Beatsource"]
     configured = []
     creds = (settings or {}).get("credentials", {})
     try:
@@ -9577,6 +9577,24 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
             show_centered_messagebox("Download Error", "Spotify credentials are required for downloading. Please fill in your username, client ID and secret in the settings.", dialog_type="warning")
             return False
 
+    # Beatport: require username and password before download
+    if 'beatport.com' in url_to_download:
+        beatport_creds = (current_settings.get("credentials") or {}).get("Beatport") or {}
+        username = (beatport_creds.get("username") or "").strip()
+        password = (beatport_creds.get("password") or "").strip()
+        if not username or not password:
+            show_centered_messagebox("Download Error", "Beatport credentials are required for downloading. Please fill in your username and password in the settings.", dialog_type="warning")
+            return False
+
+    # Beatsource: require username and password before download
+    if 'beatsource.com' in url_to_download:
+        beatsource_creds = (current_settings.get("credentials") or {}).get("Beatsource") or {}
+        username = (beatsource_creds.get("username") or "").strip()
+        password = (beatsource_creds.get("password") or "").strip()
+        if not username or not password:
+            show_centered_messagebox("Download Error", "Beatsource credentials are required for downloading. Please fill in your username and password in the settings.", dialog_type="warning")
+            return False
+
     # macOS/Linux: Deno is not bundled; required for YouTube downloads. Show install pop-up if missing.
     if platform.system() in ("Darwin", "Linux") and ('youtube.com' in url_to_download or 'youtu.be' in url_to_download):
         deno_found, _ = find_system_deno()
@@ -14051,7 +14069,7 @@ def update_search_platform_dropdown():
         configured_platforms = []
 
         # Platforms where credentials are completely optional (work without any credentials)
-        platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify", "SoundCloud"]
+        platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify", "SoundCloud", "Beatport", "Beatsource"]
 
         for platform_name_iter in base_available_platforms:
             # YouTube, Apple Music, Deezer (public API) always show - no credential check
