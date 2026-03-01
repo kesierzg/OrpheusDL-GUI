@@ -1076,39 +1076,12 @@ def _composite_platform_icon_on_cover(pil_cover, platform_name, cover_size=COVER
     out.paste(icon_pil, (x, y), icon_pil)
     return out
 
-def _tidal_has_saved_sessions(app_path):
-    """Return True only if Tidal has at least one saved session with a valid refresh_token (user has logged in successfully).
-    Tidal requires interactive login; without valid sessions, loading the module can open the browser or block.
-    Exclude Tidal from 'All' until user has completed login so 'Search All' never hangs on Tidal."""
-    try:
-        storage_path = os.path.join(app_path, 'config', 'loginstorage.bin')
-        if not os.path.isfile(storage_path):
-            return False
-        with open(storage_path, 'rb') as f:
-            data = pickle.load(f)
-        modules = data.get('modules', {})
-        tidal_mod = modules.get('tidal', {})
-        if not tidal_mod:
-            return False
-        sessions = tidal_mod.get('sessions', {})
-        selected = tidal_mod.get('selected', 'default')
-        session_data = sessions.get(selected, {})
-        custom_data = session_data.get('custom_data', {})
-        tidal_sessions = custom_data.get('sessions', {})
-        if not tidal_sessions:
-            return False
-        for _name, storage in tidal_sessions.items():
-            if isinstance(storage, dict) and str(storage.get('refresh_token') or '').strip():
-                return True
-        return False
-    except Exception:
-        return False
+
 
 def get_searchable_platforms(settings, installed_platform_keys, app_path):
-    """Return list of platform names that can be searched: YouTube, Apple Music, and Deezer always (optional credentials); others if credentials are set.
-    Tidal is excluded until the user has successfully logged in (saved sessions exist), since loading it without sessions opens the browser."""
+    """Return list of platform names that can be searched: YouTube, Apple Music, Deezer, and others (optional credentials)."""
     base = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
-    platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify", "SoundCloud", "Beatport", "Beatsource"]
+    platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify", "SoundCloud", "Beatport", "Beatsource", "Tidal"]
     configured = []
     creds = (settings or {}).get("credentials", {})
     try:
@@ -1141,10 +1114,7 @@ def get_searchable_platforms(settings, installed_platform_keys, app_path):
                 elif not str(v).strip():
                     is_fully_filled = False
                     break
-        # Tidal: only include if user has saved sessions (has logged in before).
-        # Without sessions, loading Tidal opens the browser for OAuth - skip for users without a Tidal account.
-        if platform_name == "Tidal" and is_fully_filled and not _tidal_has_saved_sessions(app_path):
-            is_fully_filled = False
+
         if is_fully_filled:
             configured.append(platform_name)
     return sorted(configured)
