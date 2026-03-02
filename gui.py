@@ -48,6 +48,8 @@ if getattr(_sys, 'frozen', False) and _sys.platform == 'darwin':
 import os
 import sys
 
+from utils.sleep import keep_awake, allow_sleep
+
 # Add script/application directory to sys.path for imports
 if getattr(sys, 'frozen', False):
     # Frozen (compiled) app
@@ -7984,6 +7986,13 @@ def set_ui_state_downloading(is_downloading):
         except NameError: print("[Debug] NameError setting download UI state.")
         except tkinter.TclError as e: print(f"TclError setting download UI state (widget destroyed?): {e}")
         except Exception as e: print(f"Error setting download UI state: {e}")
+        
+        # Keep computer awake during download
+        if is_downloading:
+            keep_awake()
+        else:
+            allow_sleep()
+
     try:
         if 'app' in globals() and app and app.winfo_exists():
             app.after(0, _update_state)
