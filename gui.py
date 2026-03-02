@@ -6129,11 +6129,13 @@ def initialize_orpheus():
 
     if orpheus_instance is None:
         try:
-            print(f"[Orpheus Init] Initializing Orpheus engine (CWD: {os.getcwd()})...")
+            if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                print(f"[Orpheus Init] Initializing Orpheus engine (CWD: {os.getcwd()})...")
             
             orpheus_instance = Orpheus()
             
-            print("[Orpheus Init] Orpheus engine initialized successfully.")
+            if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                print("[Orpheus Init] Orpheus engine initialized successfully.")
             return True
         except SystemExit as e:
             # Orpheus calls exit() when no modules are installed
@@ -8372,7 +8374,7 @@ def run_interruptible_download(download_func, stop_event, *args, **kwargs):
                 cancellation_start_time = time.time()
             download_thread.join(timeout=1.0)
             if time.time() - cancellation_start_time > cancellation_timeout:
-                print("Download cancellation timeout reached. Forcing UI reset.")
+                print("|GRAY|Download cancellation timeout reached. Forcing UI reset.|RESET|")
                 try:
                     if 'app' in globals() and app and app.winfo_exists():
                         app.after(0, lambda: set_ui_state_downloading(False))
@@ -9343,7 +9345,7 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                         download_exception_occurred = True
             else: print(f"ERROR: Unknown media type '{media_type.name if hasattr(media_type, 'name') else media_type}' encountered.")
 
-            if is_cancelled: print("\nDownload Cancelled.")
+            if is_cancelled: print("\n|GRAY|Download Cancelled.|RESET|")
         except FileNotFoundError as fnf_e:
             ffmpeg_path_setting = fresh_global_settings.get("advanced", {}).get("ffmpeg_path", "ffmpeg").strip()
             is_ffmpeg_error = False
@@ -9378,7 +9380,7 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         download_exception_occurred = True
         if isinstance(e, DownloadCancelledError):
              is_cancelled = True; download_exception_occurred = False
-             print("Download Cancelled.")
+             print("|GRAY|Download Cancelled.|RESET|")
         else: error_type = type(e).__name__; print(f"\nERROR: {error_type}.\nDetails: {e}\n")
     except Exception as e:
         download_exception_occurred = True
