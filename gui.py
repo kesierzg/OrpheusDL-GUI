@@ -2153,8 +2153,13 @@ def _expand_loading_dots_tick():
         prefix = _expand_loading_message_prefix if '_expand_loading_message_prefix' in globals() else "Fetching all data"
         time_est = _expand_loading_time_estimate if '_expand_loading_time_estimate' in globals() else None
         dots = LOADING_ANIMATION_FRAMES[_expand_loading_dots_position]
-        suffix = f"(ETA: {time_est})" if time_est else "(This can take a while)"
-        _expand_loading_label.configure(text=f"{prefix}{dots} {suffix}")
+        if time_est:
+            suffix = f" (ETA: {time_est})"
+        elif "(page " in prefix:
+            suffix = ""
+        else:
+            suffix = " (This can take a while)"
+        _expand_loading_label.configure(text=f"{prefix}{dots}{suffix}")
         _expand_loading_dots_position = (_expand_loading_dots_position + 1) % len(LOADING_ANIMATION_FRAMES)
     except Exception:
         pass
@@ -2171,8 +2176,13 @@ def _show_expand_long_loading_message():
         prefix = _expand_loading_message_prefix if '_expand_loading_message_prefix' in globals() else "Fetching all data"
         time_est = _expand_loading_time_estimate if '_expand_loading_time_estimate' in globals() else None
         _expand_loading_dots_position = 0
-        suffix = f"(ETA: {time_est})" if time_est else "(This can take a while)"
-        _expand_loading_label.configure(text=prefix + LOADING_ANIMATION_FRAMES[0] + f" {suffix}")
+        if time_est:
+            suffix = f" (ETA: {time_est})"
+        elif "(page " in prefix:
+            suffix = ""
+        else:
+            suffix = " (This can take a while)"
+        _expand_loading_label.configure(text=prefix + LOADING_ANIMATION_FRAMES[0] + suffix)
         _expand_loading_label.pack(side="left", anchor="w", padx=(12, 0), pady=0)
         if 'app' in globals() and app and app.winfo_exists():
             _expand_loading_dots_after_id = app.after(300, _expand_loading_dots_tick)
@@ -2190,8 +2200,13 @@ def _update_loading_estimate_from_worker(count, platform_name, message_prefix, e
         if '_expand_loading_label' in globals() and _expand_loading_label and _expand_loading_label.winfo_ismapped():
             if 'app' in globals() and app and app.winfo_exists():
                 time_est = _expand_loading_time_estimate
-                suffix = f"(ETA: {time_est})" if time_est else "(This can take a while)"
-                app.after(0, lambda: _expand_loading_label.configure(text=f"{message_prefix} .. {suffix}"))
+                if time_est:
+                    suffix = f" (ETA: {time_est})"
+                elif "(page " in message_prefix:
+                    suffix = ""
+                else:
+                    suffix = " (This can take a while)"
+                app.after(0, lambda: _expand_loading_label.configure(text=f"{message_prefix} ..{suffix}"))
     except Exception:
         pass
 
@@ -4027,7 +4042,7 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                         msg = str(args[0]) if args else ''
                         m = re.search(r'(page\s+\d+/\d+)', msg, re.IGNORECASE)
                         if m:
-                            _update_loading_estimate_from_worker(0, platform_name, f"Fetching label data ({m.group(1)})...")
+                            _update_loading_estimate_from_worker(0, platform_name, f"Fetching label data ({m.group(1)})")
                         if _original_mod_print:
                             _original_mod_print(*args, **kwargs)
                     if _original_mod_print:
@@ -4222,7 +4237,7 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                         msg = str(args[0]) if args else ''
                         m = re.search(r'(page\s+\d+/\d+)', msg, re.IGNORECASE)
                         if m:
-                            _update_loading_estimate_from_worker(0, platform_name, f"Fetching artist data ({m.group(1)})...")
+                            _update_loading_estimate_from_worker(0, platform_name, f"Fetching artist data ({m.group(1)})")
                         if _original_mod_print_a:
                             _original_mod_print_a(*args, **kwargs)
                     if _original_mod_print_a:
