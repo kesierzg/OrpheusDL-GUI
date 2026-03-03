@@ -15,6 +15,7 @@ Watch trailer: https://youtu.be/RAXsW67SjGU
    - Linux - Demo to install: https://youtu.be/51eESmveCME (1m8s)
 
 ### If you prefer running from source:
+0. Make sure [OrpheusDL](https://github.com/bascurtiz/OrpheusDL) is installed
 1. Clone this repository (`git clone https://github.com/bascurtiz/OrpheusDL-GUI`) or download the ZIP file.
 2. Ensure all files from this repository are placed in the same folder where your `orpheus.py` is located.
 3. Update your package list: `sudo apt update`
