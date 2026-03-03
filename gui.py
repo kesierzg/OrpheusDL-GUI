@@ -2095,7 +2095,7 @@ def _estimate_expand_time(track_count, platform_name, estimate_type='track', con
         # Per-track fetch time in seconds (measured with 100-track playlists)
         per_track_rates = {
             'spotify': 0.64,
-            'deezer': 0.12,
+            'deezer': 0.018,
             'tidal': 0.42,
             'qobuz': 0.25,
             'applemusic': 0.005,    # loads almost instantly
