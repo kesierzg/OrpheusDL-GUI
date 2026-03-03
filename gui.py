@@ -7532,7 +7532,7 @@ def log_to_textbox(msg, error=False):
     Simplified log function that relies on clean CLI output.
     Only handles basic styling: colors, emojis, hyperlinks, and platform coloring.
     """
-    global _last_message_was_empty, log_textbox, log_scrollbar, app
+    global _last_message_was_empty, log_textbox, log_scrollbar, app, _auto_scroll_active
     
     try:
         if 'log_textbox' not in globals() or not log_textbox or not log_textbox.winfo_exists(): 
@@ -7612,149 +7612,145 @@ def log_to_textbox(msg, error=False):
                                 _insert_text_with_links_and_platforms(rest_text, error)
                     else:
                         _insert_text_with_links_and_platforms(part, error)
-            return
-        
-        emoji_processed = False
-        for emoji, tag in [("✅", "emoji_success"), ("❌", "emoji_error"), ("▶", "emoji_warning"), ("✓", "emoji_success")]:
-            if emoji in content_to_insert:
-                parts = content_to_insert.split(emoji)
-                for i, part in enumerate(parts):
-                    if part:
-                        if "|RED|" in part or "|YELLOW|" in part or "|GRAY|" in part or "|PLATFORM_" in part:
-                            import re
-                            try:
-                                color_parts = []
-                                current_pos = 0
-                                color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|PLATFORM_[A-Z_]+)\|(.*?)(?:\|RESET\||(?=\|[A-Z_]+\|)|$)', part)
-                                
-                                for marker in color_markers:
-                                    if marker.start() > current_pos:
-                                        text_before = part[current_pos:marker.start()]
-                                        if text_before:
-                                            _insert_text_with_links_and_platforms(text_before, error)
+            pass  # Fall through to auto-scroll and state restore below
+        else:
+            emoji_processed = False
+            for emoji, tag in [("✅", "emoji_success"), ("❌", "emoji_error"), ("▶", "emoji_warning"), ("✓", "emoji_success")]:
+                if emoji in content_to_insert:
+                    parts = content_to_insert.split(emoji)
+                    for i, part in enumerate(parts):
+                        if part:
+                            if "|RED|" in part or "|YELLOW|" in part or "|GRAY|" in part or "|PLATFORM_" in part:
+                                import re
+                                try:
+                                    color_parts = []
+                                    current_pos = 0
+                                    color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|PLATFORM_[A-Z_]+)\|(.*?)(?:\|RESET\||(?=\|[A-Z_]+\|)|$)', part)
                                     
-                                    color = marker.group(1).lower()
-                                    text = marker.group(2)
+                                    for marker in color_markers:
+                                        if marker.start() > current_pos:
+                                            text_before = part[current_pos:marker.start()]
+                                            if text_before:
+                                                _insert_text_with_links_and_platforms(text_before, error)
+                                        
+                                        color = marker.group(1).lower()
+                                        text = marker.group(2)
+                                        if color == 'red':
+                                            log_textbox.insert("end", text, ("color_red",))
+                                        elif color == 'yellow':
+                                            log_textbox.insert("end", text, ("color_yellow",))
+                                        elif color == 'gray':
+                                            log_textbox.insert("end", text, ("color_gray",))
+                                        elif color.startswith('platform_'):
+                                            platform_tag = color
+                                            log_textbox.insert("end", text, (platform_tag,))
+                                        current_pos = marker.end()
+                                    
+                                    if current_pos < len(part):
+                                        remaining_text = part[current_pos:]
+                                        if remaining_text:
+                                            _insert_text_with_links_and_platforms(remaining_text, error)
+                                except:
+                                    _insert_text_with_links_and_platforms(part, error)
+                            else:
+                                _insert_text_with_links_and_platforms(part, error)
+                        
+                        if i < len(parts) - 1:
+                            log_textbox.insert("end", emoji, (tag,))
+                    
+                    emoji_processed = True
+                    break
+            
+            if not emoji_processed:
+                if "=== + " in content_to_insert:
+                    parts = content_to_insert.split("=== + ")
+                    log_textbox.insert("end", parts[0] + "=== ")
+                    log_textbox.insert("end", "✅", ("emoji_success",))
+                    if len(parts) > 1:
+                        log_textbox.insert("end", " " + parts[1])
+                elif "=== X " in content_to_insert or "=== ✗ " in content_to_insert:
+                    if "=== X " in content_to_insert:
+                        parts = content_to_insert.split("=== X ")
+                        symbol = "❌"
+                    else:
+                        parts = content_to_insert.split("=== ✗ ")
+                        symbol = "❌"
+                    log_textbox.insert("end", parts[0] + "=== ")
+                    log_textbox.insert("end", symbol, ("emoji_error",))
+                    if len(parts) > 1:
+                        log_textbox.insert("end", " " + parts[1])
+                elif "=== > " in content_to_insert:
+                    parts = content_to_insert.split("=== > ")
+                    log_textbox.insert("end", parts[0] + "=== ")
+                    log_textbox.insert("end", "▶", ("emoji_warning",))
+                    if len(parts) > 1:
+                        log_textbox.insert("end", " " + parts[1])
+                else:
+                    import re
+                    try:
+                        if "|RED|" in content_to_insert or "|YELLOW|" in content_to_insert or "|GRAY|" in content_to_insert or "|PLATFORM_" in content_to_insert:
+                            parts = []
+                            current_pos = 0
+                            color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|PLATFORM_[A-Z_]+)\|(.*?)(?:\|RESET\||(?=\|[A-Z_]+\|)|$)', content_to_insert)
+                            
+                            for marker in color_markers:
+                                if marker.start() > current_pos:
+                                    parts.append(('text', content_to_insert[current_pos:marker.start()]))
+                                color = marker.group(1).lower()
+                                text = marker.group(2)
+                                parts.append(('color', color, text))
+                                current_pos = marker.end()
+                            if current_pos < len(content_to_insert):
+                                parts.append(('text', content_to_insert[current_pos:]))
+                            for part in parts:
+                                if part[0] == 'text':
+                                    _insert_text_with_links_and_platforms(part[1], error)
+                                        
+                                elif part[0] == 'color':
+                                    color = part[1]
+                                    text = part[2]
                                     if color == 'red':
                                         log_textbox.insert("end", text, ("color_red",))
                                     elif color == 'yellow':
                                         log_textbox.insert("end", text, ("color_yellow",))
                                     elif color == 'gray':
                                         log_textbox.insert("end", text, ("color_gray",))
+
                                     elif color.startswith('platform_'):
                                         platform_tag = color
                                         log_textbox.insert("end", text, (platform_tag,))
-                                    current_pos = marker.end()
-                                
-                                if current_pos < len(part):
-                                    remaining_text = part[current_pos:]
-                                    if remaining_text:
-                                        _insert_text_with_links_and_platforms(remaining_text, error)
-                            except:
-                                _insert_text_with_links_and_platforms(part, error)
-                        else:
-                            _insert_text_with_links_and_platforms(part, error)
-                    
-                    if i < len(parts) - 1:
-                        log_textbox.insert("end", emoji, (tag,))
-                
-                emoji_processed = True
-                break
-        
-        if not emoji_processed:
-            if "=== + " in content_to_insert:
-                parts = content_to_insert.split("=== + ")
-                log_textbox.insert("end", parts[0] + "=== ")
-                log_textbox.insert("end", "✅", ("emoji_success",))
-                if len(parts) > 1:
-                    log_textbox.insert("end", " " + parts[1])
-            elif "=== X " in content_to_insert or "=== ✗ " in content_to_insert:
-                if "=== X " in content_to_insert:
-                    parts = content_to_insert.split("=== X ")
-                    symbol = "❌"
-                else:
-                    parts = content_to_insert.split("=== ✗ ")
-                    symbol = "❌"
-                log_textbox.insert("end", parts[0] + "=== ")
-                log_textbox.insert("end", symbol, ("emoji_error",))
-                if len(parts) > 1:
-                    log_textbox.insert("end", " " + parts[1])
-            elif "=== > " in content_to_insert:
-                parts = content_to_insert.split("=== > ")
-                log_textbox.insert("end", parts[0] + "=== ")
-                log_textbox.insert("end", "▶", ("emoji_warning",))
-                if len(parts) > 1:
-                    log_textbox.insert("end", " " + parts[1])
-            else:
-                import re
-                try:
-                    if "|RED|" in content_to_insert or "|YELLOW|" in content_to_insert or "|GRAY|" in content_to_insert or "|PLATFORM_" in content_to_insert:
-                        parts = []
-                        current_pos = 0
-                        color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|PLATFORM_[A-Z_]+)\|(.*?)(?:\|RESET\||(?=\|[A-Z_]+\|)|$)', content_to_insert)
+                                    else:
+                                        tag = "error" if error else "normal"
+                                        log_textbox.insert("end", text, (tag,))
                         
-                        for marker in color_markers:
-                            if marker.start() > current_pos:
-                                parts.append(('text', content_to_insert[current_pos:marker.start()]))
-                            color = marker.group(1).lower()
-                            text = marker.group(2)
-                            parts.append(('color', color, text))
-                            current_pos = marker.end()
-                        if current_pos < len(content_to_insert):
-                            parts.append(('text', content_to_insert[current_pos:]))
-                        for part in parts:
-                            if part[0] == 'text':
-                                _insert_text_with_links_and_platforms(part[1], error)
-                                    
-                            elif part[0] == 'color':
-                                color = part[1]
-                                text = part[2]
-                                if color == 'red':
-                                    log_textbox.insert("end", text, ("color_red",))
-                                elif color == 'yellow':
-                                    log_textbox.insert("end", text, ("color_yellow",))
-                                elif color == 'gray':
-                                    log_textbox.insert("end", text, ("color_gray",))
+                        else:
+                            _insert_text_with_links_and_platforms(content_to_insert, error)
+                                
+                    except re.error as regex_err:
+                        print(f"[Debug] Regex error in log_to_textbox: {regex_err}")
+                        tag = "error" if error else "normal"
+                        log_textbox.insert("end", content_to_insert, (tag,))
 
-                                elif color.startswith('platform_'):
-                                    platform_tag = color
-                                    log_textbox.insert("end", text, (platform_tag,))
-                                else:
-                                    tag = "error" if error else "normal"
-                                    log_textbox.insert("end", text, (tag,))
-                    
-                    else:
-                        _insert_text_with_links_and_platforms(content_to_insert, error)
-                            
-                except re.error as regex_err:
-                    print(f"[Debug] Regex error in log_to_textbox: {regex_err}")
-                    tag = "error" if error else "normal"
-                    log_textbox.insert("end", content_to_insert, (tag,))
+        # --- Auto-scroll and state restore (runs for ALL branches) ---
+        try:
+            if _auto_scroll_active:
+                log_textbox.yview_moveto(1.0)
+                log_textbox.update()
+        except:
+            pass
+
+        log_textbox.configure(state="disabled")
+
+        def delayed_scroll():
             try:
-                yview_info = log_textbox.yview()
-                is_at_bottom = yview_info[1] >= 0.95
-                
-                if is_at_bottom:
+                if log_textbox and log_textbox.winfo_exists() and _auto_scroll_active:
                     log_textbox.yview_moveto(1.0)
-                    log_textbox.update()
+                    log_textbox.update_idletasks()
             except:
                 pass
-                
-            log_textbox.configure(state="disabled")
-            def delayed_scroll():
-                try:
-                    if log_textbox and log_textbox.winfo_exists():
-                        yview_info = log_textbox.yview()
-                        is_at_bottom = yview_info[1] >= 0.95
-                        
-                        if is_at_bottom:
-                            log_textbox.yview_moveto(1.0)
-                            log_textbox.update_idletasks()
-                except:
-                    pass
-            
-            if 'app' in globals() and app and app.winfo_exists():
-                app.after(10, delayed_scroll)
+
+        if 'app' in globals() and app and app.winfo_exists():
+            app.after(10, delayed_scroll)
         try:
             if 'app' in globals() and app and app.winfo_exists() and 'log_scrollbar' in globals() and log_scrollbar:
                 app.after(0, lambda: _check_and_toggle_text_scrollbar(log_textbox, log_scrollbar))
@@ -7903,10 +7899,7 @@ def update_log_area():
             app.update_idletasks()
             try:
                 if 'log_textbox' in globals() and log_textbox and log_textbox.winfo_exists():
-                    yview_info = log_textbox.yview()
-                    is_at_bottom = yview_info[1] >= 0.95
-                    
-                    if is_at_bottom:
+                    if _auto_scroll_active:
                         log_textbox.yview_moveto(1.0)
             except:
                 pass
@@ -7987,7 +7980,9 @@ def clear_search_entry():
     except Exception as e: print(f"Error clearing search entry: {e}")
 
 def set_ui_state_downloading(is_downloading):
-    global download_button, stop_button, progress_bar, app
+    global download_button, stop_button, progress_bar, app, _auto_scroll_active
+    # Enable auto-scroll when download starts, release it when download ends
+    _auto_scroll_active = is_downloading
     def _update_state():
         download_state = "disabled" if is_downloading else "normal"; stop_state = "normal" if is_downloading else "disabled"
         try:
@@ -14760,6 +14755,7 @@ if __name__ == "__main__":
         search_process_active = False
         download_process_active = False
         _last_message_was_empty = False
+        _auto_scroll_active = True
         _download_cancelled = False
         _created_credential_tabs = set()
         credential_tab_frames = {}
@@ -14947,6 +14943,25 @@ if __name__ == "__main__":
         log_textbox.grid(row=0, column=0, sticky="nsew", padx=(5,0), pady=3)
         log_scrollbar = customtkinter.CTkScrollbar(textbox_container, command=log_textbox.yview); log_textbox.configure(yscrollcommand=log_scrollbar.set)
         log_textbox.bind("<Configure>", lambda event: _check_and_toggle_text_scrollbar(log_textbox, log_scrollbar) if 'log_textbox' in globals() and log_textbox and log_textbox.winfo_exists() and 'log_scrollbar' in globals() and log_scrollbar and log_scrollbar.winfo_exists() else None)
+        def _on_log_mousewheel(event):
+            global _auto_scroll_active
+            try:
+                # On Windows, event.delta > 0 means scroll up, < 0 means scroll down
+                # On macOS, it's the same convention
+                if event.delta > 0:
+                    # User scrolled up → disable auto-scroll so they can read earlier output
+                    _auto_scroll_active = False
+                else:
+                    # User scrolled down → check if they reached the bottom, re-enable auto-scroll
+                    if log_textbox and log_textbox.winfo_exists():
+                        yview_info = log_textbox.yview()
+                        if yview_info[1] >= 0.99:
+                            _auto_scroll_active = True
+            except:
+                pass
+        log_textbox.bind("<MouseWheel>", _on_log_mousewheel)  # Windows/macOS
+        log_textbox.bind("<Button-4>", lambda e: _on_log_mousewheel(type('Event', (), {'delta': 120})()))  # Linux scroll up
+        log_textbox.bind("<Button-5>", lambda e: _on_log_mousewheel(type('Event', (), {'delta': -120})()))  # Linux scroll down
         bottom_frame = customtkinter.CTkFrame(download_tab, fg_color="transparent"); bottom_frame.grid(row=3, column=0, columnspan=4, sticky="ew", padx=10, pady=(5, 10)); bottom_frame.grid_columnconfigure(0, weight=1)
         progress_bar = customtkinter.CTkProgressBar(bottom_frame); progress_bar.set(0); progress_bar.grid(row=0, column=0, sticky="ew", padx=(5, 5))
         clear_output_button = customtkinter.CTkButton(bottom_frame, text="Clear Output", width=100, height=30, command=clear_output_log, fg_color="#343638", hover_color="#1F6AA5"); clear_output_button.grid(row=0, column=1, sticky="e", padx=(5, 10))
