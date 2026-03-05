@@ -7596,15 +7596,15 @@ def log_to_textbox(msg, error=False):
         log_textbox.configure(state="normal")
         try:
             log_textbox.tag_configure("error", foreground="#FF4444")
-            log_textbox.tag_configure("detail_text", foreground="#b5b1b4")
-            log_textbox.tag_configure("normal", foreground="#b5b1b4")
+            log_textbox.tag_configure("detail_text", foreground="#a9a8b3")
+            log_textbox.tag_configure("normal", foreground="#a9a8b3")
             log_textbox.tag_configure("hyperlink", foreground="royal blue", underline=True)
             log_textbox.tag_configure("emoji_success", foreground="#00C851")
             log_textbox.tag_configure("emoji_error", foreground="#FF4444")
             log_textbox.tag_configure("emoji_warning", foreground="#CCA700")
             log_textbox.tag_configure("color_red", foreground="#FF4444")
             log_textbox.tag_configure("color_yellow", foreground="#CCA700")
-            log_textbox.tag_configure("color_gray", foreground="#b5b1b4")
+            log_textbox.tag_configure("color_gray", foreground="#a9a8b3")
             log_textbox.tag_configure("color_green", foreground="#00C851")
             log_textbox.tag_configure("color_white", foreground="#DCE4EE")
             for service, color in SERVICE_COLORS.items():
