@@ -7424,7 +7424,7 @@ def _clean_ansi_and_process_markers(text):
     # Colorize 'Downloading ...' specific values in white
     import re
     text = re.sub(r'=== (Downloading \S+) (.*?) (\([^)]+\)) ===', r'=== \1 |WHITE|\2|RESET| \3 ===', text)
-    text = re.sub(r'(Artists?: )(.*?) (\([^)]+\))', r'\1|WHITE|\2|RESET| \3', text)
+    text = re.sub(r'(Artists?: )(.*)', r'\1|WHITE|\2|RESET|', text)
     text = re.sub(r'(Playlist creator: )(.*)', r'\1|WHITE|\2|RESET|', text)
     text = re.sub(r'(Playlist creation year: )(.*)', r'\1|WHITE|\2|RESET|', text)
     text = re.sub(r'(Number of tracks: )(.*)', r'\1|WHITE|\2|RESET|', text)
