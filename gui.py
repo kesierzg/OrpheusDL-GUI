@@ -7417,6 +7417,26 @@ def _clean_ansi_and_process_markers(text):
     # Colorize specific status text
     text = text.replace('(already exists)', '|YELLOW|(already exists)|RESET|')
     text = text.replace('(failed)', '|RED|(failed)|RESET|')
+    text = text.replace('Track skipped', '|YELLOW|skipped|RESET|')
+    text = text.replace('Track failed', '|RED|failed|RESET|')
+    text = text.replace('Track completed', '|GREEN|completed|RESET|')
+    
+    # Colorize 'Downloading ...' specific values in white
+    import re
+    text = re.sub(r'=== (Downloading \S+) (.*?) (\([^)]+\)) ===', r'=== \1 |WHITE|\2|RESET| \3 ===', text)
+    text = re.sub(r'(Artists?: )(.*?) (\([^)]+\))', r'\1|WHITE|\2|RESET| \3', text)
+    text = re.sub(r'(Playlist creator: )(.*)', r'\1|WHITE|\2|RESET|', text)
+    text = re.sub(r'(Playlist creation year: )(.*)', r'\1|WHITE|\2|RESET|', text)
+    text = re.sub(r'(Number of tracks: )(.*)', r'\1|WHITE|\2|RESET|', text)
+    text = re.sub(r'(Number of albums: )(.*)', r'\1|WHITE|\2|RESET|', text)
+    text = re.sub(r'(Number of releases: )(.*)', r'\1|WHITE|\2|RESET|', text)
+    text = re.sub(r'(Release year: )(.*)', r'\1|WHITE|\2|RESET|', text)
+    text = re.sub(r'(Year: )(.*)', r'\1|WHITE|\2|RESET|', text)
+    text = re.sub(r'(Duration: )(.*)', r'\1|WHITE|\2|RESET|', text)
+    text = re.sub(r'(\s+\d+/\d+ [✓❌▶⚠] )(.*)', r'\1|WHITE|\2|RESET|', text)
+    
+    # Colorize '... cancelled' text in red inside headers (e.g., Playlist <ID> cancelled)
+    text = re.sub(r'=== (\S+) (.*?) cancelled ===', r'=== \1 |RED|\2 cancelled|RESET| ===', text)
 
 
 
@@ -7426,7 +7446,7 @@ def _clean_ansi_and_process_markers(text):
         # If content already has our custom tags, don't wrap it again
         if "|YELLOW|" in content or "|RED|" in content or "|GRAY|" in content:
              return content
-        if "Track skipped" in content or "▶" in content or content.strip() == ">":
+        if "▶" in content or content.strip() == ">":
             return content
         return f'|YELLOW|{content}|RESET|'
     
@@ -7451,7 +7471,7 @@ def _insert_text_with_links_and_platforms(text_content, error):
     try:
         # Clean up any leftover color markers that weren't consumed by regex
         text_content = text_content.replace('|RESET|', '')
-        text_content = re.sub(r'\|(RED|YELLOW|GRAY)\|', '', text_content)
+        text_content = re.sub(r'\|(RED|YELLOW|GRAY|GREEN|WHITE)\|', '', text_content)
         
         url_regex = r'https?://\S+|www\.\S+'
         service_names = '|'.join(re.escape(s) for s in SERVICE_COLORS.keys())
@@ -7499,7 +7519,7 @@ def _process_color_markers(text, error):
     try:
         parts = []
         current_pos = 0
-        color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|PLATFORM_[A-Z_]+)\|(.*?)(?:\|RESET\||(?=\|[A-Z_]+\|)|$)', text)
+        color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|GREEN|WHITE|PLATFORM_[A-Z_]+)\|(.*?)(?:\|RESET\||(?=\|[A-Z_]+\|)|$)', text)
         
         for marker in color_markers:
             if marker.start() > current_pos:
@@ -7515,6 +7535,10 @@ def _process_color_markers(text, error):
                 log_textbox.insert("end", marker_text, ("color_yellow",))
             elif color == 'gray':
                 log_textbox.insert("end", marker_text, ("color_gray",))
+            elif color == 'green':
+                log_textbox.insert("end", marker_text, ("color_green",))
+            elif color == 'white':
+                log_textbox.insert("end", marker_text, ("color_white",))
             elif color.startswith('platform_'):
                 platform_tag = color
                 log_textbox.insert("end", marker_text, (platform_tag,))
@@ -7573,7 +7597,7 @@ def log_to_textbox(msg, error=False):
         try:
             log_textbox.tag_configure("error", foreground="#FF4444")
             log_textbox.tag_configure("detail_text", foreground="#B1B6BD")
-            log_textbox.tag_configure("normal", foreground="")
+            log_textbox.tag_configure("normal", foreground="#BBBBBB")
             log_textbox.tag_configure("hyperlink", foreground="royal blue", underline=True)
             log_textbox.tag_configure("emoji_success", foreground="#00C851")
             log_textbox.tag_configure("emoji_error", foreground="#FF4444")
@@ -7581,6 +7605,8 @@ def log_to_textbox(msg, error=False):
             log_textbox.tag_configure("color_red", foreground="#FF4444")
             log_textbox.tag_configure("color_yellow", foreground="#CCA700")
             log_textbox.tag_configure("color_gray", foreground="#B1B6BD")
+            log_textbox.tag_configure("color_green", foreground="#00C851")
+            log_textbox.tag_configure("color_white", foreground="#DCE4EE")
             for service, color in SERVICE_COLORS.items():
                 log_textbox.tag_configure(f"service_{service.replace(' ', '_')}", foreground=color)
                 log_textbox.tag_configure(f"platform_{service.replace(' ', '_')}", foreground=color)
@@ -7595,7 +7621,7 @@ def log_to_textbox(msg, error=False):
             for i, part in enumerate(parts):
                 if i == 0:
                     if part:
-                        if "|RED|" in part or "|YELLOW|" in part or "|GRAY|" in part or "|PLATFORM_" in part:
+                        if "|RED|" in part or "|YELLOW|" in part or "|GRAY|" in part or "|GREEN|" in part or "|WHITE|" in part or "|PLATFORM_" in part:
                             _process_color_markers(part, error)
                         else:
                             _insert_text_with_links_and_platforms(part, error)
@@ -7606,7 +7632,7 @@ def log_to_textbox(msg, error=False):
                         rest_text = symbol_and_rest[1] if len(symbol_and_rest) > 1 else ""
                         log_textbox.insert("end", symbol_text, ("emoji_error",))
                         if rest_text:
-                            if "|RED|" in rest_text or "|YELLOW|" in rest_text or "|GRAY|" in rest_text or "|PLATFORM_" in rest_text:
+                            if "|RED|" in rest_text or "|YELLOW|" in rest_text or "|GRAY|" in rest_text or "|GREEN|" in rest_text or "|WHITE|" in rest_text or "|PLATFORM_" in rest_text:
                                 _process_color_markers(rest_text, error)
                             else:
                                 _insert_text_with_links_and_platforms(rest_text, error)
@@ -7620,12 +7646,12 @@ def log_to_textbox(msg, error=False):
                     parts = content_to_insert.split(emoji)
                     for i, part in enumerate(parts):
                         if part:
-                            if "|RED|" in part or "|YELLOW|" in part or "|GRAY|" in part or "|PLATFORM_" in part:
+                            if "|RED|" in part or "|YELLOW|" in part or "|GRAY|" in part or "|GREEN|" in part or "|WHITE|" in part or "|PLATFORM_" in part:
                                 import re
                                 try:
                                     color_parts = []
                                     current_pos = 0
-                                    color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|PLATFORM_[A-Z_]+)\|(.*?)(?:\|RESET\||(?=\|[A-Z_]+\|)|$)', part)
+                                    color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|GREEN|WHITE|PLATFORM_[A-Z_]+)\|(.*?)(?:\|RESET\||(?=\|[A-Z_]+\|)|$)', part)
                                     
                                     for marker in color_markers:
                                         if marker.start() > current_pos:
@@ -7641,6 +7667,10 @@ def log_to_textbox(msg, error=False):
                                             log_textbox.insert("end", text, ("color_yellow",))
                                         elif color == 'gray':
                                             log_textbox.insert("end", text, ("color_gray",))
+                                        elif color == 'green':
+                                            log_textbox.insert("end", text, ("color_green",))
+                                        elif color == 'white':
+                                            log_textbox.insert("end", text, ("color_white",))
                                         elif color.startswith('platform_'):
                                             platform_tag = color
                                             log_textbox.insert("end", text, (platform_tag,))
@@ -7678,20 +7708,28 @@ def log_to_textbox(msg, error=False):
                     log_textbox.insert("end", parts[0] + "=== ")
                     log_textbox.insert("end", symbol, ("emoji_error",))
                     if len(parts) > 1:
-                        log_textbox.insert("end", " " + parts[1])
+                        rest_text = " " + parts[1]
+                        if "|RED|" in rest_text or "|YELLOW|" in rest_text or "|GRAY|" in rest_text or "|GREEN|" in rest_text or "|WHITE|" in rest_text or "|PLATFORM_" in rest_text:
+                            _process_color_markers(rest_text, error)
+                        else:
+                            log_textbox.insert("end", rest_text)
                 elif "=== > " in content_to_insert:
                     parts = content_to_insert.split("=== > ")
                     log_textbox.insert("end", parts[0] + "=== ")
                     log_textbox.insert("end", "▶", ("emoji_warning",))
                     if len(parts) > 1:
-                        log_textbox.insert("end", " " + parts[1])
+                        rest_text = " " + parts[1]
+                        if "|RED|" in rest_text or "|YELLOW|" in rest_text or "|GRAY|" in rest_text or "|GREEN|" in rest_text or "|WHITE|" in rest_text or "|PLATFORM_" in rest_text:
+                            _process_color_markers(rest_text, error)
+                        else:
+                            log_textbox.insert("end", rest_text)
                 else:
                     import re
                     try:
-                        if "|RED|" in content_to_insert or "|YELLOW|" in content_to_insert or "|GRAY|" in content_to_insert or "|PLATFORM_" in content_to_insert:
+                        if "|RED|" in content_to_insert or "|YELLOW|" in content_to_insert or "|GRAY|" in content_to_insert or "|GREEN|" in content_to_insert or "|WHITE|" in content_to_insert or "|PLATFORM_" in content_to_insert:
                             parts = []
                             current_pos = 0
-                            color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|PLATFORM_[A-Z_]+)\|(.*?)(?:\|RESET\||(?=\|[A-Z_]+\|)|$)', content_to_insert)
+                            color_markers = re.finditer(r'\|(RED|YELLOW|GRAY|GREEN|WHITE|PLATFORM_[A-Z_]+)\|(.*?)(?:\|RESET\||(?=\|[A-Z_]+\|)|$)', content_to_insert)
                             
                             for marker in color_markers:
                                 if marker.start() > current_pos:
@@ -7715,6 +7753,10 @@ def log_to_textbox(msg, error=False):
                                         log_textbox.insert("end", text, ("color_yellow",))
                                     elif color == 'gray':
                                         log_textbox.insert("end", text, ("color_gray",))
+                                    elif color == 'green':
+                                        log_textbox.insert("end", text, ("color_green",))
+                                    elif color == 'white':
+                                        log_textbox.insert("end", text, ("color_white",))
 
                                     elif color.startswith('platform_'):
                                         platform_tag = color
