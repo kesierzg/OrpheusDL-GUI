@@ -905,7 +905,7 @@ def setup_logging(log_queue):
         logging.info("Logging configured to use GUI queue (debug mode enabled).")
     else:
         root_logger.setLevel(logging.CRITICAL)
-__version__ = "v1.0.8"
+__version__ = "v1.0.9"
 from update_checker import run_check_in_thread
 _mutex_handle = None
 if platform.system() == "Windows":
