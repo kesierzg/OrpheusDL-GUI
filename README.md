@@ -1,10 +1,6 @@
 # OrpheusDL GUI
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/bascurtiz/OrpheusDL-GUI/main/animated.gif"
-       alt="OrpheusDL GUI Preview"
-       width="940">
-</p>
+<img src="https://raw.githubusercontent.com/bascurtiz/OrpheusDL-GUI/main/animated.gif" alt="GUI overview">
 
 ## Trailer
 Watch trailer: https://youtu.be/RAXsW67SjGU
