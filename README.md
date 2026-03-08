@@ -52,3 +52,7 @@ Watch trailer: https://youtu.be/RAXsW67SjGU
 | YouTube      | ✅     |              |        |              |        |              |        |
 
 \* *If this platform isn't working properly and you have a valid subscription you can share, please open an issue or contact me. I'm willing to debug!* 
+
+<br>
+
+<img src="badge.svg" width="160" alt="Badge">
