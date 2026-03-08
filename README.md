@@ -55,4 +55,4 @@ Watch trailer: https://youtu.be/RAXsW67SjGU
 
 <br>
 
-<img src="badge.svg" width="160" alt="Badge">
+<img src="badge.svg" width="189" alt="Badge">
