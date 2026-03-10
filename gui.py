@@ -10367,10 +10367,6 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
         _name = str(getattr(result, 'name', '') or '')
         _artists_str = ', '.join([str(a) for a in getattr(result, 'artists', []) or []]) or ''
         quality_str = _build_additional_string(result, search_type_str, raw_result)
-        try:
-            with open(r"d:\OrpheusDL-GUI\debug_log.txt", "a", encoding="utf-8") as f:
-                f.write(f"GUI Search item: title='{_name}', search_type='{search_type_str}', duration='{raw_duration_seconds}', _additional={getattr(result, 'additional', None)}, raw_result_has_tracks={'tracks' in raw_result if isinstance(raw_result, dict) else False}, built_quality='{quality_str}'\n")
-        except: pass
         formatted_result = {
             'id': str(getattr(result, 'result_id', '')),
             'title': _name,
