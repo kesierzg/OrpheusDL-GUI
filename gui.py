@@ -6730,7 +6730,7 @@ def _clear_platform_session(platform_name):
                 
                 # Success message on main thread
                 if platform_name == "Tidal":
-                    msg = "Tidal stored session has been cleared.\n\nNext search or download will open a browser window where you can log in with your Tidal account to link device."
+                    msg = "Tidal stored session has been cleared.\n\nYou can still search and preview tracks in Guest mode. A browser window for login will only open if you attempt to download protected content."
                 else:
                     msg = f"{platform_name} stored session has been cleared.\n\nNext search or download will log in with your credentials from above."
                 
