@@ -6720,30 +6720,30 @@ def _clear_platform_session(platform_name):
         if not show_centered_confirm("Confirm", f"Are you sure you want to clear the {platform_name} session?"):
            return
 
-        def _clear_worker():
-            try:
-                # Import here to avoid potential circular imports at top level if utils imports gui
-                from utils.utils import remove_module_from_storage
-                
-                if platform_name in ("Beatport", "Beatsource", "Tidal", "Qobuz", "Deezer"):
-                    remove_module_from_storage(storage_path, module_key)
-                
-                # Success message on main thread
-                if platform_name == "Tidal":
-                    msg = "Tidal stored session has been cleared.\n\nYou can still search and preview tracks in Guest mode. A browser window for login will only open if you attempt to download protected content."
-                else:
-                    msg = f"{platform_name} stored session has been cleared.\n\nNext search or download will log in with your credentials from above."
-                
-                if 'app' in globals() and app:
-                    app.after(0, lambda: show_centered_messagebox("Session Cleared", msg, dialog_type="info"))
+        try:
+            # Import here to avoid potential circular imports at top level if utils imports gui
+            from utils.utils import remove_module_from_storage
+            
+            if platform_name in ("Beatport", "Beatsource", "Tidal", "Qobuz", "Deezer"):
+                remove_module_from_storage(storage_path, module_key)
+            
+            # Reset the Orpheus instance so it reloads storage on next use
+            global orpheus_instance
+            orpheus_instance = None
+            # Re-initialize to ensure Guest mode is active for Tidal/Spotify immediately
+            initialize_orpheus()
 
-            except Exception as e:
-                # Error message on main thread
-                if 'app' in globals() and app:
-                    err_msg = str(e)
-                    app.after(0, lambda: show_centered_messagebox("Error", f"Could not clear session: {err_msg}", dialog_type="error"))
+            # Success message
+            if platform_name == "Tidal":
+                msg = "Tidal stored session has been cleared.\n\nYou can still search and preview tracks in Guest mode. A browser window for login will only open if you attempt to download protected content."
+            else:
+                msg = f"{platform_name} stored session has been cleared.\n\nNext search or download will log in with your credentials from above."
+            
+            show_centered_messagebox("Session Cleared", msg, dialog_type="info")
 
-        threading.Thread(target=_clear_worker, daemon=True).start()
+        except Exception as e:
+            err_msg = str(e)
+            show_centered_messagebox("Error", f"Could not clear session: {err_msg}", dialog_type="error")
     except Exception as e:
         if "Module does not use" in str(e) or "does not exist" in str(e).lower():
             show_centered_messagebox("No Session", f"No stored session found for {platform_name}. You can search or download to log in.", dialog_type="info")
@@ -14644,7 +14644,7 @@ def _auto_save_credential_change(platform_name, key, widget=None, *args):
             # Clear in loginstorage.bin (persistent session storage)
             if os.path.exists(storage_path):
                 try:
-                    set_temporary_setting(storage_path, 'Qobuz', 'custom_data', 'token', '')
+                    set_temporary_setting(storage_path, 'qobuz', 'custom_data', 'token', '')
                     print(f"[Settings] Qobuz {key} changed. Cleared token from loginstorage.bin.")
                 except Exception as e_storage:
                     print(f"[Settings] Error clearing Qobuz token from storage: {e_storage}")
@@ -14666,7 +14666,7 @@ def _auto_save_credential_change(platform_name, key, widget=None, *args):
             # Clear in loginstorage.bin (persistent session storage)
             if os.path.exists(storage_path):
                 try:
-                    set_temporary_setting(storage_path, 'Deezer', 'custom_data', 'arl', '')
+                    set_temporary_setting(storage_path, 'deezer', 'custom_data', 'arl', '')
                     print(f"[Settings] Deezer {key} changed. Cleared ARL from loginstorage.bin.")
                 except Exception as e_storage:
                     print(f"[Settings] Error clearing Deezer ARL from storage: {e_storage}")
