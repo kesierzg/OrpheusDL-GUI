@@ -1083,7 +1083,7 @@ def _composite_platform_icon_on_cover(pil_cover, platform_name, cover_size=COVER
 def get_searchable_platforms(settings, installed_platform_keys, app_path):
     """Return list of platform names that can be searched: YouTube, Apple Music, Deezer, and others (optional credentials)."""
     base = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
-    platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify", "SoundCloud", "Beatport", "Beatsource", "Tidal"]
+    platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify", "SoundCloud", "Beatport", "Beatsource", "TIDAL"]
     configured = []
     creds = (settings or {}).get("credentials", {})
     try:
@@ -4172,7 +4172,7 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                             additional_parts.append(f"1 track" if tc == 1 else f"{tc} tracks")
                             if platform_name and platform_name.lower() == 'beatport' and album_dict.get('catalog_number'):
                                 additional_parts.append(f"Cat: {album_dict['catalog_number']}")
-                            additional_str = " · ".join(additional_parts) if additional_parts else ""
+                            additional_str = "  ".join(additional_parts) if additional_parts else ""
                             # Duration if release has total length (seconds or ms); format like album search
                             duration_str = ""
                             sec = None
@@ -4203,7 +4203,7 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                                 "year": year,
                                 "duration": duration_str,
                                 "additional": additional_str,
-                                "explicit": "",
+                                "explicit": '🅴' if album_dict.get('explicit') else '',
                                 "parent_iid": None,
                                 "raw_result": album_dict,
                             }
@@ -4372,8 +4372,16 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                             "number": str(idx),
                             "year": year,
                             "duration": duration_str,
-                            "additional": album_dict.get('additional') or album_dict.get('genre') or '',
-                            "explicit": "",
+                            "additional": (("  ".join(album_dict.get('additional')) if isinstance(album_dict.get('additional'), list) else album_dict.get('additional')) or album_dict.get('genre') or ''),
+                            "explicit": '🅴' if (
+                                album_dict.get('explicit') or 
+                                album_dict.get('explicit_lyrics') or 
+                                str(album_dict.get('explicit_content_lyrics')) == '1' or 
+                                str(album_dict.get('EXPLICIT_LYRICS')) == '1' or 
+                                str(album_dict.get('EXPLICIT_ALBUM')) == '1' or
+                                (isinstance(album_dict.get('EXPLICIT_ALBUM_CONTENT'), dict) and str(album_dict['EXPLICIT_ALBUM_CONTENT'].get('EXPLICIT_LYRICS_STATUS')) in ('1', '4')) or
+                                "explicit" in title.lower()
+                            ) else '',
                             "parent_iid": None,
                             "raw_result": album_dict,
                         }
@@ -4396,7 +4404,19 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                         }
                         if album_data_dict:
                             aid = entry['id']
-                            entry['raw_result'] = album_data_dict.get(aid) or album_data_dict.get(int(aid)) if str(aid).isdigit() else album_data_dict.get(aid)
+                            raw = album_data_dict.get(aid) or album_data_dict.get(int(aid)) if str(aid).isdigit() else album_data_dict.get(aid)
+                            if raw:
+                                entry['raw_result'] = raw
+                                if (
+                                    raw.get('explicit') or 
+                                    raw.get('explicit_lyrics') or 
+                                    str(raw.get('explicit_content_lyrics')) == '1' or 
+                                    str(raw.get('EXPLICIT_LYRICS')) == '1' or 
+                                    str(raw.get('EXPLICIT_ALBUM')) == '1' or
+                                    (isinstance(raw.get('EXPLICIT_ALBUM_CONTENT'), dict) and str(raw['EXPLICIT_ALBUM_CONTENT'].get('EXPLICIT_LYRICS_STATUS')) in ('1', '4')) or
+                                    "explicit" in (raw.get('title') or raw.get('name') or "").lower()
+                                ):
+                                    entry['explicit'] = '🅴'
                     album_entries.append(entry)
             except Exception as e:
                 # Spotify 429 rate limit: show popup recommending right-click → Open Link
@@ -6007,7 +6027,7 @@ def load_settings():
                              deep_merge(settings["globals"][section_key], section_data)
         if "modules" in file_settings:
             settings["modules"] = copy.deepcopy(file_settings["modules"])
-            platform_map_from_orpheus = { "bugs": "BugsMusic", "nugs": "Nugs", "soundcloud": "SoundCloud", "tidal": "Tidal", "qobuz": "Qobuz", "deezer": "Deezer", "idagio": "Idagio", "kkbox": "KKBOX", "napster": "Napster", "beatport": "Beatport", "beatsource": "Beatsource", "musixmatch": "Musixmatch", "spotify": "Spotify", "applemusic": "Apple Music", "youtube": "YouTube" }
+            platform_map_from_orpheus = { "bugs": "BugsMusic", "nugs": "Nugs", "soundcloud": "SoundCloud", "tidal": "TIDAL", "qobuz": "Qobuz", "deezer": "Deezer", "idagio": "Idagio", "kkbox": "KKBOX", "napster": "Napster", "beatport": "Beatport", "beatsource": "Beatsource", "musixmatch": "Musixmatch", "spotify": "Spotify", "applemusic": "Apple Music", "youtube": "YouTube" }
             for orpheus_platform, creds_from_file in file_settings["modules"].items():
                 gui_platform = platform_map_from_orpheus.get(orpheus_platform)
                 if gui_platform and gui_platform in DEFAULT_SETTINGS["credentials"]:
@@ -10102,6 +10122,54 @@ def _result_has_dolby_atmos(quality_str, raw_result):
         return True
     return False
 
+def _build_additional_string(result, search_type_str, raw_result):
+    """Unified helper to build the Additional/Quality string with track counts for playlists and albums."""
+    # Explicit type check to avoid NameError and handle cases like "track (ATMOS)"
+    _low_type = (str(search_type_str) or "").lower()
+    _is_playlist_or_album = any(x in _low_type for x in ('playlist', 'album'))
+    
+    addl_list = getattr(result, 'additional', []) or []
+    if not isinstance(addl_list, (list, tuple)): addl_list = [str(addl_list)]
+    else: addl_list = [str(q) for q in addl_list]
+
+    # Look for existing track info to preserve it if new extraction fails
+    existing_tc_str = next((q for q in addl_list if "track" in str(q).lower()), None)
+    
+    new_tc_str = None
+    if _is_playlist_or_album and isinstance(raw_result, dict):
+        # Comprehensive extraction from raw data
+        # Safely handle 'tracks' being either a dict (Spotify) or list (SoundCloud)
+        trks = raw_result.get('tracks')
+        tc = trks.get('total') if isinstance(trks, dict) else (len(trks) if isinstance(trks, list) else None)
+        
+        if tc is None:
+            attrs = raw_result.get('attributes')
+            tc = attrs.get('trackCount') if isinstance(attrs, dict) else None
+            
+        if tc is None: tc = raw_result.get('playlist_count') # YouTube
+        if tc is None: tc = raw_result.get('track_count') # General fallback / SoundCloud natively has this
+        if tc is None: tc = raw_result.get('total_tracks') # General fallback
+            
+        if tc is not None:
+            try:
+                tc_int = int(tc)
+                if tc_int > 0:
+                    new_tc_str = "1 track" if tc_int == 1 else f"{tc_int} tracks"
+            except (ValueError, TypeError): pass
+
+    # Prefer new extraction, fallback to existing info
+    final_tc_str = new_tc_str or existing_tc_str
+
+    final_list = []
+    if final_tc_str: final_list.append(final_tc_str)
+    
+    for q in addl_list:
+        # Add all other metadata, filtering out the old track count if we replaced it
+        if q and str(q).strip() and "track" not in str(q).lower():
+            final_list.append(str(q))
+
+    return '  '.join(final_list) or ''
+
 def _run_single_platform_search(orpheus, platform_name, search_type_str, query, search_limit, output_queue=None):
     """Run search on one platform. Returns (list of formatted result dicts, error_message or None)."""
     local_DownloadTypeEnum = DownloadTypeEnum
@@ -10150,11 +10218,11 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
                         raw_result = next(iter(data.values()))
             if raw_result is None:
                 raw_result = result
-            quality_str = ' · '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
+            quality_str = _build_additional_string(result, base_type, raw_result)
             # For Tidal playlists in Atmos mode, ensure quality_str includes "Dolby Atmos"
             if platform_name.strip().lower() == 'tidal' and base_type == 'playlist':
                 if 'atmos' not in quality_str.lower() and '◗◖' not in quality_str:
-                    quality_str = (quality_str + " · ◗◖ ATMOS") if quality_str else "◗◖ ATMOS"
+                    quality_str = (quality_str + "  ◗◖ ATMOS") if quality_str else "◗◖ ATMOS"
             # Tidal Playlists don't have audioModes so they pass; filter by Atmos for everything else (including AM playlists)
             if (not (platform_name.strip().lower() == 'tidal' and base_type == 'playlist')) and not _result_has_dolby_atmos(quality_str, raw_result):
                 continue
@@ -10213,22 +10281,11 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             media_type = extra_kwargs.get('media_type')
             result_type = (media_type.name.lower() if media_type and hasattr(media_type, 'name') else content_type.rstrip('s'))
             raw_result = extra_kwargs.get('raw_result', result)
-            quality_str = ' · '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
+            quality_str = _build_additional_string(result, content_type, raw_result)
             # Playlists don't have audioModes; only filter by Atmos for tracks/albums
             if content_type == 'playlists':
                 if 'ATMOS' not in quality_str.upper() and '◗◖' not in quality_str:
-                    quality_str = (quality_str + " · ◗◖ ATMOS") if quality_str else "◗◖ ATMOS"
-                # If quality_str is "◗◖ ATMOS" (meaning no tracks yet), try to put track count BEFORE it
-                if quality_str == "◗◖ ATMOS" and raw_result and isinstance(raw_result, dict):
-                    t = (raw_result.get('tracks') or {}).get('total')
-                    if t is not None and t > 0:
-                        track_str = "1 track" if t == 1 else f"{t} tracks"
-                        quality_str = f"{track_str} · ◗◖ ATMOS"
-                    else:
-                        tc = (raw_result.get('attributes') or {}).get('trackCount')
-                        if tc is not None and tc > 0:
-                            track_str = "1 track" if tc == 1 else f"{tc} tracks"
-                            quality_str = f"{track_str} · ◗◖ ATMOS"
+                    quality_str = (quality_str + "  ◗◖ ATMOS") if quality_str else "◗◖ ATMOS"
 
             if content_type != 'playlists' and not _result_has_dolby_atmos(quality_str, raw_result):
                 continue
@@ -10294,10 +10351,11 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
         if raw_result is None:
             raw_result = result
         cover_url = getattr(result, 'image_url', None)
-        if platform_name.lower() == 'youtube' and cover_url:
+        if platform_name.lower() == 'youtube' and cover_url and isinstance(raw_result, dict):
             cover_url = _get_fullsize_cover_url(cover_url, platform_name, raw_result)
         _yr = getattr(result, 'year', None)
         _yr_str = '' if _yr is None or str(_yr) == 'None' else str(_yr)
+
         raw_duration_seconds = getattr(result, 'duration', None)
         if raw_duration_seconds is not None:
             if isinstance(raw_duration_seconds, str):
@@ -10308,15 +10366,11 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
                 raw_duration_seconds = None
         _name = str(getattr(result, 'name', '') or '')
         _artists_str = ', '.join([str(a) for a in getattr(result, 'artists', []) or []]) or ''
-        quality_str = ' · '.join([str(q) for q in getattr(result, 'additional', []) or []]) or ''
-        if not quality_str and search_type_str and search_type_str.lower() in ('album', 'playlist') and raw_result and isinstance(raw_result, dict):
-            t = (raw_result.get('tracks') or {}).get('total')
-            if t is not None and t > 0:
-                quality_str = "1 track" if t == 1 else f"{t} tracks"
-            else:
-                tc = (raw_result.get('attributes') or {}).get('trackCount')
-                if tc is not None and tc > 0:
-                    quality_str = "1 track" if tc == 1 else f"{tc} tracks"
+        quality_str = _build_additional_string(result, search_type_str, raw_result)
+        try:
+            with open(r"d:\OrpheusDL-GUI\debug_log.txt", "a", encoding="utf-8") as f:
+                f.write(f"GUI Search item: title='{_name}', search_type='{search_type_str}', duration='{raw_duration_seconds}', _additional={getattr(result, 'additional', None)}, raw_result_has_tracks={'tracks' in raw_result if isinstance(raw_result, dict) else False}, built_quality='{quality_str}'\n")
+        except: pass
         formatted_result = {
             'id': str(getattr(result, 'result_id', '')),
             'title': _name,
@@ -12063,6 +12117,8 @@ def _parse_additional_quality(s):
 def _to_small_caps(s):
     """Selectively converts specific keywords (ATMOS, HI-RES) to a visually 'smaller' version using Unicode small caps."""
     if not s: return ""
+    if isinstance(s, (list, tuple)):
+        s = "  ".join(str(x) for x in s if x)
     s = str(s)
     
     # Mapping for small caps (a-z) and subscripts/small versions for numbers/symbols
@@ -12070,9 +12126,10 @@ def _to_small_caps(s):
         'a': 'ᴀ', 'b': 'ʙ', 'c': 'ᴄ', 'd': 'ᴅ', 'e': 'ᴇ', 'f': 'ꜰ', 'g': 'ɢ', 'h': 'ʜ', 
         'i': 'ɪ', 'j': 'ᴊ', 'k': 'ᴋ', 'l': 'ʟ', 'm': 'ᴍ', 'n': 'ɴ', 'o': 'ᴏ', 'p': 'ᴘ', 
         'q': 'ǫ', 'r': 'ʀ', 's': 's', 't': 'ᴛ', 'u': 'ᴜ', 'v': 'ᴠ', 'w': 'ᴡ', 'x': 'x', 
+        'q': 'ǫ', 'r': 'ʀ', 's': 's', 't': 'ᴛ', 'u': 'ᴜ', 'v': 'ᴠ', 'w': 'ᴡ', 'x': 'x', 
         'y': 'ʏ', 'z': 'ᴢ',
-        '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
-        '.': '.', '/': '/', '(': '(', ')': ')', ' ': ' ', ':': ':', ',': ',', '+': '₊', '-': '-'
+        '0': '0', '1': '1', '2': '2', '3': '3', '4': '4', '5': '5', '6': '6', '7': '7', '8': '8', '9': '9',
+        '.': '.', '/': '/', '(': '(', ')': ')', ' ': ' ', ':': ':', ',': ',', '+': '+', '-': '-'
     }
 
     def transform(word):
@@ -12333,7 +12390,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         deezer_creds_frame = None
         qobuz_creds_frame = None
         other_creds_frame = None
-        _platforms_with_help = ("Apple Music", "Beatport", "Beatsource", "SoundCloud", "Spotify", "Tidal", "YouTube")
+        _platforms_with_help = ("Apple Music", "Beatport", "Beatsource", "SoundCloud", "Spotify", "TIDAL", "YouTube")
         if platform_name == "Deezer":
             deezer_creds_frame = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
             deezer_creds_frame.pack(fill="x", expand=False, anchor="nw")
@@ -12362,7 +12419,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         }
         
         for i, (key, value) in enumerate(default_platform_fields.items()):
-            if platform_name == "Tidal" and key in ["prefer_ac4", "fix_mqa"]:
+            if platform_name == "TIDAL" and key in ["prefer_ac4", "fix_mqa"]:
                 continue
             if platform_name == "Qobuz" and key in ("password", "user_id", "auth_token", "use_id_token"):
                 continue
@@ -12529,7 +12586,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             label = customtkinter.CTkLabel(grid_parent, text=f"{label_text}")
             label.grid(row=i, column=0, sticky="w", padx=10, pady=pady_config)
 
-            if platform_name == "Tidal" and key == "enable_mobile":
+            if platform_name == "TIDAL" and key == "enable_mobile":
                 # Create container for horizontal checkboxes
                 container = customtkinter.CTkFrame(grid_parent, fg_color="transparent")
                 # Increased top padding as requested by user
@@ -12599,7 +12656,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 widget = radio_frame
                 
                 # Add tooltip explaining the options
-                CTkToolTip(radio_frame, message="Sequential: Downloads one track at a time with pause between tracks (safer, shows pause messages)\nConcurrent: Downloads multiple tracks at once (faster, higher rate limiting risk)", bg_color=TOOLTIP_MENU_BG, text_color=LIGHT_TEXT_COLOR)
+                tooltip_dl_mode = "Sequential: Downloads one track at a time with pause between tracks (safer, shows pause messages)\nConcurrent: Downloads multiple tracks at once (faster, higher rate limiting risk)"
+                CTkToolTip(label, message=tooltip_dl_mode, bg_color=TOOLTIP_MENU_BG, text_color=LIGHT_TEXT_COLOR)
+                CTkToolTip(radio_frame, message=tooltip_dl_mode, bg_color=TOOLTIP_MENU_BG, text_color=LIGHT_TEXT_COLOR)
                 
                 if platform_name not in settings_vars['credentials']:
                     settings_vars['credentials'][platform_name] = {}
@@ -13747,8 +13806,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             _add_clear_session_icon(help_frame, "SoundCloud")
         
-        # Add help text for Tidal module
-        if platform_name == "Tidal":
+        # Add help text for TIDAL module
+        if platform_name == "TIDAL":
             # Helper function to copy value to clipboard with feedback (persistent)
             def _copy_tidal_value(value, button):
                 try:
@@ -13817,7 +13876,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step2_line2.pack(anchor="w")
             customtkinter.CTkLabel(step2_line2, text="created, when signed up to ", font=("Segoe UI", 12), text_color="gray").pack(side="left")
             
-            tidal_link = customtkinter.CTkLabel(step2_line2, text="Tidal", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor=HAND_CURSOR)
+            tidal_link = customtkinter.CTkLabel(step2_line2, text="TIDAL", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor=HAND_CURSOR)
             tidal_link.pack(side="left")
             tidal_link.bind("<Button-1>", lambda e: webbrowser.open("https://tidal.com"))
             tidal_link.bind("<Enter>", lambda e: tidal_link.configure(text_color="#4A9EFF"))
@@ -13877,7 +13936,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             create_value_row(right_col, "tv_atmos_secret", "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=")
             create_value_row(right_col, "mobile_atmos_hires_token", "km8T1xS355y7dd3H")
             create_value_row(right_col, "mobile_hires_token", "6BDSRdpK9hqEBTgU")
-            _add_clear_session_icon(help_frame, "Tidal")
+            _add_clear_session_icon(help_frame, "TIDAL")
 
         # Add help text for Beatport module
         if platform_name == "Beatport":
@@ -14005,7 +14064,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
              # To ensure the frame has height if empty, we might need a dummy label or minsize.
              # However, if it's empty, a height=0 frame might not show.
              # Let's add a generic title if it's a new frame to give it context.
-             if platform_name not in ["Spotify", "Apple Music", "YouTube", "Deezer", "Qobuz", "SoundCloud", "Tidal", "Beatport", "Beatsource"]:
+             if platform_name not in ["Spotify", "Apple Music", "YouTube", "Deezer", "Qobuz", "SoundCloud", "TIDAL", "Beatport", "Beatsource"]:
                  help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
                  help_container.pack(anchor="w", padx=15, pady=12)
                  
@@ -14135,8 +14194,8 @@ def update_search_platform_dropdown():
                         is_fully_filled = False
                         break
 
-            # Tidal: always show in dropdown so user can select and log in; session check only
-            # applies to "Search All" (get_searchable_platforms) so All doesn't hang on Tidal.
+            # TIDAL: always show in dropdown so user can select and log in; session check only
+            # applies to "Search All" (get_searchable_platforms) so All doesn't hang on TIDAL.
 
             if is_fully_filled:
                 configured_platforms.append(platform_name_iter)
@@ -14765,7 +14824,7 @@ if __name__ == "__main__":
                 "Qobuz": { "app_id": "798273057", "app_secret": "abb21364945c0583309667d13ca3d93a", "quality_format": "{sample_rate}kHz {bit_depth}bit", "username": "", "password": "", "user_id": "", "auth_token": "", "use_id_token": "false" },
                 "SoundCloud": { "web_access_token": "" },
                 "Spotify": { "username": "", "download_pause_seconds": 30, "client_id": "", "client_secret": "" },
-                "Tidal": { "tv_atmos_token": "4N3n6Q1x95LL5K7p", "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=", "mobile_atmos_hires_token": "km8T1xS355y7dd3H", "mobile_hires_token": "6BDSRdpK9hqEBTgU", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True },
+                "TIDAL": { "tv_atmos_token": "4N3n6Q1x95LL5K7p", "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=", "mobile_atmos_hires_token": "km8T1xS355y7dd3H", "mobile_hires_token": "6BDSRdpK9hqEBTgU", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True },
                 "YouTube": { "cookies_path": "./config/youtube-cookies.txt", "download_pause_seconds": 5, "download_mode": "sequential" }
             }
         }
@@ -15015,7 +15074,7 @@ if __name__ == "__main__":
         
         # Add extra top padding to align with download tab (which has 2 input rows)
         controls_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); controls_frame.pack(fill="x", pady=(5, 0)); controls_frame.grid_columnconfigure(4, weight=1); controls_frame.bind("<Button-1>", clear_focus)
-        # Fixed row height for all platforms so RESULTS starts at same position (matches Tidal with ATMOS checkbox: entry + gap + checkbox)
+        # Fixed row height for all platforms so RESULTS starts at same position (matches TIDAL with ATMOS checkbox: entry + gap + checkbox)
         controls_frame.grid_propagate(False)
         controls_frame.configure(height=62)
         controls_frame.grid_rowconfigure(0, minsize=62)
@@ -15044,7 +15103,7 @@ if __name__ == "__main__":
         search_entry.bind("<FocusIn>", lambda e, w=search_entry: handle_focus_in(w))
         search_entry.bind("<FocusOut>", lambda e, w=search_entry: (handle_focus_out(w), _update_search_placeholder()))
         clear_search_button = customtkinter.CTkButton(search_entry_row, text="Clear", command=clear_search_entry, width=100, height=30, fg_color="#343638", hover_color="#1F6AA5"); clear_search_button.pack(side="left", padx=(10, 0))
-        # Tidal ATMOS checkbox: under search field, left-aligned; text ◗◖ ᴀᴛᴍᴏs with smaller font; visible only when Tidal + type is album/playlist/track
+        # TIDAL ATMOS checkbox: under search field, left-aligned; text ◗◖ ᴀᴛᴍᴏs with smaller font; visible only when TIDAL + type is album/playlist/track
         atmos_filter_var = tkinter.BooleanVar(value=False)
         atmos_filter_frame = customtkinter.CTkFrame(search_input_frame, fg_color="transparent", height=1)
         
@@ -15075,7 +15134,7 @@ if __name__ == "__main__":
             text_color=LIGHT_TEXT_COLOR,
         )
         atmos_filter_var.trace_add("write", lambda *a: _update_search_placeholder())
-        atmos_filter_frame.pack_forget()  # Shown by update_search_types when Tidal and type != artist
+        atmos_filter_frame.pack_forget()  # Shown by update_search_types when TIDAL and type != artist
         globals()["atmos_filter_var"] = atmos_filter_var
         globals()["atmos_filter_frame"] = atmos_filter_frame
         globals()["atmos_filter_checkbox"] = atmos_filter_checkbox
@@ -15311,12 +15370,17 @@ if __name__ == "__main__":
             "artist_downloading.return_credited_albums": "Include albums where the artist is credited but not the main artist.",
             "artist_downloading.separate_tracks_skip_downloaded": "When downloading artists, skip tracks that are part of albums already downloaded.",
             "formatting.album_format": """Folder structure for albums. Variables:
- {name}, {id}, {artist}, {artist_id}, {release_year}, {upc}, {explicit}, {quality}, {artist_initials}""",
+ {artist}, {artist_id}, {artist_initials}, {album_artist}, {name}
+ {id}, {label}, {catalog_number}, {release_year}
+ {upc}, {explicit}, {quality}""",
             "formatting.playlist_format": """Folder structure for playlists. Variables:
- {name}, {creator}, {tracks}, {release_year}, {explicit}, {creator_id}""",
+ {creator}, {creator_id}
+ {name}, {tracks}
+ {release_year}, {explicit}""",
             "formatting.track_filename_format": """Filename format for tracks. Variables:
- {track_number}, {total_tracks}, {disc_number}, {total_discs}, {name}, {id}, {album},
- {album_id}, {artist}, {artist_id}, {isrc}, {release_year}, {explicit}, {quality}, {artist_initials}""",
+ {artist}, {artist_id}, {artist_initials}, {album_artist}, {name}, {album}
+ {track_number}, {total_tracks}, {disc_number}, {total_discs}
+ {id}, {album_id}, {label}, {catalog_number}, {isrc}, {release_year}, {explicit}, {quality}""",
             "formatting.single_full_path_format": """Full path format (folder + filename) for single tracks not part of an album download.\nUses same variables as Track Filename Format.""",
             "formatting.enable_zfill": "Pads track/disc numbers with leading zeros (e.g., 01, 02).",
             "formatting.force_album_format": "Use the album_format structure even for single track downloads.",
@@ -15368,7 +15432,8 @@ Unnecessary Lossless-to-Lossless""",
                         aac_default_val = DEFAULT_SETTINGS["globals"]["advanced"]["conversion_flags"]["aac"]["audio_bitrate"]
                         aac_current_val = str(current_settings["globals"].get("advanced", {}).get("conversion_flags", {}).get("aac", {}).get("audio_bitrate", aac_default_val))
                         
-                        customtkinter.CTkLabel(global_settings_frame, text=aac_label_text).grid(row=row, column=0, sticky="w", padx=(20, 10), pady=2)
+                        aac_label = customtkinter.CTkLabel(global_settings_frame, text=aac_label_text)
+                        aac_label.grid(row=row, column=0, sticky="w", padx=(20, 10), pady=2)
                         aac_slider_frame = customtkinter.CTkFrame(global_settings_frame, fg_color="transparent")
                         aac_slider_frame.grid(row=row, column=1, sticky="ew", padx=(5, 5), pady=2)
                         aac_slider_frame.grid_columnconfigure(0, weight=1)
@@ -15393,14 +15458,17 @@ Unnecessary Lossless-to-Lossless""",
                         aac_slider_widget = customtkinter.CTkSlider(aac_slider_frame, from_=0, to=len(aac_options_list)-1, number_of_steps=len(aac_options_list)-1, command=_update_aac_slider_display)
                         aac_slider_widget.set(aac_slider_pos)
                         aac_slider_widget.grid(row=0, column=0, sticky="ew")
-                        CTkToolTip(aac_slider_frame, message=tooltip_texts.get(aac_full_key, ""), bg_color=TOOLTIP_MENU_BG, text_color="#dddddd")
+                        tooltip_aac_text = tooltip_texts.get(aac_full_key, "")
+                        CTkToolTip(aac_label, message=tooltip_aac_text, bg_color=TOOLTIP_MENU_BG, text_color="#dddddd")
+                        CTkToolTip(aac_slider_frame, message=tooltip_aac_text, bg_color=TOOLTIP_MENU_BG, text_color="#dddddd")
                         row += 1
                         flac_label_text = "FLAC Compression Level"
                         flac_full_key = "advanced.conversion_flags.flac.compression_level"
                         flac_default_val = DEFAULT_SETTINGS["globals"]["advanced"]["conversion_flags"]["flac"]["compression_level"]
                         flac_current_val = int(current_settings["globals"].get("advanced", {}).get("conversion_flags", {}).get("flac", {}).get("compression_level", flac_default_val))
 
-                        customtkinter.CTkLabel(global_settings_frame, text=flac_label_text).grid(row=row, column=0, sticky="w", padx=(20, 10), pady=2)
+                        flac_label = customtkinter.CTkLabel(global_settings_frame, text=flac_label_text)
+                        flac_label.grid(row=row, column=0, sticky="w", padx=(20, 10), pady=2)
                         flac_slider_frame = customtkinter.CTkFrame(global_settings_frame, fg_color="transparent")
                         flac_slider_frame.grid(row=row, column=1, sticky="ew", padx=(5, 5), pady=2)
                         flac_slider_frame.grid_columnconfigure(0, weight=1)
@@ -15420,7 +15488,9 @@ Unnecessary Lossless-to-Lossless""",
                         flac_slider_widget = customtkinter.CTkSlider(flac_slider_frame, from_=0, to=8, number_of_steps=8, command=_update_flac_slider_display)
                         flac_slider_widget.set(flac_current_val)
                         flac_slider_widget.grid(row=0, column=0, sticky="ew")
-                        CTkToolTip(flac_slider_frame, message=tooltip_texts.get(flac_full_key, ""), bg_color=TOOLTIP_MENU_BG, text_color="#dddddd")
+                        tooltip_flac_text = tooltip_texts.get(flac_full_key, "")
+                        CTkToolTip(flac_label, message=tooltip_flac_text, bg_color=TOOLTIP_MENU_BG, text_color="#dddddd")
+                        CTkToolTip(flac_slider_frame, message=tooltip_flac_text, bg_color=TOOLTIP_MENU_BG, text_color="#dddddd")
                         row += 1
                         mp3_label_text = "MP3 Encoding"
                         mp3_setting_key = "advanced.conversion_flags.mp3.setting"
@@ -15436,7 +15506,8 @@ Unnecessary Lossless-to-Lossless""",
                         elif "qscale:a" in mp3_conf_flags and mp3_conf_flags["qscale:a"] == "0":
                             current_mp3_display_val = "VBR -V0"
                         
-                        customtkinter.CTkLabel(global_settings_frame, text=mp3_label_text).grid(row=row, column=0, sticky="w", padx=(20, 10), pady=5)
+                        mp3_label = customtkinter.CTkLabel(global_settings_frame, text=mp3_label_text)
+                        mp3_label.grid(row=row, column=0, sticky="w", padx=(20, 10), pady=5)
                         mp3_slider_frame = customtkinter.CTkFrame(global_settings_frame, fg_color="transparent")
                         mp3_slider_frame.grid(row=row, column=1, sticky="ew", padx=(5, 5), pady=5)
                         mp3_slider_frame.grid_columnconfigure(0, weight=1)
@@ -15460,6 +15531,7 @@ Unnecessary Lossless-to-Lossless""",
                         mp3_slider_widget.set(mp3_slider_pos)
                         mp3_slider_widget.grid(row=0, column=0, sticky="ew")
                         tooltip_mp3_text = tooltip_texts.get("advanced.conversion_flags.mp3.setting", "MP3 Encoding Settings:\n128k-320k are Constant Bitrate (CBR).\nVBR -V0 uses qscale:a 0 for highest variable bitrate quality.")
+                        CTkToolTip(mp3_label, message=tooltip_mp3_text, bg_color=TOOLTIP_MENU_BG, text_color="#dddddd")
                         CTkToolTip(mp3_slider_frame, message=tooltip_mp3_text, bg_color=TOOLTIP_MENU_BG, text_color="#dddddd")
                         row += 1
                         continue
@@ -15633,10 +15705,10 @@ Unnecessary Lossless-to-Lossless""",
                          elif section_key == "covers" and field == "main_resolution":
                             try:
                                 current_res = int(var.get())
-                                if current_res < 100 or current_res > 1400:
-                                    current_res = 1400
+                                if current_res < 100 or current_res > 3000:
+                                    current_res = 3000
                             except (ValueError, TypeError):
-                                current_res = 1400
+                                current_res = 3000
                             
                             current_res = round(current_res / 100) * 100
                             
@@ -15653,7 +15725,7 @@ Unnecessary Lossless-to-Lossless""",
                                 var_ref.set(str(int_value))
                                 label_ref.configure(text=f"{int_value}px")
                         
-                            slider = customtkinter.CTkSlider(slider_frame, from_=100, to=1400, number_of_steps=13, command=update_resolution_value)
+                            slider = customtkinter.CTkSlider(slider_frame, from_=100, to=3000, number_of_steps=29, command=update_resolution_value)
                             slider.set(current_res)
                             slider.grid(row=0, column=0, sticky="ew")
                             
@@ -15764,7 +15836,10 @@ Unnecessary Lossless-to-Lossless""",
 
                     tooltip_text = tooltip_texts.get(full_key)
                     if tooltip_text and widget:
+                         # Attach to both widget and label for user-friendliness
                          CTkToolTip(widget, message=tooltip_text, bg_color=TOOLTIP_MENU_BG, text_color="#dddddd")
+                         if 'label_widget' in locals() and label_widget:
+                              CTkToolTip(label_widget, message=tooltip_text, bg_color=TOOLTIP_MENU_BG, text_color="#dddddd")
 
                     row += 1
         credential_keys_for_settings_tabs = [pk for pk in installed_platform_keys if pk != "Musixmatch"]        
@@ -15814,12 +15889,12 @@ Unnecessary Lossless-to-Lossless""",
                 print(f"[DEBUG AboutIcon] Platform detected: {current_platform}")
             if current_platform == "Linux":
                 icon_filename = "icon.png"
-                icon_display_size = (48, 48)
+                icon_display_size = (80, 80)
                 if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                     print(f"[DEBUG AboutIcon] Set Linux display size to {icon_display_size}")
             elif current_platform == "Darwin":
                 icon_filename = "icon.icns"
-                icon_display_size = (72, 72)
+                icon_display_size = (100, 100)
                 if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                     print(f"[DEBUG AboutIcon] Set macOS display size to {icon_display_size}")
             else:
@@ -15828,7 +15903,7 @@ Unnecessary Lossless-to-Lossless""",
                     icon_filename = "icon.png"
                 else:
                     icon_filename = "icon.ico"
-                icon_display_size = (48, 48)
+                icon_display_size = (80, 80)
                 if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                     print(f"[DEBUG AboutIcon] Set default display size to {icon_display_size}")
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
@@ -15867,13 +15942,25 @@ Unnecessary Lossless-to-Lossless""",
                 print(f"[DEBUG AboutIcon] Error during icon path processing/loading: {type(path_e).__name__}: {path_e}")
         title_label = customtkinter.CTkLabel(icon_title_frame, text="OrpheusDL GUI", font=customtkinter.CTkFont(weight="bold"))
         title_label.pack(pady=(0, 0))
-        description_text = ("Makes downloading music with OrpheusDL easy on Win, macOS & Linux.\nSearch multiple platforms & download high-quality audio with metadata.")
+        description_text = ("A cross-platform graphical user interface for OrpheusDL.\nSearch & download across multiple music streaming services with ease.")
         description_label = customtkinter.CTkLabel(mid_inner, text=description_text, justify="center", wraplength=450)
         description_label.pack(pady=(0, 10))
+        
+        # Link buttons frame
+        links_frame = customtkinter.CTkFrame(mid_inner, fg_color="transparent")
+        links_frame.pack(pady=10)
+        
+        # GitHub Button
         github_url = "https://github.com/bascurtiz/OrpheusDL-GUI"
-        command = lambda u=github_url: os.startfile(u) if platform.system() == "Windows" else subprocess.Popen(["open", u]) if platform.system() == "Darwin" else subprocess.Popen(["xdg-open", u])
-        github_button = customtkinter.CTkButton(mid_inner, text="GitHub", command=command, width=100, height=30, fg_color="#343638", hover_color=LINK_COLOR)
-        github_button.pack(pady=10)
+        github_command = lambda u=github_url: os.startfile(u) if platform.system() == "Windows" else subprocess.Popen(["open", u]) if platform.system() == "Darwin" else subprocess.Popen(["xdg-open", u])
+        github_button = customtkinter.CTkButton(links_frame, text="GitHub", command=github_command, width=100, height=30, fg_color="#343638", hover_color=LINK_COLOR)
+        github_button.pack(side="left", padx=2)
+        
+        # Website Button
+        site_url = "https://orpheusdl-gui.x10.mx"
+        site_command = lambda u=site_url: os.startfile(u) if platform.system() == "Windows" else subprocess.Popen(["open", u]) if platform.system() == "Darwin" else subprocess.Popen(["xdg-open", u])
+        site_button = customtkinter.CTkButton(links_frame, text="Website", command=site_command, width=100, height=30, fg_color="#343638", hover_color=LINK_COLOR)
+        site_button.pack(side="left", padx=2)
         section_header_font = ("Segoe UI", 11)
         section_header_color = SECONDARY_TEXT_COLOR
         version_heading_label = customtkinter.CTkLabel(mid_inner, text="GUI VERSION", font=section_header_font, text_color=section_header_color)
@@ -15910,7 +15997,7 @@ Unnecessary Lossless-to-Lossless""",
             ("Qobuz", "https://github.com/bascurtiz/orpheusdl-qobuz"),            
             ("SoundCloud", "https://github.com/bascurtiz/orpheusdl-soundcloud"),
             ("Spotify", "https://github.com/bascurtiz/orpheusdl-spotify"),
-            ("Tidal", "https://github.com/bascurtiz/orpheusdl-tidal"),
+            ("TIDAL", "https://github.com/bascurtiz/orpheusdl-tidal"),
             ("YouTube", "https://github.com/bascurtiz/orpheusdl-youtube")
         ]
         module_buttons_data.sort(key=lambda item: item[0])
