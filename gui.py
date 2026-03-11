@@ -6724,7 +6724,7 @@ def _clear_platform_session(platform_name):
             # Import here to avoid potential circular imports at top level if utils imports gui
             from utils.utils import remove_module_from_storage
             
-            if platform_name in ("Beatport", "Beatsource", "Tidal", "Qobuz", "Deezer"):
+            if platform_name.lower() in ("beatport", "beatsource", "tidal", "qobuz", "deezer"):
                 remove_module_from_storage(storage_path, module_key)
             
             # Reset the Orpheus instance so it reloads storage on next use
@@ -6734,7 +6734,7 @@ def _clear_platform_session(platform_name):
             initialize_orpheus()
 
             # Success message
-            if platform_name == "Tidal":
+            if platform_name.lower() == "tidal":
                 msg = "Tidal stored session has been cleared.\n\nYou can still search and preview tracks in Guest mode. A browser window for login will only open if you attempt to download protected content."
             else:
                 msg = f"{platform_name} stored session has been cleared.\n\nNext search or download will log in with your credentials from above."
