@@ -2086,7 +2086,7 @@ def _estimate_expand_time(track_count, platform_name, estimate_type='track', con
         else:  # artist
             per_release_rates = {
                 'beatport': 0.04,       # 1222 releases in 48s
-                'beatsource': 0.41,     # 1371 releases in 9m24s
+                'beatsource': 0.05,     # Increased efficiency with duration caching and 250-cap
             }
         rate = per_release_rates.get(platform_name.lower().replace(' ', ''))
         if rate is None:
@@ -2102,8 +2102,8 @@ def _estimate_expand_time(track_count, platform_name, estimate_type='track', con
             'apple music': 0.005,
             'soundcloud': 0.1,
             'youtube': 0.01,        # loads almost instantly
-            'beatport': 0.505,
-            'beatsource': 0.354,
+            'beatport': 0.033,      # (~0.5s / 15 workers)
+            'beatsource': 0.022,    # (~0.35s / 15 workers - User report: 30s for 1380)
         }
         rate = per_track_rates.get(platform_name.lower().replace(' ', ''), 0.4)
     estimated_seconds = track_count * rate
@@ -2155,7 +2155,8 @@ def _expand_loading_dots_tick():
         dots = LOADING_ANIMATION_FRAMES[_expand_loading_dots_position]
         if time_est:
             suffix = f" (ETA: {time_est})"
-        elif "(page " in prefix:
+        elif any(word in prefix.lower() for word in ["page ", "resolving", "processing"]):
+            # Active progress - don't show the "take a while" warning
             suffix = ""
         else:
             suffix = " (This can take a while)"
@@ -2202,7 +2203,8 @@ def _update_loading_estimate_from_worker(count, platform_name, message_prefix, e
                 time_est = _expand_loading_time_estimate
                 if time_est:
                     suffix = f" (ETA: {time_est})"
-                elif "(page " in message_prefix:
+                elif any(word in message_prefix.lower() for word in ["page", "resolving", "processing"]):
+                    # Active progress - don't show the "take a while" warning
                     suffix = ""
                 else:
                     suffix = " (This can take a while)"
@@ -3913,7 +3915,7 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                 # For playlists: inherit Hi-Res label from the parent playlist row when present
                 if item_type == 'playlist' and track_entries:
                     parent_additional = item_data.get('additional') or []
-                    parent_additional_str = ' '.join(parent_additional) if isinstance(parent_additional, list) else str(parent_additional)
+                    parent_additional_str = ' / '.join(parent_additional) if isinstance(parent_additional, list) else str(parent_additional)
                     if 'HI-RES' in parent_additional_str:
                         for entry in track_entries:
                             if not entry.get('additional'):
@@ -4172,7 +4174,7 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                             additional_parts.append(f"1 track" if tc == 1 else f"{tc} tracks")
                             if platform_name and platform_name.lower() == 'beatport' and album_dict.get('catalog_number'):
                                 additional_parts.append(f"Cat: {album_dict['catalog_number']}")
-                            additional_str = "  ".join(additional_parts) if additional_parts else ""
+                            additional_str = " / ".join(additional_parts) if additional_parts else ""
                             # Duration if release has total length (seconds or ms); format like album search
                             duration_str = ""
                             sec = None
@@ -4257,9 +4259,10 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                 # Update loading label with actual count discovered from API
                 total_items = len(tracks) or len(albums)
                 if total_items > 0:
+                    # Message changed to "Processing" since module already returned its data
                     _update_loading_estimate_from_worker(
                         total_items, platform_name,
-                        f"Fetching {total_items} artist releases",
+                        f"Processing {total_items} artist releases",
                         estimate_type='release', context_kind='artist'
                     )
                 album_extra = getattr(info, 'album_extra_kwargs', None) or {}
@@ -4279,21 +4282,49 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                             codec_options = CodecOptions(proprietary_codecs=c.get("proprietary_codecs", False), spatial_codecs=c.get("spatial_codecs", True))
                         except Exception:
                             pass
-                        resolved = []
+                        from concurrent.futures import ThreadPoolExecutor
+                        import threading
+                        resolved_map = {}
+                        lock = threading.Lock()
+                        resolved_count = 0
                         total = len(tracks)
-                        for i, t in enumerate(tracks):
-                            if total > 20 and (i + 1) % 50 == 0 and i + 1 < total:
-                                print(f"[Artist] Resolving tracks {i + 1}/{total}...", flush=True)
+
+                        def _resolve_one_track(idx, t):
+                            nonlocal resolved_count
                             tid = str(t) if isinstance(t, (str, int)) else str(t.get('id', '')) if isinstance(t, dict) else ''
                             track_dict = track_data_dict.get(t) or track_data_dict.get(str(t)) or (track_data_dict.get(int(t)) if isinstance(t, str) and t.isdigit() else None)
+                            res = track_dict or t
+                            
                             if quality_tier and codec_options and hasattr(module_instance, 'get_track_info') and tid:
                                 try:
                                     tr = module_instance.get_track_info(tid, quality_tier, codec_options, **{'data': track_data_dict})
-                                    resolved.append(tr if tr is not None else track_dict or t)
+                                    if tr: res = tr
                                 except Exception:
-                                    resolved.append(track_dict or t)
-                            else:
-                                resolved.append(track_dict or t)
+                                    pass
+                            
+                            with lock:
+                                resolved_map[idx] = res
+                                resolved_count += 1
+                                # Update GUI progress every 10 tracks or at the end
+                                if resolved_count % 10 == 0 or resolved_count == total:
+                                    _update_loading_estimate_from_worker(
+                                        total - resolved_count, platform_name,
+                                        f"Resolving tracks ({resolved_count}/{total})",
+                                        estimate_type='track', context_kind='artist'
+                                    )
+                                # Log to console every 50 tracks
+                                if total > 20 and resolved_count % 50 == 0:
+                                    print(f"[Artist] Resolving tracks {resolved_count}/{total}...", flush=True)
+
+                        # Use concurrent threads for resolution (Beatsource/Beatport artist track expansion)
+                        max_workers = 15
+                        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                            for i, t in enumerate(tracks):
+                                executor.submit(_resolve_one_track, i, t)
+                        
+                        # Reassemble in correct order
+                        resolved = [resolved_map[i] for i in range(total)]
+
                         synthetic_album = dict(item_data)
                         synthetic_album['title'] = artist_name
                         synthetic_album['type'] = 'artist'
@@ -4372,7 +4403,7 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                             "number": str(idx),
                             "year": year,
                             "duration": duration_str,
-                            "additional": (("  ".join(album_dict.get('additional')) if isinstance(album_dict.get('additional'), list) else album_dict.get('additional')) or album_dict.get('genre') or ''),
+                            "additional": ((" / ".join(album_dict.get('additional')) if isinstance(album_dict.get('additional'), list) else album_dict.get('additional')) or album_dict.get('genre') or ''),
                             "explicit": '🅴' if (
                                 album_dict.get('explicit') or 
                                 album_dict.get('explicit_lyrics') or 
@@ -7571,6 +7602,36 @@ def _process_color_markers(text, error):
     except:
         _insert_text_with_links_and_platforms(text, error)
 
+def _setup_log_textbox_styles():
+    """Sets up one-time tag configurations and bindings for the log textbox."""
+    global log_textbox
+    try:
+        if 'log_textbox' not in globals() or not log_textbox or not log_textbox.winfo_exists():
+            return
+            
+        log_textbox.tag_configure("error", foreground="#FF4444")
+        log_textbox.tag_configure("detail_text", foreground="#a9a8b3")
+        log_textbox.tag_configure("normal", foreground="#a9a8b3")
+        log_textbox.tag_configure("hyperlink", foreground="royal blue", underline=True)
+        log_textbox.tag_configure("emoji_success", foreground="#00C851")
+        log_textbox.tag_configure("emoji_error", foreground="#FF4444")
+        log_textbox.tag_configure("emoji_warning", foreground="#CCA700")
+        log_textbox.tag_configure("color_red", foreground="#FF4444")
+        log_textbox.tag_configure("color_yellow", foreground="#CCA700")
+        log_textbox.tag_configure("color_gray", foreground="#a9a8b3")
+        log_textbox.tag_configure("color_green", foreground="#00C851")
+        log_textbox.tag_configure("color_white", foreground="#DCE4EE")
+        
+        for service, color in SERVICE_COLORS.items():
+            log_textbox.tag_configure(f"service_{service.replace(' ', '_')}", foreground=color)
+            log_textbox.tag_configure(f"platform_{service.replace(' ', '_')}", foreground=color)
+            
+        log_textbox.tag_bind("hyperlink", "<Enter>", lambda e: log_textbox.config(cursor=HAND_CURSOR))
+        log_textbox.tag_bind("hyperlink", "<Leave>", lambda e: log_textbox.config(cursor=""))
+        log_textbox.tag_bind("hyperlink", "<Button-1>", _on_hyperlink_click)
+    except Exception as e:
+        print(f"[Error] Failed to setup log textbox styles: {e}")
+
 def log_to_textbox(msg, error=False):
     """
     Simplified log function that relies on clean CLI output.
@@ -7614,28 +7675,7 @@ def log_to_textbox(msg, error=False):
             return
             
         log_textbox.configure(state="normal")
-        try:
-            log_textbox.tag_configure("error", foreground="#FF4444")
-            log_textbox.tag_configure("detail_text", foreground="#a9a8b3")
-            log_textbox.tag_configure("normal", foreground="#a9a8b3")
-            log_textbox.tag_configure("hyperlink", foreground="royal blue", underline=True)
-            log_textbox.tag_configure("emoji_success", foreground="#00C851")
-            log_textbox.tag_configure("emoji_error", foreground="#FF4444")
-            log_textbox.tag_configure("emoji_warning", foreground="#CCA700")
-            log_textbox.tag_configure("color_red", foreground="#FF4444")
-            log_textbox.tag_configure("color_yellow", foreground="#CCA700")
-            log_textbox.tag_configure("color_gray", foreground="#a9a8b3")
-            log_textbox.tag_configure("color_green", foreground="#00C851")
-            log_textbox.tag_configure("color_white", foreground="#DCE4EE")
-            for service, color in SERVICE_COLORS.items():
-                log_textbox.tag_configure(f"service_{service.replace(' ', '_')}", foreground=color)
-                log_textbox.tag_configure(f"platform_{service.replace(' ', '_')}", foreground=color)
-                
-            log_textbox.tag_bind("hyperlink", "<Enter>", lambda e: log_textbox.config(cursor=HAND_CURSOR))
-            log_textbox.tag_bind("hyperlink", "<Leave>", lambda e: log_textbox.config(cursor=""))
-            log_textbox.tag_bind("hyperlink", "<Button-1>", _on_hyperlink_click)
-        except: 
-            pass
+        # Optimization: Stylings and tag configurations moved to _setup_log_textbox_styles and called once at startup
         if "|ERROR_SYMBOL_SINGLE|" in content_to_insert:
             parts = content_to_insert.split("|ERROR_SYMBOL_SINGLE|")
             for i, part in enumerate(parts):
@@ -7797,7 +7837,8 @@ def log_to_textbox(msg, error=False):
         try:
             if _auto_scroll_active:
                 log_textbox.yview_moveto(1.0)
-                log_textbox.update()
+                # Removed log_textbox.update() as it blocks the UI thread for 10-50ms per call.
+                # update_log_area already calls app.update_idletasks() which is sufficient.
         except:
             pass
 
@@ -9180,14 +9221,13 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         
         yield_to_gui()
         
+        # Enable Tidal auth patcher for the entire process if module is Tidal
+        patcher = TidalAutoAuthPatcher(output_queue) if module_name == 'tidal' else None
+        if patcher: patcher.__enter__()
+        
         try:
             if orpheus.module_settings[module_name].url_decoding is ManualEnum.manual:
-                # Use auto-auth patcher for Tidal to handle TV login automatically
-                if module_name == 'tidal':
-                    with TidalAutoAuthPatcher(output_queue):
-                        module_instance = orpheus.load_module(module_name)
-                else:
-                    module_instance = orpheus.load_module(module_name)
+                module_instance = orpheus.load_module(module_name)
                 media_ident: MediaIdentification = module_instance.custom_url_parse(url)
                 if not media_ident: raise ValueError(f"Module '{module_name}' custom_url_parse failed for URL: {url}")
                 media_type = media_ident.media_type; media_id = media_ident.media_id
@@ -9244,12 +9284,8 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                         else:
                             raise ValueError(f"Could not determine media ID from URL path: {parsed_url.path}")
 
-            # Use auto-auth patcher for Tidal to handle TV login automatically
-            if module_name == 'tidal':
-                with TidalAutoAuthPatcher(output_queue):
-                    downloader.service = orpheus.load_module(module_name)
-            else:
-                downloader.service = orpheus.load_module(module_name)
+            # Load the downloader service (re-entrancy handled by TidalAutoAuthPatcher if active)
+            downloader.service = orpheus.load_module(module_name)
             downloader.service_name = module_name
             downloader.download_mode = media_type
             
@@ -9519,6 +9555,7 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         sys.stdout = original_stdout
         sys.stderr = original_stderr
         _current_download_context = None
+        if patcher: patcher.__exit__(None, None, None)
 
         download_successful = not is_cancelled and not download_exception_occurred
 
@@ -10005,7 +10042,7 @@ def display_results(results):
         }
         if thumbnail_url:
             result_entry["thumbnail_url"] = thumbnail_url
-        if current_search_type_lower == "artist":
+        if current_search_type_lower in ("artist", "channel"):
             result_entry["title"] = ""
             result_entry["artist"] = name
             result_entry["is_artist"] = True
@@ -10039,13 +10076,13 @@ def display_results(results):
                 # Use result_type so Tidal Explore track rows get ▶ and album rows get ≡
                 is_track_row = (current_search_type_str.lower() == "track") or (result_type == "track")
                 is_album_playlist_row = (current_search_type_lower in ("album", "playlist") or ((row_platform or '').lower() == "youtube" and current_search_type_lower == "channel") or current_search_type_lower == "label") or (result_type == "album") or (result_type == "playlist")
-                is_artist_row = current_search_type_lower == "artist"
+                is_artist_row = current_search_type_lower in ("artist", "channel")
                 can_lazy_load_preview = ((row_platform or '').lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer')) and is_track_row
                 is_youtube_track = ((row_platform or '').lower() == 'youtube') and is_track_row
                 preview_icon = (PREVIEW_EXPAND_COLLAPSED if (is_album_playlist_row or is_artist_row) else
                     (PREVIEW_PLAY_ICON if (preview_url or can_lazy_load_preview or is_youtube_track) else PREVIEW_UNAVAILABLE))
                 
-                if current_search_type_lower in ("artist", "label"):
+                if current_search_type_lower in ("artist", "label", "channel"):
                     values = (
                         preview_icon,
                         str(item_number),
@@ -10168,7 +10205,7 @@ def _build_additional_string(result, search_type_str, raw_result):
         if q and str(q).strip() and "track" not in str(q).lower():
             final_list.append(str(q))
 
-    return '  '.join(final_list) or ''
+    return ' / '.join(final_list) or ''
 
 def _run_single_platform_search(orpheus, platform_name, search_type_str, query, search_limit, output_queue=None):
     """Run search on one platform. Returns (list of formatted result dicts, error_message or None)."""
@@ -11447,24 +11484,30 @@ def show_search_context_menu(event):
                         # Standard search passes the extracted track dictionary directly
                         track_data = raw
                     else:
-                        # Custom URL parse passes the SearchResult object
-                        ek = raw.get('extra_kwargs', {}) if isinstance(raw, dict) else getattr(raw, 'extra_kwargs', {}) or {}
-                        ek_data = ek.get('data', {}) if isinstance(ek, dict) else {}
+                        # Custom URL parse passes the SearchResult object, 
+                        # OR expanded collections pass TrackInfo objects
+                        ek = raw.get('extra_kwargs', {}) if isinstance(raw, dict) else (getattr(raw, 'extra_kwargs', {}) or getattr(raw, 'download_extra_kwargs', {}) or {})
+                        ek_data = ek.get('data', {}) if (isinstance(ek, dict) and 'data' in ek) else {}
                         t_id = dict_item.get('id', '')
                         
-                        # Try direct lookup, string cast lookup, and int cast lookup
-                        if t_id in ek_data:
-                            track_data = ek_data[t_id]
-                        elif str(t_id) in ek_data:
-                            track_data = ek_data[str(t_id)]
-                        else:
-                            try:
-                                if int(t_id) in ek_data: track_data = ek_data[int(t_id)]
-                            except (ValueError, TypeError): pass
+                        # Check if track_data is directly in ek (added for expansion support)
+                        if isinstance(ek, dict) and ek.get('track_data'):
+                            track_data = ek['track_data']
                             
-                            if not track_data and ek_data:
-                                try: track_data = list(ek_data.values())[0]
-                                except Exception: pass
+                        # Try direct lookup, string cast lookup, and int cast lookup in 'data' mapping
+                        if not track_data:
+                            if t_id in ek_data:
+                                track_data = ek_data[t_id]
+                            elif str(t_id) in ek_data:
+                                track_data = ek_data[str(t_id)]
+                            else:
+                                try:
+                                    if int(t_id) in ek_data: track_data = ek_data[int(t_id)]
+                                except (ValueError, TypeError): pass
+                                
+                                if not track_data and ek_data:
+                                    try: track_data = list(ek_data.values())[0]
+                                    except Exception: pass
 
                     if isinstance(track_data, dict):
                         # Account for native artist direct downloads or premium stream logic.
@@ -12114,7 +12157,7 @@ def _to_small_caps(s):
     """Selectively converts specific keywords (ATMOS, HI-RES) to a visually 'smaller' version using Unicode small caps."""
     if not s: return ""
     if isinstance(s, (list, tuple)):
-        s = "  ".join(str(x) for x in s if x)
+        s = " / ".join(str(x) for x in s if x)
     s = str(s)
     
     # Mapping for small caps (a-z) and subscripts/small versions for numbers/symbols
@@ -15039,6 +15082,7 @@ if __name__ == "__main__":
                                    relief="flat", borderwidth=0, highlightthickness=0)
         log_textbox.grid(row=0, column=0, sticky="nsew", padx=(5,0), pady=3)
         log_scrollbar = customtkinter.CTkScrollbar(textbox_container, command=log_textbox.yview); log_textbox.configure(yscrollcommand=log_scrollbar.set)
+        _setup_log_textbox_styles()
         log_textbox.bind("<Configure>", lambda event: _check_and_toggle_text_scrollbar(log_textbox, log_scrollbar) if 'log_textbox' in globals() and log_textbox and log_textbox.winfo_exists() and 'log_scrollbar' in globals() and log_scrollbar and log_scrollbar.winfo_exists() else None)
         def _on_log_mousewheel(event):
             global _auto_scroll_active
