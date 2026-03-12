@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>com.github.orpheusdl.orpheusdl-gui</id>
+  <id>com.github.orpheusdl.orpheusdl-gui.desktop</id>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   <name>OrpheusDL GUI</name>
@@ -16,7 +16,7 @@
   <description>
     <p>
      A cross-platform graphical user interface for OrpheusDL. Search &amp; download across multiple music streaming services with ease.
-    </p>
+    </p>    
     <p>Key Features:</p>
     <ul>
       <li>Cross-platform support (Windows, macOS, Linux) with easy installation</li>

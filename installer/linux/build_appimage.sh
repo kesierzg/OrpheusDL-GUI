@@ -64,15 +64,15 @@ fi
 
 # Copy icon
 if [ -f "$PROJECT_ROOT/icon.png" ]; then
-    cp "$PROJECT_ROOT/icon.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/orpheusdl-gui.png"
-    cp "$PROJECT_ROOT/icon.png" "$APPDIR/orpheusdl-gui.png"
+    cp "$PROJECT_ROOT/icon.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/com.github.orpheusdl.orpheusdl-gui.png"
+    cp "$PROJECT_ROOT/icon.png" "$APPDIR/com.github.orpheusdl.orpheusdl-gui.png"
 fi
 
 # Copy desktop file and AppStream metadata
 echo "Copying metadata files..."
-cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.desktop" "$APPDIR/usr/share/applications/orpheusdl-gui.desktop"
-cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.desktop" "$APPDIR/orpheusdl-gui.desktop"
-cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.appdata.xml" "$APPDIR/usr/share/metainfo/orpheusdl-gui.appdata.xml"
+cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.desktop" "$APPDIR/usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop"
+cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.desktop" "$APPDIR/com.github.orpheusdl.orpheusdl-gui.desktop"
+cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.appdata.xml" "$APPDIR/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml"
 
 # Create AppRun
 cat > "$APPDIR/AppRun" << 'EOF'

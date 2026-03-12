@@ -290,7 +290,7 @@ Terminal=false
 
     appdata_src = INSTALLER_DIR / "linux" / "com.github.orpheusdl.orpheusdl-gui.appdata.xml"
     if appdata_src.exists():
-        shutil.copy(appdata_src, appdir / "usr" / "share" / "metainfo" / "com.github.orpheusdl.orpheusdl-gui.appdata.xml")
+        shutil.copy(appdata_src, appdir / "usr" / "share" / "metainfo" / "com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml")
 
     apprun_content = """#!/bin/bash
 APPDIR="$(dirname "$(readlink -f "$0")")"
@@ -345,7 +345,7 @@ Description: OrpheusDL GUI
     appdata_src = INSTALLER_DIR / "linux" / "com.github.orpheusdl.orpheusdl-gui.appdata.xml"
     if appdata_src.exists():
         (deb_root / "usr" / "share" / "metainfo").mkdir(parents=True, exist_ok=True)
-        shutil.copy(appdata_src, deb_root / "usr" / "share" / "metainfo" / "com.github.orpheusdl.orpheusdl-gui.appdata.xml")
+        shutil.copy(appdata_src, deb_root / "usr" / "share" / "metainfo" / "com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml")
 
     exe_path = DIST_DIR / "OrpheusDL_GUI"
     if exe_path.exists():
@@ -446,7 +446,7 @@ EOF
 /usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop
 /usr/share/icons/hicolor/scalable/apps/com.github.orpheusdl.orpheusdl-gui.svg
 /usr/share/icons/hicolor/256x256/apps/com.github.orpheusdl.orpheusdl-gui.png
-/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.appdata.xml
+/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml
 
 %changelog
 * Thu Mar 12 2026 Bas Curtiz <bascurtiz@gmail.com> - {version}-1
@@ -514,7 +514,7 @@ sha256sums=('SKIP' 'SKIP' 'SKIP')
 package() {{
     install -Dm755 "$srcdir/OrpheusDL_GUI" "$pkgdir/usr/bin/OrpheusDL_GUI"
     install -Dm644 "$srcdir/icon.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/com.github.orpheusdl.orpheusdl-gui.svg"
-    install -Dm644 "$srcdir/appdata.xml" "$pkgdir/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.appdata.xml"
+    install -Dm644 "$srcdir/appdata.xml" "$pkgdir/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml"
 
     install -d "$pkgdir/usr/share/applications"
     cat > "$pkgdir/usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop" <<EOF
