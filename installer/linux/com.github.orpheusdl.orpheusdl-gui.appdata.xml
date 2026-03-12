@@ -8,6 +8,11 @@
   <developer id="com.github.orpheusdl">
     <name>Bas Curtiz</name>
   </developer>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Music</category>
+  </categories>
   <description>
     <p>
       Makes downloading music with OrpheusDL easy on Windows, macOS, and Linux. 
@@ -28,43 +33,14 @@
       <li>Comprehensive artwork support: cover thumbnails, full-size artwork view, and save/copy options</li>
     </ul>
   </description>
-  <launchable type="desktop-id">orpheusdl-gui.desktop</launchable>
+  <launchable type="desktop-id">com.github.orpheusdl.orpheusdl-gui.desktop</launchable>
   <url type="homepage">https://github.com/bascurtiz/OrpheusDL-GUI</url>
   <url type="bugtracker">https://github.com/bascurtiz/OrpheusDL-GUI/issues</url>
   <releases>
     <release version="1.0.9" date="2026-03-12"/>
     <release version="1.0.8" date="2025-01-11"/>
   </releases>
-  <content_rating type="oars-1.1">
-    <content_attribute id="violence-cartoon">none</content_attribute>
-    <content_attribute id="violence-fantasy">none</content_attribute>
-    <content_attribute id="violence-realistic">none</content_attribute>
-    <content_attribute id="violence-bloodshed">none</content_attribute>
-    <content_attribute id="violence-sexual">none</content_attribute>
-    <content_attribute id="violence-desecration">none</content_attribute>
-    <content_attribute id="violence-slavery">none</content_attribute>
-    <content_attribute id="alcohol">none</content_attribute>
-    <content_attribute id="drugs">none</content_attribute>
-    <content_attribute id="lotto">none</content_attribute>
-    <content_attribute id="nudity-cartoon">none</content_attribute>
-    <content_attribute id="nudity-drawings">none</content_attribute>
-    <content_attribute id="nudity-realistic">none</content_attribute>
-    <content_attribute id="nudity-sexuallyexplicit">none</content_attribute>
-    <content_attribute id="sex-homosexuality">none</content_attribute>
-    <content_attribute id="sex-prostitution">none</content_attribute>
-    <content_attribute id="sex-adultery">none</content_attribute>
-    <content_attribute id="sex-appearance">none</content_attribute>
-    <content_attribute id="language-profanity">none</content_attribute>
-    <content_attribute id="language-humor">none</content_attribute>
-    <content_attribute id="language-discrimination">none</content_attribute>
-    <content_attribute id="social-chat">none</content_attribute>
-    <content_attribute id="social-info">none</content_attribute>
-    <content_attribute id="social-audio">none</content_attribute>
-    <content_attribute id="social-location">none</content_attribute>
-    <content_attribute id="social-contacts">none</content_attribute>
-    <content_attribute id="money-purchasing">none</content_attribute>
-    <content_attribute id="money-gambling">none</content_attribute>
-  </content_rating>
+  <content_rating type="oars-1.1" />
   <icon type="stock">com.github.orpheusdl.orpheusdl-gui</icon>
   <screenshots>
     <screenshot type="default">

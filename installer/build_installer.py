@@ -428,7 +428,7 @@ cp {INSTALLER_DIR}/linux/com.github.orpheusdl.orpheusdl-gui.appdata.xml %{buildr
 
 cat > %{buildroot}/usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop <<EOF
 [Desktop Entry]
-Version=1.0.9
+Version=1.0
 Name=OrpheusDL GUI
 Comment=A cross-platform graphical user interface for OrpheusDL. Search & download across multiple music streaming services with ease.
 Exec=OrpheusDL_GUI %U
@@ -518,7 +518,7 @@ package() {{
     install -d "$pkgdir/usr/share/applications"
     cat > "$pkgdir/usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop" <<EOF
 [Desktop Entry]
-Version=1.0.9
+Version=1.0
 Name=OrpheusDL GUI
 Comment=A cross-platform graphical user interface for OrpheusDL. Search & download across multiple music streaming services with ease.
 Exec=OrpheusDL_GUI %U
