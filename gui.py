@@ -15915,7 +15915,7 @@ Unnecessary Lossless-to-Lossless""",
             # Standardize About icon size across all platforms
             # Adjustment for Linux because it scales significantly larger than Windows/macOS
             if current_platform == "Linux":
-                icon_display_size = (50, 50)
+                icon_display_size = (60, 60)
             else:
                 icon_display_size = (80, 80)
             
