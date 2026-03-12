@@ -15912,27 +15912,24 @@ Unnecessary Lossless-to-Lossless""",
             current_platform = platform.system()
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print(f"[DEBUG AboutIcon] Platform detected: {current_platform}")
+            # Standardize About icon size to 80x80 across all platforms
+            icon_display_size = (80, 80)
+            
             if current_platform == "Linux":
                 icon_filename = "icon.png"
-                icon_display_size = (80, 80)
-                if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                    print(f"[DEBUG AboutIcon] Set Linux display size to {icon_display_size}")
             elif current_platform == "Darwin":
                 icon_filename = "icon.icns"
-                icon_display_size = (100, 100)
-                if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                    print(f"[DEBUG AboutIcon] Set macOS display size to {icon_display_size}")
             else:
                 # Prefer icon.png for the About image on Windows if available, as PIL handles PNG better than some ICOs
                 if os.path.exists(resource_path("icon.png")):
                     icon_filename = "icon.png"
                 else:
                     icon_filename = "icon.ico"
-                icon_display_size = (80, 80)
-                if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                    print(f"[DEBUG AboutIcon] Set default display size to {icon_display_size}")
+
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                print(f"[DEBUG AboutIcon] Set standardized display size to {icon_display_size}")
                 print(f"[DEBUG AboutIcon] Determined icon filename: {icon_filename}")
+            
             icon_path = resource_path(icon_filename)
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print(f"[DEBUG AboutIcon] Generated icon path: {icon_path}")
@@ -15947,7 +15944,10 @@ Unnecessary Lossless-to-Lossless""",
                 try:
                     if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                         print("[DEBUG AboutIcon] Attempting to open image...")
-                    img = Image.open(icon_path).resize(icon_display_size, Image.LANCZOS)
+                    
+                    # Open original image WITHOUT manual resize. 
+                    # Passing high-res image to CTkImage allows it to scale properly for the display's DPI.
+                    img = Image.open(icon_path)
                     if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                         print("[DEBUG AboutIcon] Image opened successfully.")
                     icon_image = customtkinter.CTkImage(light_image=img, dark_image=img, size=icon_display_size)
