@@ -4,7 +4,7 @@
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   <name>OrpheusDL GUI</name>
-  <summary>Makes downloading music with OrpheusDL easy on Windows, macOS, and Linux. Search multiple platforms and download high-quality audio with complete metadata.</summary>
+  <summary>The Ultimate Audio Downloader Interface</summary>
   <developer id="com.github.orpheusdl">
     <name>Bas Curtiz</name>
   </developer>
@@ -15,8 +15,7 @@
   </categories>
   <description>
     <p>
-      Makes downloading music with OrpheusDL easy on Windows, macOS, and Linux. 
-      Search multiple platforms and download high-quality audio with complete metadata.
+     A cross-platform graphical user interface for OrpheusDL. Search & download across multiple music streaming services with ease.
     </p>
     <p>Key Features:</p>
     <ul>
