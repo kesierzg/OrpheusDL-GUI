@@ -15912,8 +15912,12 @@ Unnecessary Lossless-to-Lossless""",
             current_platform = platform.system()
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print(f"[DEBUG AboutIcon] Platform detected: {current_platform}")
-            # Standardize About icon size to 80x80 across all platforms
-            icon_display_size = (80, 80)
+            # Standardize About icon size across all platforms
+            # Adjustment for Linux because it scales significantly larger than Windows/macOS
+            if current_platform == "Linux":
+                icon_display_size = (50, 50)
+            else:
+                icon_display_size = (80, 80)
             
             if current_platform == "Linux":
                 icon_filename = "icon.png"
