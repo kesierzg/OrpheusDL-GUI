@@ -5122,21 +5122,6 @@ def get_data_directory():
     abs_executable_path = os.path.abspath(sys.executable)
     initial_cwd = os.getcwd()
     
-    # Write debug info to a file in home directory for debugging compiled apps
-    debug_log_path = os.path.expanduser("~/orpheusdl_gui_debug.log")
-    try:
-        with open(debug_log_path, 'a') as f:
-            f.write(f"\n=== get_data_directory() called at {__import__('datetime').datetime.now()} ===\n")
-            f.write(f"sys.frozen: {is_frozen}\n")
-            f.write(f"sys._MEIPASS exists: {has_meipass}\n")
-            f.write(f"sys._MEIPASS value: {getattr(sys, '_MEIPASS', 'N/A')}\n")
-            f.write(f"platform.system(): {platform.system()}\n")
-            f.write(f"sys.executable: {sys.executable}\n")
-            f.write(f"abs_executable_path: {abs_executable_path}\n")
-            f.write(f"initial CWD: {initial_cwd}\n")
-            f.write(f"__file__ (if exists): {globals().get('__file__', 'N/A')}\n")
-    except Exception as e:
-        print(f"[DEBUG] Could not write debug log: {e}")
     
     # Multiple detection methods for macOS .app bundles
     is_macos_app_bundle = False
