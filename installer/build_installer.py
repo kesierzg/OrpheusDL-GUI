@@ -290,7 +290,11 @@ Terminal=false
 
     appdata_src = INSTALLER_DIR / "linux" / "com.github.orpheusdl.orpheusdl-gui.appdata.xml"
     if appdata_src.exists():
-        shutil.copy(appdata_src, appdir / "usr" / "share" / "metainfo" / "com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml")
+        # Copy with multiple naming conventions for maximum compatibility
+        metainfo_dir = appdir / "usr" / "share" / "metainfo"
+        shutil.copy(appdata_src, metainfo_dir / "com.github.orpheusdl.orpheusdl-gui.appdata.xml")
+        shutil.copy(appdata_src, metainfo_dir / "com.github.orpheusdl.orpheusdl-gui.metainfo.xml")
+        shutil.copy(appdata_src, metainfo_dir / "com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml")
 
     apprun_content = """#!/bin/bash
 APPDIR="$(dirname "$(readlink -f "$0")")"
@@ -344,8 +348,19 @@ Description: OrpheusDL GUI
 
     appdata_src = INSTALLER_DIR / "linux" / "com.github.orpheusdl.orpheusdl-gui.appdata.xml"
     if appdata_src.exists():
-        (deb_root / "usr" / "share" / "metainfo").mkdir(parents=True, exist_ok=True)
-        shutil.copy(appdata_src, deb_root / "usr" / "share" / "metainfo" / "com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml")
+        metainfo_dir = deb_root / "usr" / "share" / "metainfo"
+        metainfo_dir.mkdir(parents=True, exist_ok=True)
+        # Copy with multiple naming conventions
+        shutil.copy(appdata_src, metainfo_dir / "com.github.orpheusdl.orpheusdl-gui.appdata.xml")
+        shutil.copy(appdata_src, metainfo_dir / "com.github.orpheusdl.orpheusdl-gui.metainfo.xml")
+        shutil.copy(appdata_src, metainfo_dir / "com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml")
+
+    # Generate copyright file
+    license_src = PROJECT_ROOT / "LICENSE"
+    if license_src.exists():
+        doc_dir = deb_root / "usr" / "share" / "doc" / package_name
+        doc_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy(license_src, doc_dir / "copyright")
 
     exe_path = DIST_DIR / "OrpheusDL_GUI"
     if exe_path.exists():
@@ -426,6 +441,7 @@ cp {DIST_DIR}/OrpheusDL_GUI %{{buildroot}}/usr/bin/OrpheusDL_GUI
 cp {INSTALLER_DIR}/linux/flathub-images/icon.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/com.github.orpheusdl.orpheusdl-gui.png
 mkdir -p %{buildroot}/usr/share/metainfo
 cp {INSTALLER_DIR}/linux/com.github.orpheusdl.orpheusdl-gui.appdata.xml %{buildroot}/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.appdata.xml
+cp {INSTALLER_DIR}/linux/com.github.orpheusdl.orpheusdl-gui.appdata.xml %{buildroot}/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.metainfo.xml
 
 cat > %{buildroot}/usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop <<EOF
 [Desktop Entry]
@@ -446,7 +462,8 @@ EOF
 /usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop
 /usr/share/icons/hicolor/scalable/apps/com.github.orpheusdl.orpheusdl-gui.svg
 /usr/share/icons/hicolor/256x256/apps/com.github.orpheusdl.orpheusdl-gui.png
-/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml
+/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.appdata.xml
+/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.metainfo.xml
 
 %changelog
 * Thu Mar 12 2026 Bas Curtiz <bascurtiz@gmail.com> - {version}-1
@@ -514,7 +531,7 @@ sha256sums=('SKIP' 'SKIP' 'SKIP')
 package() {{
     install -Dm755 "$srcdir/OrpheusDL_GUI" "$pkgdir/usr/bin/OrpheusDL_GUI"
     install -Dm644 "$srcdir/icon.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/com.github.orpheusdl.orpheusdl-gui.svg"
-    install -Dm644 "$srcdir/appdata.xml" "$pkgdir/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml"
+    install -Dm644 "$srcdir/appdata.xml" "$pkgdir/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.appdata.xml"
 
     install -d "$pkgdir/usr/share/applications"
     cat > "$pkgdir/usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop" <<EOF

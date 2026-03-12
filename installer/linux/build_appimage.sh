@@ -72,6 +72,8 @@ fi
 echo "Copying metadata files..."
 cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.desktop" "$APPDIR/usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop"
 cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.desktop" "$APPDIR/com.github.orpheusdl.orpheusdl-gui.desktop"
+cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.appdata.xml" "$APPDIR/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.appdata.xml"
+cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.appdata.xml" "$APPDIR/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.metainfo.xml"
 cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.appdata.xml" "$APPDIR/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml"
 
 # Create AppRun
