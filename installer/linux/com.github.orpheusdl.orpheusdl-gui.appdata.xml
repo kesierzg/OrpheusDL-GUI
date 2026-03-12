@@ -51,9 +51,9 @@
     <content_attribute id="violence-sexual">none</content_attribute>
     <content_attribute id="violence-desecration">none</content_attribute>
     <content_attribute id="violence-slavery">none</content_attribute>
-    <content_attribute id="weapons-alcohol">none</content_attribute>
-    <content_attribute id="weapons-drugs">none</content_attribute>
-    <content_attribute id="weapons-tobacco">none</content_attribute>
+    <content_attribute id="drugs-alcohol">none</content_attribute>
+    <content_attribute id="drugs-narcotics">none</content_attribute>
+    <content_attribute id="drugs-tobacco">none</content_attribute>
     <content_attribute id="money-gambling">none</content_attribute>
     <content_attribute id="money-purchasing">none</content_attribute>
     <content_attribute id="money-advertising">none</content_attribute>
@@ -65,14 +65,12 @@
     <content_attribute id="language-profanity">none</content_attribute>
     <content_attribute id="language-humor">none</content_attribute>
     <content_attribute id="language-discrimination">none</content_attribute>
-    <content_attribute id="sexual-content">none</content_attribute>
-    <content_attribute id="sexual-themes">none</content_attribute>
-    <content_attribute id="sexual-homosexuality">none</content_attribute>
-    <content_attribute id="sexual-prostitution">none</content_attribute>
-    <content_attribute id="sexual-adulteration">none</content_attribute>
-    <content_attribute id="sexual-appearance">none</content_attribute>
-    <content_attribute id="state-selection">none</content_attribute>
-    <content_attribute id="state-interactivity">none</content_attribute>
+    <content_attribute id="sex-nudity">none</content_attribute>
+    <content_attribute id="sex-themes">none</content_attribute>
+    <content_attribute id="sex-homosexuality">none</content_attribute>
+    <content_attribute id="sex-prostitution">none</content_attribute>
+    <content_attribute id="sex-adultery">none</content_attribute>
+    <content_attribute id="sex-appearance">none</content_attribute>
   </content_rating>
   <icon type="remote">https://raw.githubusercontent.com/bascurtiz/OrpheusDL-GUI/master/installer/linux/flathub-images/icon.png</icon>
   <icon type="stock">com.github.orpheusdl.orpheusdl-gui</icon>

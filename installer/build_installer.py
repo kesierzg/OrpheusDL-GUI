@@ -290,11 +290,8 @@ Terminal=false
 
     appdata_src = INSTALLER_DIR / "linux" / "com.github.orpheusdl.orpheusdl-gui.appdata.xml"
     if appdata_src.exists():
-        # Copy with multiple naming conventions for maximum compatibility
         metainfo_dir = appdir / "usr" / "share" / "metainfo"
-        shutil.copy(appdata_src, metainfo_dir / "com.github.orpheusdl.orpheusdl-gui.appdata.xml")
         shutil.copy(appdata_src, metainfo_dir / "com.github.orpheusdl.orpheusdl-gui.metainfo.xml")
-        shutil.copy(appdata_src, metainfo_dir / "com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml")
 
     apprun_content = """#!/bin/bash
 APPDIR="$(dirname "$(readlink -f "$0")")"
@@ -350,10 +347,7 @@ Description: OrpheusDL GUI
     if appdata_src.exists():
         metainfo_dir = deb_root / "usr" / "share" / "metainfo"
         metainfo_dir.mkdir(parents=True, exist_ok=True)
-        # Copy with multiple naming conventions
-        shutil.copy(appdata_src, metainfo_dir / "com.github.orpheusdl.orpheusdl-gui.appdata.xml")
         shutil.copy(appdata_src, metainfo_dir / "com.github.orpheusdl.orpheusdl-gui.metainfo.xml")
-        shutil.copy(appdata_src, metainfo_dir / "com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml")
 
     # Generate copyright file
     license_src = PROJECT_ROOT / "LICENSE"
