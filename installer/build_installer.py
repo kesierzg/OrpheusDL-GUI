@@ -263,6 +263,7 @@ def build_linux_installer(modules=None):
         (appdir / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps").mkdir(parents=True, exist_ok=True)
         shutil.copy(linux_icon_src, appdir / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps" / "com.github.orpheusdl.orpheusdl-gui.png")
         shutil.copy(linux_icon_src, appdir / "com.github.orpheusdl.orpheusdl-gui.png")
+        shutil.copy(linux_icon_src, appdir / "orpheusdl-gui.png")
 
     icon_svg_path = PROJECT_ROOT / "icon.svg"
     if icon_svg_path.exists():
@@ -443,7 +444,7 @@ EOF
 %files
 /usr/bin/OrpheusDL_GUI
 /usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop
-/usr/share/icons/hicolor/scalable/apps/orpheusdl-gui.svg
+/usr/share/icons/hicolor/scalable/apps/com.github.orpheusdl.orpheusdl-gui.svg
 /usr/share/icons/hicolor/256x256/apps/com.github.orpheusdl.orpheusdl-gui.png
 /usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.appdata.xml
 
