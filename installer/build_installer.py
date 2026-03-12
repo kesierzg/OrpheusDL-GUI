@@ -254,21 +254,36 @@ def build_linux_installer(modules=None):
     if exe_path.exists():
         shutil.copy(exe_path, appdir / "usr" / "bin" / "OrpheusDL_GUI")
 
-    # Use provided high-res icon if available
+    # Copy icons to various locations for maximum compatibility
     linux_icon_src = INSTALLER_DIR / "linux" / "flathub-images" / "icon.png"
     if not linux_icon_src.exists():
         linux_icon_src = PROJECT_ROOT / "icon.png"
 
     if linux_icon_src.exists():
-        (appdir / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps").mkdir(parents=True, exist_ok=True)
-        shutil.copy(linux_icon_src, appdir / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps" / "com.github.orpheusdl.orpheusdl-gui.png")
+        # AppImage root icons
         shutil.copy(linux_icon_src, appdir / "com.github.orpheusdl.orpheusdl-gui.png")
         shutil.copy(linux_icon_src, appdir / "orpheusdl-gui.png")
+        
+        # Hicolor icons (multiple sizes)
+        for size in ["32x32", "48x48", "64x64", "128x128", "256x256"]:
+            icon_dir = appdir / "usr" / "share" / "icons" / "hicolor" / size / "apps"
+            icon_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy(linux_icon_src, icon_dir / "com.github.orpheusdl.orpheusdl-gui.png")
+            
+        # Pixmaps (common fallback)
+        (appdir / "usr" / "share" / "pixmaps").mkdir(parents=True, exist_ok=True)
+        shutil.copy(linux_icon_src, appdir / "usr" / "share" / "pixmaps" / "com.github.orpheusdl.orpheusdl-gui.png")
 
     icon_svg_path = PROJECT_ROOT / "icon.svg"
     if icon_svg_path.exists():
-        shutil.copy(icon_svg_path, appdir / "usr" / "share" / "icons" / "hicolor" / "scalable" / "apps" / "com.github.orpheusdl.orpheusdl-gui.svg")
+        icon_svg_dest = appdir / "usr" / "share" / "icons" / "hicolor" / "scalable" / "apps" / "com.github.orpheusdl.orpheusdl-gui.svg"
+        icon_svg_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(icon_svg_path, icon_svg_dest)
         shutil.copy(icon_svg_path, appdir / "com.github.orpheusdl.orpheusdl-gui.svg")
+        
+        # Pixmaps SVG fallback
+        (appdir / "usr" / "share" / "pixmaps").mkdir(parents=True, exist_ok=True)
+        shutil.copy(icon_svg_path, appdir / "usr" / "share" / "pixmaps" / "com.github.orpheusdl.orpheusdl-gui.svg")
 
     desktop_src = INSTALLER_DIR / "linux" / "com.github.orpheusdl.orpheusdl-gui.desktop"
     if desktop_src.exists():
@@ -361,18 +376,31 @@ Description: OrpheusDL GUI
         shutil.copy(exe_path, deb_root / "usr" / "bin" / "OrpheusDL_GUI")
         (deb_root / "usr" / "bin" / "OrpheusDL_GUI").chmod(0o755)
 
-    # Use provided high-res icon if available
+    # Copy icons to various locations
     linux_icon_src = INSTALLER_DIR / "linux" / "flathub-images" / "icon.png"
     if not linux_icon_src.exists():
         linux_icon_src = PROJECT_ROOT / "icon.png"
 
     if linux_icon_src.exists():
-        (deb_root / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps").mkdir(parents=True, exist_ok=True)
-        shutil.copy(linux_icon_src, deb_root / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps" / "com.github.orpheusdl.orpheusdl-gui.png")
+        # Hicolor icons (multiple sizes)
+        for size in ["32x32", "48x48", "64x64", "128x128", "256x256"]:
+            icon_dir = deb_root / "usr" / "share" / "icons" / "hicolor" / size / "apps"
+            icon_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy(linux_icon_src, icon_dir / "com.github.orpheusdl.orpheusdl-gui.png")
+            
+        # Pixmaps
+        (deb_root / "usr" / "share" / "pixmaps").mkdir(parents=True, exist_ok=True)
+        shutil.copy(linux_icon_src, deb_root / "usr" / "share" / "pixmaps" / "com.github.orpheusdl.orpheusdl-gui.png")
 
     icon_svg_path = PROJECT_ROOT / "icon.svg"
     if icon_svg_path.exists():
-        shutil.copy(icon_svg_path, deb_root / "usr" / "share" / "icons" / "hicolor" / "scalable" / "apps" / "com.github.orpheusdl.orpheusdl-gui.svg")
+        icon_svg_dest = deb_root / "usr" / "share" / "icons" / "hicolor" / "scalable" / "apps" / "com.github.orpheusdl.orpheusdl-gui.svg"
+        icon_svg_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(icon_svg_path, icon_svg_dest)
+        
+        # Pixmaps SVG
+        (deb_root / "usr" / "share" / "pixmaps").mkdir(parents=True, exist_ok=True)
+        shutil.copy(icon_svg_path, deb_root / "usr" / "share" / "pixmaps" / "com.github.orpheusdl.orpheusdl-gui.svg")
 
     desktop_src = INSTALLER_DIR / "linux" / "com.github.orpheusdl.orpheusdl-gui.desktop"
     if desktop_src.exists():
@@ -401,10 +429,13 @@ def build_linux_rpm(modules=None):
     """Build Fedora/RHEL .rpm package."""
     print("\n=== RPM package ===")
 
+    linux_icon_src = INSTALLER_DIR / "linux" / "flathub-images" / "icon.png"
+    if not linux_icon_src.exists():
+        linux_icon_src = PROJECT_ROOT / "icon.png"
+
     if not shutil.which("rpmbuild"):
         print("ERROR: rpmbuild not found")
         return False
-
     version = get_version().lstrip('v')
     rpm_root = DIST_DIR / "rpm_build"
     if rpm_root.exists():
@@ -432,8 +463,14 @@ mkdir -p %{{buildroot}}/usr/share/applications
 mkdir -p %{{buildroot}}/usr/share/icons/hicolor/scalable/apps
 
 cp {DIST_DIR}/OrpheusDL_GUI %{{buildroot}}/usr/bin/OrpheusDL_GUI
-cp {INSTALLER_DIR}/linux/flathub-images/icon.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/com.github.orpheusdl.orpheusdl-gui.png
-mkdir -p %{buildroot}/usr/share/metainfo
+mkdir -p %{{buildroot}}/usr/share/pixmaps
+cp {linux_icon_src} %{{buildroot}}/usr/share/pixmaps/com.github.orpheusdl.orpheusdl-gui.png
+# Provide multiple sizes in hicolor
+for size in 32x32 48x48 64x64 128x128 256x256; do
+    mkdir -p %{{buildroot}}/usr/share/icons/hicolor/$size/apps
+    cp {linux_icon_src} %{{buildroot}}/usr/share/icons/hicolor/$size/apps/com.github.orpheusdl.orpheusdl-gui.png
+done
+mkdir -p %{{buildroot}}/usr/share/metainfo
 cp {INSTALLER_DIR}/linux/com.github.orpheusdl.orpheusdl-gui.appdata.xml %{buildroot}/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.appdata.xml
 cp {INSTALLER_DIR}/linux/com.github.orpheusdl.orpheusdl-gui.appdata.xml %{buildroot}/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.metainfo.xml
 
@@ -519,13 +556,21 @@ depends=('python' 'ffmpeg')
 # Long description: A cross-platform graphical user interface for OrpheusDL. Search & download across multiple music streaming services with ease.
 source=("OrpheusDL_GUI"
         "icon.svg"
+        "../icon.png"
         "appdata.xml")
-sha256sums=('SKIP' 'SKIP' 'SKIP')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 package() {{
     install -Dm755 "$srcdir/OrpheusDL_GUI" "$pkgdir/usr/bin/OrpheusDL_GUI"
     install -Dm644 "$srcdir/icon.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/com.github.orpheusdl.orpheusdl-gui.svg"
-    install -Dm644 "$srcdir/appdata.xml" "$pkgdir/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.appdata.xml"
+    
+    # Provide multiple sizes and pixmaps for Arch
+    install -Dm644 "$srcdir/icon.png" "$pkgdir/usr/share/pixmaps/com.github.orpheusdl.orpheusdl-gui.png"
+    for size in 32x32 48x48 64x64 128x128 256x256; do
+        install -Dm644 "$srcdir/icon.png" "$pkgdir/usr/share/icons/hicolor/$size/apps/com.github.orpheusdl.orpheusdl-gui.png"
+    done
+    
+    install -Dm644 "$srcdir/appdata.xml" "$pkgdir/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.metainfo.xml"
 
     install -d "$pkgdir/usr/share/applications"
     cat > "$pkgdir/usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop" <<EOF
