@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=OrpheusDL GUI
+Comment=Music Downloader GUI
+Exec=orpheusdl-gui %U
+Icon=orpheusdl-gui
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+Keywords=music;download;spotify;tidal;deezer;qobuz;
+StartupWMClass=OrpheusDL-GUI
+MimeType=x-scheme-handler/orpheusdl;
+

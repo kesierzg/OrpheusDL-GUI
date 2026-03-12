@@ -64,17 +64,52 @@ fi
 
 # Copy icon
 if [ -f "$PROJECT_ROOT/icon.png" ]; then
-    cp "$PROJECT_ROOT/icon.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/com.github.orpheusdl.orpheusdl-gui.png"
-    cp "$PROJECT_ROOT/icon.png" "$APPDIR/com.github.orpheusdl.orpheusdl-gui.png"
+    cp "$PROJECT_ROOT/icon.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/orpheusdl-gui.png"
+    cp "$PROJECT_ROOT/icon.png" "$APPDIR/orpheusdl-gui.png"
 fi
 
-# Copy desktop file and AppStream metadata
-echo "Copying metadata files..."
-cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.desktop" "$APPDIR/usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop"
-cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.desktop" "$APPDIR/com.github.orpheusdl.orpheusdl-gui.desktop"
-cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.appdata.xml" "$APPDIR/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.appdata.xml"
-cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.appdata.xml" "$APPDIR/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.metainfo.xml"
-cp "$SCRIPT_DIR/com.github.orpheusdl.orpheusdl-gui.appdata.xml" "$APPDIR/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.desktop.metainfo.xml"
+# Create desktop file
+cat > "$APPDIR/usr/share/applications/orpheusdl-gui.desktop" << EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=OrpheusDL GUI
+Comment=Music Downloader GUI
+Exec=OrpheusDL_GUI %U
+Icon=orpheusdl-gui
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+Keywords=music;download;spotify;tidal;deezer;qobuz;
+StartupWMClass=OrpheusDL-GUI
+EOF
+
+# Copy desktop file to root
+cp "$APPDIR/usr/share/applications/orpheusdl-gui.desktop" "$APPDIR/orpheusdl-gui.desktop"
+
+# Create AppStream metadata
+cat > "$APPDIR/usr/share/metainfo/orpheusdl-gui.appdata.xml" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.orpheusdl.gui</id>
+  <name>OrpheusDL-GUI</name>
+  <summary>Music Downloader GUI</summary>
+  <description>
+    <p>
+      OrpheusDL-GUI is a graphical interface for downloading music from various 
+      streaming platforms including Spotify, Tidal, Deezer, Qobuz, and more.
+    </p>
+  </description>
+  <launchable type="desktop-id">orpheusdl-gui.desktop</launchable>
+  <url type="homepage">https://github.com/orpheusdl/orpheusdl-gui</url>
+  <provides>
+    <binary>OrpheusDL_GUI</binary>
+  </provides>
+  <releases>
+    <release version="$VERSION" date="$(date +%Y-%m-%d)"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>
+EOF
 
 # Create AppRun
 cat > "$APPDIR/AppRun" << 'EOF'

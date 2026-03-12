@@ -254,59 +254,32 @@ def build_linux_installer(modules=None):
     if exe_path.exists():
         shutil.copy(exe_path, appdir / "usr" / "bin" / "OrpheusDL_GUI")
 
-    # Copy icons to various locations for maximum compatibility
-    linux_icon_src = INSTALLER_DIR / "linux" / "flathub-images" / "icon.png"
-    if not linux_icon_src.exists():
-        linux_icon_src = PROJECT_ROOT / "icon.png"
-
-    if linux_icon_src.exists():
-        # AppImage root icons
-        shutil.copy(linux_icon_src, appdir / "com.github.orpheusdl.orpheusdl-gui.png")
-        shutil.copy(linux_icon_src, appdir / "orpheusdl-gui.png")
-        
-        # Hicolor icons (multiple sizes)
-        for size in ["32x32", "48x48", "64x64", "128x128", "256x256"]:
-            icon_dir = appdir / "usr" / "share" / "icons" / "hicolor" / size / "apps"
-            icon_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy(linux_icon_src, icon_dir / "com.github.orpheusdl.orpheusdl-gui.png")
-            
-        # Pixmaps (common fallback)
-        (appdir / "usr" / "share" / "pixmaps").mkdir(parents=True, exist_ok=True)
-        shutil.copy(linux_icon_src, appdir / "usr" / "share" / "pixmaps" / "com.github.orpheusdl.orpheusdl-gui.png")
-
-    icon_svg_path = PROJECT_ROOT / "icon.svg"
-    if icon_svg_path.exists():
-        icon_svg_dest = appdir / "usr" / "share" / "icons" / "hicolor" / "scalable" / "apps" / "com.github.orpheusdl.orpheusdl-gui.svg"
-        icon_svg_dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(icon_svg_path, icon_svg_dest)
-        shutil.copy(icon_svg_path, appdir / "com.github.orpheusdl.orpheusdl-gui.svg")
-        
-        # Pixmaps SVG fallback
-        (appdir / "usr" / "share" / "pixmaps").mkdir(parents=True, exist_ok=True)
-        shutil.copy(icon_svg_path, appdir / "usr" / "share" / "pixmaps" / "com.github.orpheusdl.orpheusdl-gui.svg")
-
-    desktop_src = INSTALLER_DIR / "linux" / "com.github.orpheusdl.orpheusdl-gui.desktop"
-    if desktop_src.exists():
-        shutil.copy(desktop_src, appdir / "usr" / "share" / "applications" / "com.github.orpheusdl.orpheusdl-gui.desktop")
-        shutil.copy(desktop_src, appdir / "com.github.orpheusdl.orpheusdl-gui.desktop")
+    icon_path = PROJECT_ROOT / "icon.svg"
+    if icon_path.exists():
+        shutil.copy(icon_path, appdir / "usr" / "share" / "icons" / "hicolor" / "scalable" / "apps" / "orpheusdl-gui.svg")
+        shutil.copy(icon_path, appdir / "orpheusdl-gui.svg")
     else:
-        # Fallback if desktop file is missing
-        desktop_content = """[Desktop Entry]
+        icon_path = PROJECT_ROOT / "icon.png"
+        if icon_path.exists():
+            (appdir / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps").mkdir(parents=True, exist_ok=True)
+            shutil.copy(icon_path, appdir / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps" / "orpheusdl-gui.png")
+            shutil.copy(icon_path, appdir / "orpheusdl-gui.png")
+
+    desktop_content = """[Desktop Entry]
 Name=OrpheusDL GUI
 Comment=Music Downloader GUI
 Exec=OrpheusDL_GUI
-Icon=com.github.orpheusdl.orpheusdl-gui
+Icon=orpheusdl-gui
 Type=Application
 Categories=AudioVideo;Audio;
 Terminal=false
 """
-        (appdir / "usr" / "share" / "applications" / "com.github.orpheusdl.orpheusdl-gui.desktop").write_text(desktop_content)
-        (appdir / "com.github.orpheusdl.orpheusdl-gui.desktop").write_text(desktop_content)
+    (appdir / "usr" / "share" / "applications" / "orpheusdl-gui.desktop").write_text(desktop_content)
+    (appdir / "orpheusdl-gui.desktop").write_text(desktop_content)
 
     appdata_src = INSTALLER_DIR / "linux" / "com.github.orpheusdl.orpheusdl-gui.appdata.xml"
     if appdata_src.exists():
-        metainfo_dir = appdir / "usr" / "share" / "metainfo"
-        shutil.copy(appdata_src, metainfo_dir / "com.github.orpheusdl.orpheusdl-gui.metainfo.xml")
+        shutil.copy(appdata_src, appdir / "usr" / "share" / "metainfo" / "com.github.orpheusdl.orpheusdl-gui.appdata.xml")
 
     apprun_content = """#!/bin/bash
 APPDIR="$(dirname "$(readlink -f "$0")")"
@@ -360,63 +333,34 @@ Description: OrpheusDL GUI
 
     appdata_src = INSTALLER_DIR / "linux" / "com.github.orpheusdl.orpheusdl-gui.appdata.xml"
     if appdata_src.exists():
-        metainfo_dir = deb_root / "usr" / "share" / "metainfo"
-        metainfo_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy(appdata_src, metainfo_dir / "com.github.orpheusdl.orpheusdl-gui.metainfo.xml")
-
-    # Generate copyright file
-    license_src = PROJECT_ROOT / "LICENSE"
-    if license_src.exists():
-        doc_dir = deb_root / "usr" / "share" / "doc" / package_name
-        doc_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy(license_src, doc_dir / "copyright")
+        (deb_root / "usr" / "share" / "metainfo").mkdir(parents=True, exist_ok=True)
+        shutil.copy(appdata_src, deb_root / "usr" / "share" / "metainfo" / "com.github.orpheusdl.orpheusdl-gui.appdata.xml")
 
     exe_path = DIST_DIR / "OrpheusDL_GUI"
     if exe_path.exists():
         shutil.copy(exe_path, deb_root / "usr" / "bin" / "OrpheusDL_GUI")
         (deb_root / "usr" / "bin" / "OrpheusDL_GUI").chmod(0o755)
 
-    # Copy icons to various locations
-    linux_icon_src = INSTALLER_DIR / "linux" / "flathub-images" / "icon.png"
-    if not linux_icon_src.exists():
-        linux_icon_src = PROJECT_ROOT / "icon.png"
+    icon_path = PROJECT_ROOT / "icon.svg"
+    if icon_path.exists():
+        shutil.copy(icon_path, deb_root / "usr" / "share" / "icons" / "hicolor" / "scalable" / "apps" / "orpheusdl-gui.svg")
 
-    if linux_icon_src.exists():
-        # Hicolor icons (multiple sizes)
-        for size in ["32x32", "48x48", "64x64", "128x128", "256x256"]:
-            icon_dir = deb_root / "usr" / "share" / "icons" / "hicolor" / size / "apps"
-            icon_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy(linux_icon_src, icon_dir / "com.github.orpheusdl.orpheusdl-gui.png")
-            
-        # Pixmaps
-        (deb_root / "usr" / "share" / "pixmaps").mkdir(parents=True, exist_ok=True)
-        shutil.copy(linux_icon_src, deb_root / "usr" / "share" / "pixmaps" / "com.github.orpheusdl.orpheusdl-gui.png")
+    icon_png_path = PROJECT_ROOT / "icon.png"
+    if icon_png_path.exists():
+        (deb_root / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps").mkdir(parents=True, exist_ok=True)
+        shutil.copy(icon_png_path, deb_root / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps" / "orpheusdl-gui.png")
 
-    icon_svg_path = PROJECT_ROOT / "icon.svg"
-    if icon_svg_path.exists():
-        icon_svg_dest = deb_root / "usr" / "share" / "icons" / "hicolor" / "scalable" / "apps" / "com.github.orpheusdl.orpheusdl-gui.svg"
-        icon_svg_dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(icon_svg_path, icon_svg_dest)
-        
-        # Pixmaps SVG
-        (deb_root / "usr" / "share" / "pixmaps").mkdir(parents=True, exist_ok=True)
-        shutil.copy(icon_svg_path, deb_root / "usr" / "share" / "pixmaps" / "com.github.orpheusdl.orpheusdl-gui.svg")
-
-    desktop_src = INSTALLER_DIR / "linux" / "com.github.orpheusdl.orpheusdl-gui.desktop"
-    if desktop_src.exists():
-        shutil.copy(desktop_src, deb_root / "usr" / "share" / "applications" / "com.github.orpheusdl.orpheusdl-gui.desktop")
-    else:
-        desktop_content = f"""[Desktop Entry]
+    desktop_content = f"""[Desktop Entry]
 Name=OrpheusDL GUI
 Comment=A cross-platform graphical user interface for OrpheusDL. Search & download across multiple music streaming services with ease.
 Exec=OrpheusDL_GUI
-Icon=com.github.orpheusdl.orpheusdl-gui
+Icon=/usr/share/icons/hicolor/256x256/apps/orpheusdl-gui.png
 Type=Application
 Categories=AudioVideo;Audio;
 Terminal=false
-StartupWMClass=OrpheusDL_GUI
+StartupWMClass=orpheusdl_gui
 """
-        (deb_root / "usr" / "share" / "applications" / "com.github.orpheusdl.orpheusdl-gui.desktop").write_text(desktop_content)
+    (deb_root / "usr" / "share" / "applications" / "orpheusdl-gui.desktop").write_text(desktop_content)
 
     deb_path = DIST_DIR / f"OrpheusDL_GUI-{version}-{arch}.deb"
     run_command(["dpkg-deb", "--build", str(deb_root), str(deb_path)])
@@ -429,13 +373,10 @@ def build_linux_rpm(modules=None):
     """Build Fedora/RHEL .rpm package."""
     print("\n=== RPM package ===")
 
-    linux_icon_src = INSTALLER_DIR / "linux" / "flathub-images" / "icon.png"
-    if not linux_icon_src.exists():
-        linux_icon_src = PROJECT_ROOT / "icon.png"
-
     if not shutil.which("rpmbuild"):
         print("ERROR: rpmbuild not found")
         return False
+
     version = get_version().lstrip('v')
     rpm_root = DIST_DIR / "rpm_build"
     if rpm_root.exists():
@@ -463,43 +404,29 @@ mkdir -p %{{buildroot}}/usr/share/applications
 mkdir -p %{{buildroot}}/usr/share/icons/hicolor/scalable/apps
 
 cp {DIST_DIR}/OrpheusDL_GUI %{{buildroot}}/usr/bin/OrpheusDL_GUI
-mkdir -p %{{buildroot}}/usr/share/pixmaps
-cp {linux_icon_src} %{{buildroot}}/usr/share/pixmaps/com.github.orpheusdl.orpheusdl-gui.png
-# Provide multiple sizes in hicolor
-for size in 32x32 48x48 64x64 128x128 256x256; do
-    mkdir -p %{{buildroot}}/usr/share/icons/hicolor/$size/apps
-    cp {linux_icon_src} %{{buildroot}}/usr/share/icons/hicolor/$size/apps/com.github.orpheusdl.orpheusdl-gui.png
-done
+cp {PROJECT_ROOT}/icon.svg %{{buildroot}}/usr/share/icons/hicolor/scalable/apps/orpheusdl-gui.svg
 mkdir -p %{{buildroot}}/usr/share/metainfo
-cp {INSTALLER_DIR}/linux/com.github.orpheusdl.orpheusdl-gui.appdata.xml %{buildroot}/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.appdata.xml
-cp {INSTALLER_DIR}/linux/com.github.orpheusdl.orpheusdl-gui.appdata.xml %{buildroot}/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.metainfo.xml
+cp {INSTALLER_DIR}/linux/com.github.orpheusdl.orpheusdl-gui.appdata.xml %{{buildroot}}/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.appdata.xml
 
-cat > %{buildroot}/usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop <<EOF
+cat > %{{buildroot}}/usr/share/applications/orpheusdl-gui.desktop <<EOF
 [Desktop Entry]
-Version=1.0
 Name=OrpheusDL GUI
 Comment=A cross-platform graphical user interface for OrpheusDL. Search & download across multiple music streaming services with ease.
-Exec=OrpheusDL_GUI %U
-Icon=com.github.orpheusdl.orpheusdl-gui
+Exec=OrpheusDL_GUI
+Icon=orpheusdl-gui
 Type=Application
-Categories=AudioVideo;Audio;Music;
+Categories=AudioVideo;Audio;
 Terminal=false
-StartupWMClass=OrpheusDL_GUI
-MimeType=x-scheme-handler/orpheusdl;
 EOF
 
 %files
 /usr/bin/OrpheusDL_GUI
-/usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop
-/usr/share/icons/hicolor/scalable/apps/com.github.orpheusdl.orpheusdl-gui.svg
-/usr/share/icons/hicolor/256x256/apps/com.github.orpheusdl.orpheusdl-gui.png
+/usr/share/applications/orpheusdl-gui.desktop
+/usr/share/icons/hicolor/scalable/apps/orpheusdl-gui.svg
 /usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.appdata.xml
-/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.metainfo.xml
 
 %changelog
-* Thu Mar 12 2026 Bas Curtiz <bascurtiz@gmail.com> - {version}-1
-- Updated metadata and icons
-* Sat Jan 11 2025 Bas Curtiz <bascurtiz@gmail.com> - 1.0.8-1
+* Sat Jan 11 2025 Bas Curtiz <bascurtiz@gmail.com> - {version}-1
 - Initial release
 """
     spec_path = rpm_root / "SPECS" / "orpheusdl-gui.spec"
@@ -556,35 +483,24 @@ depends=('python' 'ffmpeg')
 # Long description: A cross-platform graphical user interface for OrpheusDL. Search & download across multiple music streaming services with ease.
 source=("OrpheusDL_GUI"
         "icon.svg"
-        "../icon.png"
         "appdata.xml")
-sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP')
+sha256sums=('SKIP' 'SKIP' 'SKIP')
 
 package() {{
     install -Dm755 "$srcdir/OrpheusDL_GUI" "$pkgdir/usr/bin/OrpheusDL_GUI"
-    install -Dm644 "$srcdir/icon.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/com.github.orpheusdl.orpheusdl-gui.svg"
-    
-    # Provide multiple sizes and pixmaps for Arch
-    install -Dm644 "$srcdir/icon.png" "$pkgdir/usr/share/pixmaps/com.github.orpheusdl.orpheusdl-gui.png"
-    for size in 32x32 48x48 64x64 128x128 256x256; do
-        install -Dm644 "$srcdir/icon.png" "$pkgdir/usr/share/icons/hicolor/$size/apps/com.github.orpheusdl.orpheusdl-gui.png"
-    done
-    
-    install -Dm644 "$srcdir/appdata.xml" "$pkgdir/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.metainfo.xml"
+    install -Dm644 "$srcdir/icon.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/orpheusdl-gui.svg"
+    install -Dm644 "$srcdir/appdata.xml" "$pkgdir/usr/share/metainfo/com.github.orpheusdl.orpheusdl-gui.appdata.xml"
 
     install -d "$pkgdir/usr/share/applications"
-    cat > "$pkgdir/usr/share/applications/com.github.orpheusdl.orpheusdl-gui.desktop" <<EOF
+    cat > "$pkgdir/usr/share/applications/orpheusdl-gui.desktop" <<EOF
 [Desktop Entry]
-Version=1.0
 Name=OrpheusDL GUI
 Comment=A cross-platform graphical user interface for OrpheusDL. Search & download across multiple music streaming services with ease.
-Exec=OrpheusDL_GUI %U
-Icon=com.github.orpheusdl.orpheusdl-gui
+Exec=OrpheusDL_GUI
+Icon=orpheusdl-gui
 Type=Application
-Categories=AudioVideo;Audio;Music;
+Categories=AudioVideo;Audio;
 Terminal=false
-StartupWMClass=OrpheusDL_GUI
-MimeType=x-scheme-handler/orpheusdl;
 EOF
 }}
 """

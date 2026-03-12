@@ -32,7 +32,7 @@ python installer/build_installer.py --platform windows
 # Install create-dmg
 brew install create-dmg
 # Build the installer
-python3 installer/build_installer.py --platform macos
+python installer/build_installer.py --platform macos
 ```
 
 ### Linux
