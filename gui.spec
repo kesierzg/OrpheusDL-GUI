@@ -138,7 +138,9 @@ a = Analysis(
         'aiohttp',
         'aiofiles',
         'httpx',
-        'async_lru'
+        'async_lru',
+        'pywinstyles',
+        'packaging'
     ] + ffmpeg_hiddenimports,
     excludes=['torch', 'cuda', 'pytorch', 'matplotlib', 'pandas', 'numpy'],
     hookspath=['.'],

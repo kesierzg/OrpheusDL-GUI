@@ -1,3 +1,4 @@
 CTkToolTip
 customtkinter
 packaging
+pywinstyles
