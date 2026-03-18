@@ -109,6 +109,20 @@ import pickle
 import traceback
 import logging
 import webbrowser
+
+def _open_url(url):
+    """Open a URL using the system default browser.
+    Uses `open` on macOS (avoids AppleScript/Chrome dependency),
+    `os.startfile` on Windows, and `xdg-open` on Linux."""
+    try:
+        if platform.system() == "Darwin":
+            subprocess.run(['open', url], check=False)
+        elif platform.system() == "Windows":
+            os.startfile(url)
+        else:
+            subprocess.run(['xdg-open', url], check=False)
+    except Exception as e:
+        print(f"[URL] Error opening {url}: {e}")
 import time
 import asyncio
 try:
@@ -363,7 +377,7 @@ SERVICE_DISPLAY_NAMES = {
 }
 
 # Standardized UI Colors
-SECONDARY_TEXT_COLOR = "#898c8d"
+SECONDARY_TEXT_COLOR = "#9F9F9F"
 LINK_COLOR = "#1F6AA5"
 LINK_HOVER_COLOR = "#4A9EFF"
 WARNING_COLOR = "#F2C94C"
@@ -747,7 +761,7 @@ class TidalAutoAuthPatcher:
     """
     Context manager that patches input() to automatically handle Tidal TV authentication.
     When Tidal prompts for login method, this auto-selects TV (option 1).
-    The browser will open automatically via webbrowser.open() in the Tidal module.
+    The browser will open automatically via _open_url() in the Tidal module.
     """
     def __init__(self, output_queue_ref=None):
         self.output_queue = output_queue_ref
@@ -998,12 +1012,17 @@ TREEVIEW_BG_HEX = "#1D1E1E"  # Match Custom.Treeview fieldbackground
 
 # Fixed width for all right-click context menus
 CONTEXT_MENU_WIDTH = 135  # Slightly wider for better spacing
-CONTEXT_MENU_BG_COLOR = "#383838"  # Refined button background
-CONTEXT_MENU_BORDER_COLOR = "#181818"  # Darker, more subtle border
+if platform.system() == "Windows":
+    CONTEXT_MENU_BG_COLOR = "#383838"  # Refined button background
+    CONTEXT_MENU_BORDER_COLOR = "#181818"  # Darker, more subtle border
+    CONTEXT_MENU_HOVER_COLOR = "#4A4A4A"  # Slightly lighter hover for better visibility with #383838 bg
+else: # macOS and Linux
+    CONTEXT_MENU_BG_COLOR = "#2A2D2F"
+    CONTEXT_MENU_BORDER_COLOR = "#535254"
+    CONTEXT_MENU_HOVER_COLOR = "#1F6AA5"
 CONTEXT_MENU_CORNER_RADIUS = 8  # Windows 11-style rounded corners
 # Icon and text color for context menu items (match so icons = text)
 CONTEXT_MENU_TEXT_COLOR = "#FFFFFF"
-CONTEXT_MENU_HOVER_COLOR = "#4A4A4A"  # Slightly lighter hover for better visibility with #383838 bg
 CONTEXT_MENU_TEXT_DISABLED = "#777777"  # Adjusted for better contrast on #383838
 CONTEXT_MENU_OPACITY = 0.95  # 95% opacity for a modern translucent feel
 # Background for all tooltips and right-click context menus
@@ -3056,6 +3075,10 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                     try:
                         if m.winfo_exists():
                             m.destroy()
+                            # macOS focus fix: ensure focus returns to main window after destroying overrideredirect toplevel
+                            if platform.system() == "Darwin":
+                                if 'app' in globals() and app and app.winfo_exists():
+                                    app.focus_force()
                     except Exception:
                         pass
                 if popup.winfo_exists():
@@ -3630,7 +3653,7 @@ def on_tree_click(event):
             if video_id:
                 youtube_url = f"https://www.youtube.com/watch?v={video_id}"
                 try:
-                    webbrowser.open(youtube_url)
+                    _open_url(youtube_url)
                     if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                         print(f"[YouTube] Opened video in browser: {youtube_url}")
                 except Exception as e:
@@ -5474,7 +5497,7 @@ def _show_deno_install_message():
         cmd1_frame, text="⧉", width=24, height=24,
         font=("Segoe UI", 14),
         fg_color="#2B2B2B", hover_color="#3B3B3B",
-        text_color="#999999", corner_radius=3,
+        text_color="gray", corner_radius=3,
         command=lambda: copy_command(deno_curl_cmd, copy1_btn)
     )
     copy1_btn.pack(side="right", padx=8, pady=5)
@@ -5495,7 +5518,7 @@ def _show_deno_install_message():
             cmd2_frame, text="⧉", width=24, height=24,
             font=("Segoe UI", 14),
             fg_color="#2B2B2B", hover_color="#3B3B3B",
-            text_color="#999999", corner_radius=3,
+            text_color="gray", corner_radius=3,
             command=lambda: copy_command(deno_brew_cmd, copy2_btn)
         )
         copy2_btn.pack(side="right", padx=8, pady=5)
@@ -5520,7 +5543,7 @@ def _show_deno_install_message():
                 cmd_frame, text="⧉", width=24, height=24,
                 font=("Segoe UI", 14),
                 fg_color="#2B2B2B", hover_color="#3B3B3B",
-                text_color="#999999", corner_radius=3,
+                text_color="gray", corner_radius=3,
                 command=lambda: None
             )
             copy_btn.pack(side="right", padx=8, pady=4)
@@ -5530,7 +5553,7 @@ def _show_deno_install_message():
         main_frame,
         text="Ensure deno is in your system PATH, or symlink it to the OrpheusDL root folder.",
         font=("", 11),
-        text_color="#898c8d",
+        text_color="#9F9F9F",
         justify="left",
         wraplength=520
     )
@@ -7328,10 +7351,60 @@ def show_context_menu(event):
         x = event.x_root + 2
         y = event.y_root + 2
         _context_menu.geometry(f"+{x}+{y}")
-        _context_menu.deiconify()
-        _context_menu.lift()
-        
+
+        if platform.system() == "Darwin":
+            # macOS: defer deiconify/lift to avoid blocking the right-click event handler
+            def _show_menu():
+                try:
+                    if _context_menu and _context_menu.winfo_exists():
+                        _context_menu.deiconify()
+                        _context_menu.lift()
+                except Exception:
+                    pass
+            app.after(0, _show_menu)
+
+            # macOS hover polling: Enter/Leave don't fire in overrideredirect Toplevels
+            _ctx_poll_id = [None]
+            def _ctx_menu_poll():
+                try:
+                    if not _context_menu or not _context_menu.winfo_exists():
+                        return
+                    try:
+                        if not _context_menu.winfo_ismapped():
+                            return
+                    except Exception:
+                        return
+                    px, py = app.winfo_pointerx(), app.winfo_pointery()
+                    hover_bg = CONTEXT_MENU_HOVER_COLOR
+                    normal_bg = CONTEXT_MENU_BG_COLOR
+                    try:
+                        mf = _context_menu.winfo_children()[0]
+                        btns = [c for c in mf.winfo_children() if isinstance(c, customtkinter.CTkButton)]
+                    except Exception:
+                        btns = []
+                    for btn in btns:
+                        try:
+                            bx = btn.winfo_rootx(); by = btn.winfo_rooty()
+                            bw = btn.winfo_width(); bh = btn.winfo_height()
+                            in_btn = bx <= px < bx + bw and by <= py < by + bh
+                            cur = btn.cget("fg_color")
+                            if in_btn and cur != hover_bg:
+                                btn.configure(fg_color=hover_bg)
+                            elif not in_btn and cur != normal_bg:
+                                btn.configure(fg_color=normal_bg)
+                        except Exception:
+                            pass
+                    if app and app.winfo_exists():
+                        _ctx_poll_id[0] = app.after(50, _ctx_menu_poll)
+                except Exception:
+                    pass
+            _ctx_poll_id[0] = app.after(50, _ctx_menu_poll)
+        else:
+            _context_menu.deiconify()
+            _context_menu.lift()
+
         if _hide_menu_binding_id is None: _hide_menu_binding_id = app.bind("<Button-1>", hide_context_menu, add=True)
+
     except tkinter.TclError as e: print(f"Context menu: TclError configuring/displaying menu: {e}")
     except Exception as e: print(f"Context menu: Error configuring/displaying menu: {e}")
 
@@ -7356,12 +7429,22 @@ def hide_context_menu(event=None):
                      if is_inside: return
                  except (tkinter.TclError, AttributeError): pass
                  
-    if _context_menu and _context_menu.winfo_exists(): _context_menu.withdraw()
+    if _context_menu and _context_menu.winfo_exists():
+        _context_menu.withdraw()
+        # macOS focus fix: ensure focus returns to main window after withdrawing overrideredirect toplevel
+        if platform.system() == "Darwin":
+            try:
+                if _target_widget and _target_widget.winfo_exists():
+                    _target_widget.focus_set()
+                elif app and app.winfo_exists():
+                    app.focus_force() # Force focus back to main window if widget lost it
+            except: pass
+            
     if _hide_menu_binding_id:
-         try: app.unbind("<Button-1>", _hide_menu_binding_id)
-         except tkinter.TclError: pass
-         except Exception as e: print(f"Error unbinding hide_context_menu: {e}")
-         finally: _hide_menu_binding_id = None
+        try: app.unbind("<Button-1>", _hide_menu_binding_id)
+        except tkinter.TclError: pass
+        except Exception as e: print(f"Error unbinding hide_context_menu: {e}")
+        finally: _hide_menu_binding_id = None
     _target_widget = None
 
 def _copy_to_system_clipboard(text):
@@ -7650,15 +7733,15 @@ def _setup_log_textbox_styles():
             return
             
         log_textbox.tag_configure("error", foreground="#FF4444")
-        log_textbox.tag_configure("detail_text", foreground="#9F9F9F")
-        log_textbox.tag_configure("normal", foreground="#9F9F9F")
+        log_textbox.tag_configure("detail_text", foreground=SECONDARY_TEXT_COLOR)
+        log_textbox.tag_configure("normal", foreground=SECONDARY_TEXT_COLOR)
         log_textbox.tag_configure("hyperlink", foreground="royal blue", underline=True)
         log_textbox.tag_configure("emoji_success", foreground="#00C851")
         log_textbox.tag_configure("emoji_error", foreground="#FF4444")
         log_textbox.tag_configure("emoji_warning", foreground="#CCA700")
         log_textbox.tag_configure("color_red", foreground="#FF4444")
         log_textbox.tag_configure("color_yellow", foreground="#CCA700")
-        log_textbox.tag_configure("color_gray", foreground="#9F9F9F")
+        log_textbox.tag_configure("color_gray", foreground=SECONDARY_TEXT_COLOR)
         log_textbox.tag_configure("color_green", foreground="#00C851")
         log_textbox.tag_configure("color_white", foreground="#DCE4EE")
         
@@ -11014,7 +11097,7 @@ def _open_selected_url(event=None):
             url = build_url_from_result(item_data)
             if url:
                 try:
-                    webbrowser.open(url)
+                    _open_url(url)
                     urls_opened += 1
                 except Exception as e:
                     print(f"Error opening URL {url}: {e}")
@@ -11721,7 +11804,59 @@ def show_search_context_menu(event):
         _search_context_menu_app_binding_id = app.bind("<Button-1>", _hide_search_context_menu_on_click, add=True)
         if 'tree' in globals() and tree and tree.winfo_exists():
             _search_context_menu_tree_binding_id = tree.bind("<ButtonRelease-1>", _hide_search_context_menu_on_click, add=True)
-        
+
+        # macOS: Enter/Leave events don't fire reliably in overrideredirect Toplevels.
+        # Use a motion-based polling loop to apply hover highlights instead.
+        if platform.system() == "Darwin":
+            _search_menu_hover_poll_id = [None]  # mutable ref so the inner func can cancel itself
+
+            def _search_menu_poll():
+                try:
+                    # Stop if menu was hidden
+                    if not _search_context_menu_wrapper or not _search_context_menu_wrapper.winfo_exists():
+                        return
+                    try:
+                        if not _search_context_menu_wrapper.winfo_ismapped():
+                            return
+                    except Exception:
+                        return
+
+                    x_root, y_root = app.winfo_pointerx(), app.winfo_pointery()
+                    hover_bg = CONTEXT_MENU_HOVER_COLOR
+                    normal_bg = CONTEXT_MENU_BG_COLOR
+
+                    # Collect all visible buttons: Link button + quality buttons
+                    all_btns = []
+                    if _search_copy_url_button and _search_copy_url_button.winfo_exists():
+                        all_btns.append(_search_copy_url_button)
+                    for b in (_search_quality_buttons or []):
+                        if b and b.winfo_exists() and b.winfo_ismapped():
+                            all_btns.append(b)
+
+                    for btn in all_btns:
+                        try:
+                            bx = btn.winfo_rootx()
+                            by = btn.winfo_rooty()
+                            bw = btn.winfo_width()
+                            bh = btn.winfo_height()
+                            in_btn = bx <= x_root < bx + bw and by <= y_root < by + bh
+                            current_fg = btn.cget("fg_color")
+                            # Only update if state changed (avoid unnecessary configure calls)
+                            if in_btn and current_fg != hover_bg:
+                                btn.configure(fg_color=hover_bg)
+                            elif not in_btn and current_fg != normal_bg:
+                                btn.configure(fg_color=normal_bg)
+                        except Exception:
+                            pass
+
+                    # Reschedule
+                    if app and app.winfo_exists():
+                        _search_menu_hover_poll_id[0] = app.after(50, _search_menu_poll)
+                except Exception:
+                    pass
+
+            _search_menu_hover_poll_id[0] = app.after(50, _search_menu_poll)
+
     except Exception as e:
         print(f"Error showing search context menu: {e}")
 
@@ -11750,6 +11885,10 @@ def _hide_search_context_menu(event=None):
     try:
         if _search_context_menu_wrapper and _search_context_menu_wrapper.winfo_exists():
             _search_context_menu_wrapper.withdraw()
+            # macOS focus fix: ensure focus returns to main window after withdrawing overrideredirect toplevel
+            if platform.system() == "Darwin":
+                if 'app' in globals() and app and app.winfo_exists():
+                    app.focus_force()
     except Exception as e:
         print(f"Error hiding search context menu: {e}")
 
@@ -13015,7 +13154,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             dashboard_link = customtkinter.CTkLabel(step1_text_frame, text="Spotify Dashboard", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             dashboard_link.pack(side="left")
-            dashboard_link.bind("<Button-1>", lambda e: webbrowser.open("https://developer.spotify.com/dashboard"))
+            dashboard_link.bind("<Button-1>", lambda e: _open_url("https://developer.spotify.com/dashboard"))
             dashboard_link.bind("<Enter>", lambda e: dashboard_link.configure(text_color=LINK_HOVER_COLOR))
             dashboard_link.bind("<Leave>", lambda e: dashboard_link.configure(text_color=LINK_COLOR))
             
@@ -13124,7 +13263,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://youtu.be/tbZaCFUnhow")
+                command=lambda: _open_url("https://youtu.be/tbZaCFUnhow")
             )
             # Position at the right of the first column
             am_demo_btn.place(relx=0.5, y=20, anchor="ne", x=-15)
@@ -13146,7 +13285,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             chrome_link = customtkinter.CTkLabel(step1_bullets_frame, text="Get cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             chrome_link.pack(side="left")
-            chrome_link.bind("<Button-1>", lambda e: webbrowser.open("https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?pli=1"))
+            chrome_link.bind("<Button-1>", lambda e: _open_url("https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?pli=1"))
             chrome_link.bind("<Enter>", lambda e: chrome_link.configure(text_color=LINK_HOVER_COLOR))
             chrome_link.bind("<Leave>", lambda e: chrome_link.configure(text_color=LINK_COLOR))
             
@@ -13154,7 +13293,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             firefox_link = customtkinter.CTkLabel(step1_bullets_frame, text="cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             firefox_link.pack(side="left")
-            firefox_link.bind("<Button-1>", lambda e: webbrowser.open("https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/"))
+            firefox_link.bind("<Button-1>", lambda e: _open_url("https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/"))
             firefox_link.bind("<Enter>", lambda e: firefox_link.configure(text_color=LINK_HOVER_COLOR))
             firefox_link.bind("<Leave>", lambda e: firefox_link.configure(text_color=LINK_COLOR))
 
@@ -13171,7 +13310,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             apple_link = customtkinter.CTkLabel(step2_text_frame, text="Apple Music", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             apple_link.pack(side="left")
-            apple_link.bind("<Button-1>", lambda e: webbrowser.open("https://music.apple.com"))
+            apple_link.bind("<Button-1>", lambda e: _open_url("https://music.apple.com"))
             apple_link.bind("<Enter>", lambda e: apple_link.configure(text_color=LINK_HOVER_COLOR))
             apple_link.bind("<Leave>", lambda e: apple_link.configure(text_color=LINK_COLOR))
             
@@ -13246,7 +13385,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda u=wrapper_url: webbrowser.open(u)
+                command=lambda u=wrapper_url: _open_url(u)
             )
             # Position at the far right (where the global button used to be)
             wrapper_demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
@@ -13324,7 +13463,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             chrome_link = customtkinter.CTkLabel(step1_bullets_frame, text="Get cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             chrome_link.pack(side="left")
-            chrome_link.bind("<Button-1>", lambda e: webbrowser.open("https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?pli=1"))
+            chrome_link.bind("<Button-1>", lambda e: _open_url("https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?pli=1"))
             chrome_link.bind("<Enter>", lambda e: chrome_link.configure(text_color=LINK_HOVER_COLOR))
             chrome_link.bind("<Leave>", lambda e: chrome_link.configure(text_color=LINK_COLOR))
             
@@ -13332,7 +13471,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             firefox_link = customtkinter.CTkLabel(step1_bullets_frame, text="cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             firefox_link.pack(side="left")
-            firefox_link.bind("<Button-1>", lambda e: webbrowser.open("https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/"))
+            firefox_link.bind("<Button-1>", lambda e: _open_url("https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/"))
             firefox_link.bind("<Enter>", lambda e: firefox_link.configure(text_color=LINK_HOVER_COLOR))
             firefox_link.bind("<Leave>", lambda e: firefox_link.configure(text_color=LINK_COLOR))
 
@@ -13394,7 +13533,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 14),
                 fg_color="#2B2B2B",
                 hover_color="#3B3B3B",
-                text_color="#9F9F9F",
+                text_color="gray",
                 corner_radius=3,
                 command=lambda: _copy_youtube_value("https://youtube.com", youtube_copy_btn)
             )
@@ -13420,7 +13559,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 14),
                 fg_color="#2B2B2B",
                 hover_color="#3B3B3B",
-                text_color="#9F9F9F",
+                text_color="gray",
                 corner_radius=3,
                 command=lambda: _copy_youtube_value("https://www.youtube.com/robots.txt", step4_copy_btn)
             )
@@ -13458,7 +13597,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://youtu.be/XAnP6s11TvY")
+                command=lambda: _open_url("https://youtu.be/XAnP6s11TvY")
             )
             # Use place for absolute positioning within the relative frame
             # x=-15, y=15 gives it some padding from the top-right corner
@@ -13515,7 +13654,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://youtu.be/TJTY4zSEgHU")
+                command=lambda: _open_url("https://youtu.be/TJTY4zSEgHU")
             )
             if not deezer_use_arl:
                 deezer_see_demo_btn.place_forget()
@@ -13531,7 +13670,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="#9F9F9F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             deezer_link = customtkinter.CTkLabel(step1_text_frame, text="Deezer", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             deezer_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
-            deezer_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.deezer.com"))
+            deezer_link.bind("<Button-1>", lambda e: _open_url("https://www.deezer.com"))
             deezer_link.bind("<Enter>", lambda e: deezer_link.configure(text_color=LINK_HOVER_COLOR))
             deezer_link.bind("<Leave>", lambda e: deezer_link.configure(text_color=LINK_COLOR))
             note_frame = customtkinter.CTkFrame(left_col_email, fg_color="transparent")
@@ -13554,7 +13693,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step1_arl, text="Log in to ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
             deezer_arl_link = customtkinter.CTkLabel(step1_arl, text="Deezer", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             deezer_arl_link.pack(side="left")
-            deezer_arl_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.deezer.com"))
+            deezer_arl_link.bind("<Button-1>", lambda e: _open_url("https://www.deezer.com"))
             deezer_arl_link.bind("<Enter>", lambda e: deezer_arl_link.configure(text_color=LINK_HOVER_COLOR))
             deezer_arl_link.bind("<Leave>", lambda e: deezer_arl_link.configure(text_color=LINK_COLOR))
             _deezer_step(left_col_arl, 2, "Open Developer Tools in your browser")
@@ -13684,7 +13823,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda: webbrowser.open("https://youtu.be/sCuiyq-Sgo4")
+                command=lambda: _open_url("https://youtu.be/sCuiyq-Sgo4")
             )
             if not qobuz_use_id:
                 qobuz_see_demo_btn.place_forget()
@@ -13700,7 +13839,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="#9F9F9F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             qobuz_link = customtkinter.CTkLabel(step1_text_frame, text="Qobuz", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             qobuz_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
-            qobuz_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.qobuz.com"))
+            qobuz_link.bind("<Button-1>", lambda e: _open_url("https://www.qobuz.com"))
             qobuz_link.bind("<Enter>", lambda e: qobuz_link.configure(text_color=LINK_HOVER_COLOR))
             qobuz_link.bind("<Leave>", lambda e: qobuz_link.configure(text_color=LINK_COLOR))
             note_frame = customtkinter.CTkFrame(left_col_email, fg_color="transparent")
@@ -13723,7 +13862,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step1_id_frame, text="Log in to Qobuz (", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
             qobuz_play_link = customtkinter.CTkLabel(step1_id_frame, text="https://play.qobuz.com", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             qobuz_play_link.pack(side="left")
-            qobuz_play_link.bind("<Button-1>", lambda e: webbrowser.open("https://play.qobuz.com"))
+            qobuz_play_link.bind("<Button-1>", lambda e: _open_url("https://play.qobuz.com"))
             qobuz_play_link.bind("<Enter>", lambda e: qobuz_play_link.configure(text_color=LINK_HOVER_COLOR))
             qobuz_play_link.bind("<Leave>", lambda e: qobuz_play_link.configure(text_color=LINK_COLOR))
             customtkinter.CTkLabel(step1_id_frame, text=")", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
@@ -13858,7 +13997,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             soundcloud_link = customtkinter.CTkLabel(step1_text_frame, text="SoundCloud", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             soundcloud_link.pack(side="left")
-            soundcloud_link.bind("<Button-1>", lambda e: webbrowser.open("https://soundcloud.com"))
+            soundcloud_link.bind("<Button-1>", lambda e: _open_url("https://soundcloud.com"))
             soundcloud_link.bind("<Enter>", lambda e: soundcloud_link.configure(text_color=LINK_HOVER_COLOR))
             soundcloud_link.bind("<Leave>", lambda e: soundcloud_link.configure(text_color=LINK_COLOR))
             
@@ -13974,7 +14113,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             tidal_link = customtkinter.CTkLabel(step2_line2, text="TIDAL", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor=HAND_CURSOR)
             tidal_link.pack(side="left")
-            tidal_link.bind("<Button-1>", lambda e: webbrowser.open("https://tidal.com"))
+            tidal_link.bind("<Button-1>", lambda e: _open_url("https://tidal.com"))
             tidal_link.bind("<Enter>", lambda e: tidal_link.configure(text_color="#4A9EFF"))
             tidal_link.bind("<Leave>", lambda e: tidal_link.configure(text_color="#1F6AA5"))
             
@@ -14078,7 +14217,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             beatport_link = customtkinter.CTkLabel(step1_text_frame, text="Beatport", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor=HAND_CURSOR)
             beatport_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
-            beatport_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.beatport.com"))
+            beatport_link.bind("<Button-1>", lambda e: _open_url("https://www.beatport.com"))
             beatport_link.bind("<Enter>", lambda e: beatport_link.configure(text_color="#4A9EFF"))
             beatport_link.bind("<Leave>", lambda e: beatport_link.configure(text_color="#1F6AA5"))
             
@@ -14134,7 +14273,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             beatsource_link = customtkinter.CTkLabel(step1_text_frame, text="Beatsource", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor=HAND_CURSOR)
             beatsource_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
-            beatsource_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.beatsource.com"))
+            beatsource_link.bind("<Button-1>", lambda e: _open_url("https://www.beatsource.com"))
             beatsource_link.bind("<Enter>", lambda e: beatsource_link.configure(text_color="#4A9EFF"))
             beatsource_link.bind("<Leave>", lambda e: beatsource_link.configure(text_color="#1F6AA5"))
             
@@ -14192,7 +14331,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR if 'BUTTON_COLOR' in globals() else ("#E0E0E0", "#303030"),
                 hover_color="#1F6AA5",
-                command=lambda u=demo_url: webbrowser.open(u)
+                command=lambda u=demo_url: _open_url(u)
             )
             # Use place for absolute positioning within the relative frame
             # x=-15, y=15 gives it some padding from the top-right corner
@@ -14353,7 +14492,7 @@ def _on_hyperlink_click(event):
                 debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False) if 'current_settings' in globals() else False
                 if debug_mode:
                     print(f"Opening URL: {clicked_url}")
-                webbrowser.open_new_tab(clicked_url)
+                _open_url(clicked_url)
     except Exception as e:
         print(f"Error opening hyperlink: {e}")
 
@@ -15119,7 +15258,7 @@ if __name__ == "__main__":
         path_button = customtkinter.CTkButton(path_frame, text="Browse", width=100, height=30, command=lambda: browse_output_path(path_var_main), fg_color="#343638", hover_color="#1F6AA5"); path_button.grid(row=0, column=2, sticky="e", padx=5)
         open_path_button = customtkinter.CTkButton(path_frame, text="Open", width=100, height=30, command=open_download_path, fg_color="#343638", hover_color="#1F6AA5"); open_path_button.grid(row=0, column=3, sticky="e", padx=5)
         output_frame = customtkinter.CTkFrame(download_tab, fg_color="transparent"); output_frame.grid(row=2, column=0, columnspan=4, sticky="nsew", padx=15, pady=(15, 15)); output_frame.grid_rowconfigure(1, weight=1); output_frame.grid_columnconfigure(0, weight=1)
-        output_label = customtkinter.CTkLabel(output_frame, text="OUTPUT", text_color="#898c8d", font=("Segoe UI", 11)); output_label.grid(row=0, column=0, sticky="w", pady=(0, 3)) 
+        output_label = customtkinter.CTkLabel(output_frame, text="OUTPUT", text_color="#9F9F9F", font=("Segoe UI", 11)); output_label.grid(row=0, column=0, sticky="w", pady=(0, 3)) 
         textbox_container = customtkinter.CTkFrame(output_frame, fg_color="#1D1E1E"); textbox_container.grid(row=1, column=0, sticky="nsew"); textbox_container.grid_columnconfigure(0, weight=1); textbox_container.grid_rowconfigure(0, weight=1); textbox_container.grid_columnconfigure(1, weight=0)  
         current_os = platform.system()
         if current_os == "Windows":
@@ -15134,7 +15273,7 @@ if __name__ == "__main__":
         log_font = (log_font_family, log_font_size)
 
         log_textbox = tkinter.Text(textbox_container, wrap=tkinter.WORD, state='disabled', font=log_font, 
-                                   bg="#1D1E1E", fg="#9F9F9F", insertbackground="#9F9F9F", 
+                                   bg="#1D1E1E", fg=SECONDARY_TEXT_COLOR, insertbackground=SECONDARY_TEXT_COLOR, 
                                    selectbackground="#1F6AA5", selectforeground="#FFFFFF",
                                    relief="flat", borderwidth=0, highlightthickness=0)
         log_textbox.grid(row=0, column=0, sticky="nsew", padx=(5,0), pady=3)
@@ -15264,9 +15403,9 @@ if __name__ == "__main__":
         )
         _back_to_search_button.pack(side="left", anchor="w", padx=(6, 12), pady=0)
         _back_to_search_button.pack_forget()  # Hidden until user opens an album/playlist track list
-        results_label = customtkinter.CTkLabel(results_header_frame, text="RESULTS", text_color="#898c8d", font=("Segoe UI", 11)); results_label.pack(side="left", anchor="w", padx=6, pady=0)
+        results_label = customtkinter.CTkLabel(results_header_frame, text="RESULTS", text_color="#9F9F9F", font=("Segoe UI", 11)); results_label.pack(side="left", anchor="w", padx=6, pady=0)
         # Label shown after 8s when expand takes long (walking dots + "(this can take up to ~1 minute)")
-        globals()["_expand_loading_label"] = customtkinter.CTkLabel(results_header_frame, text="", text_color="#898c8d", font=("Segoe UI", 11))
+        globals()["_expand_loading_label"] = customtkinter.CTkLabel(results_header_frame, text="", text_color="#9F9F9F", font=("Segoe UI", 11))
         _expand_loading_label.pack_forget()
         # Content-type badge (Album / Playlist / Artist) with border; tight padding so border sits close to text
         _content_type_badge = customtkinter.CTkFrame(results_header_frame, fg_color="transparent", border_width=1, border_color="#565B5E", corner_radius=6, width=60, height=24)
@@ -15274,13 +15413,13 @@ if __name__ == "__main__":
             _content_type_badge.pack_propagate(False)  # keep fixed size
         except AttributeError:
             pass
-        _content_type_badge_label = customtkinter.CTkLabel(_content_type_badge, text="Album", text_color="#898c8d", font=("Segoe UI", 11))
+        _content_type_badge_label = customtkinter.CTkLabel(_content_type_badge, text="Album", text_color="#9F9F9F", font=("Segoe UI", 11))
         _content_type_badge_label.pack(padx=8, pady=(1, 1))  # tight horizontal padding; pady balanced to avoid clipping at 125% scale
         # Badge is not packed here; _update_results_header_context() packs it when showing album/playlist/artist view
         # Volume control frame (Windows only; macOS/Linux cannot regulate volume from GUI)
         if platform.system() == "Windows":
             _volume_frame = customtkinter.CTkFrame(results_header_frame, fg_color="transparent")
-            _volume_label = customtkinter.CTkLabel(_volume_frame, text="VOLUME", text_color="#898c8d", font=("Segoe UI", 10)); _volume_label.pack(side="left", padx=(0, 8))
+            _volume_label = customtkinter.CTkLabel(_volume_frame, text="VOLUME", text_color="#9F9F9F", font=("Segoe UI", 10)); _volume_label.pack(side="left", padx=(0, 8))
             _volume_slider = customtkinter.CTkSlider(_volume_frame, from_=0, to=100, number_of_steps=100, width=120, height=16, command=on_volume_change); _volume_slider.set(_current_volume); _volume_slider.pack(side="left", padx=(0, 0))
         else:
             _volume_frame = None
@@ -15324,7 +15463,7 @@ if __name__ == "__main__":
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print(f"[Style Non-Windows] Using system default font, Row height: {scaled_row_height}px")
             heading_font_config = (None, 10, 'normal')
-        tree_bg_color = "#1D1E1E"; tree_fg_color = "#DCE4EE"; tree_header_bg = "#1D1E1E"; tree_header_fg = "gray"; tree_selected_bg = "#1F6AA5"; tree_selected_fg = "#FFFFFF"
+        tree_bg_color = "#1D1E1E"; tree_fg_color = "#DCE4EE"; tree_header_bg = "#1D1E1E"; tree_header_fg = "#9F9F9F"; tree_selected_bg = "#1F6AA5"; tree_selected_fg = "#FFFFFF"
         style.configure("Custom.Treeview",
                         background=tree_bg_color,
                         foreground=tree_fg_color,
@@ -15521,7 +15660,7 @@ Unnecessary Lossless-to-Lossless""",
         }
         for section_key, section_value in DEFAULT_SETTINGS["globals"].items():
             if isinstance(section_value, dict):
-                customtkinter.CTkLabel(global_settings_frame, text=section_key.replace("_", " ").upper(), text_color="#898c8d", font=("Segoe UI", 11)).grid(row=row, column=0, columnspan=3, sticky="w", padx=(0, 10), pady=(10, 5)); row += 1
+                customtkinter.CTkLabel(global_settings_frame, text=section_key.replace("_", " ").upper(), text_color="#9F9F9F", font=("Segoe UI", 11)).grid(row=row, column=0, columnspan=3, sticky="w", padx=(0, 10), pady=(10, 5)); row += 1
                 for field, default_value in section_value.items():
                     current_value = current_settings["globals"].get(section_key, {}).get(field, default_value); full_key = f"{section_key}.{field}"
                     if full_key == "advanced.conversion_flags":
@@ -16195,12 +16334,12 @@ Unnecessary Lossless-to-Lossless""",
                             cmd1_frame, text="⧉", width=24, height=24, 
                             font=("Segoe UI", 14),
                             fg_color="#2B2B2B", hover_color="#3B3B3B", 
-                            text_color="#999999", corner_radius=3,
+                            text_color="gray", corner_radius=3,
                             command=lambda: copy_command(homebrew_cmd, copy1_btn)
                         )
                         copy1_btn.pack(side="right", padx=8, pady=5)
                         copy1_btn.bind("<Enter>", lambda e: copy1_btn.configure(text_color="#FFFFFF"))
-                        copy1_btn.bind("<Leave>", lambda e: copy1_btn.configure(text_color="#999999"))
+                        copy1_btn.bind("<Leave>", lambda e: copy1_btn.configure(text_color="gray"))
                         
                         # Step 2: FFmpeg
                         step2_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
@@ -16220,12 +16359,12 @@ Unnecessary Lossless-to-Lossless""",
                             cmd2_frame, text="⧉", width=24, height=24,
                             font=("Segoe UI", 14),
                             fg_color="#2B2B2B", hover_color="#3B3B3B",
-                            text_color="#999999", corner_radius=3,
+                            text_color="gray", corner_radius=3,
                             command=lambda: copy_command(ffmpeg_cmd, copy2_btn)
                         )
                         copy2_btn.pack(side="right", padx=8, pady=5)
                         copy2_btn.bind("<Enter>", lambda e: copy2_btn.configure(text_color="#FFFFFF"))
-                        copy2_btn.bind("<Leave>", lambda e: copy2_btn.configure(text_color="#999999"))
+                        copy2_btn.bind("<Leave>", lambda e: copy2_btn.configure(text_color="gray"))
                         
                         step3_label = customtkinter.CTkLabel(main_frame, text="3. Restart OrpheusDL GUI", anchor="w")
                         step3_label.pack(fill="x", pady=(10, 5), padx=10)
@@ -16238,7 +16377,7 @@ Unnecessary Lossless-to-Lossless""",
                         step4_label.pack(fill="x", padx=10, pady=(8, 2))
 
                         def open_ffmpeg_site_mac():
-                            webbrowser.open("https://evermeet.cx/ffmpeg/ffmpeg-8.0.1.zip")
+                            _open_url("https://evermeet.cx/ffmpeg/ffmpeg-8.0.1.zip")
 
                         download_btn = customtkinter.CTkButton(
                             step4_frame, text="Download FFmpeg (evermeet.cx)", 
@@ -16346,12 +16485,12 @@ Unnecessary Lossless-to-Lossless""",
                             cmd1_frame, text="⧉", width=24, height=24, 
                             font=("Segoe UI", 14),
                             fg_color="#2B2B2B", hover_color="#3B3B3B", 
-                            text_color="#999999", corner_radius=3,
+                            text_color="gray", corner_radius=3,
                             command=lambda: copy_command(winget_cmd, copy1_btn)
                         )
                         copy1_btn.pack(side="right", padx=8, pady=5)
                         copy1_btn.bind("<Enter>", lambda e: copy1_btn.configure(text_color="#FFFFFF"))
-                        copy1_btn.bind("<Leave>", lambda e: copy1_btn.configure(text_color="#999999"))
+                        copy1_btn.bind("<Leave>", lambda e: copy1_btn.configure(text_color="gray"))
                         
                         # Option 2: Manual Download
                         step2_frame = customtkinter.CTkFrame(main_frame, fg_color="#2B2B2B", corner_radius=8)
@@ -16361,7 +16500,7 @@ Unnecessary Lossless-to-Lossless""",
                         step2_label.pack(fill="x", padx=10, pady=(8, 2))
                         
                         def open_ffmpeg_site_win():
-                            webbrowser.open("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip")
+                            _open_url("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip")
                             
                         download_btn = customtkinter.CTkButton(
                             step2_frame, text="Download FFmpeg (gyan.dev)", 
@@ -16464,12 +16603,12 @@ Unnecessary Lossless-to-Lossless""",
                                 cmd_frame, text="⧉", width=24, height=24,
                                 font=("Segoe UI", 14),
                                 fg_color="#2B2B2B", hover_color="#3B3B3B",
-                                text_color="#999999", corner_radius=3
+                                text_color="gray", corner_radius=3
                             )
                             copy_btn.configure(command=lambda c=cmd, b=copy_btn: copy_command(c, b))
                             copy_btn.pack(side="right", padx=8, pady=5)
                             copy_btn.bind("<Enter>", lambda e, b=copy_btn: b.configure(text_color="#FFFFFF"))
-                            copy_btn.bind("<Leave>", lambda e, b=copy_btn: b.configure(text_color="#999999"))
+                            copy_btn.bind("<Leave>", lambda e, b=copy_btn: b.configure(text_color="gray"))
                         
                         restart_label = customtkinter.CTkLabel(main_frame, text="Then restart OrpheusDL GUI", anchor="w")
                         restart_label.pack(fill="x", pady=(15, 5))
