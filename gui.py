@@ -306,7 +306,15 @@ class CTkImageComboBox(customtkinter.CTkComboBox):
     Uses the native tkinter.Menu's image support.
     """
     def __init__(self, *args, **kwargs):
+        # Extract unsupported dropdown styling arguments for CTkComboBox to avoid ValueError.
+        # Note: CTkComboBox uses a native tkinter.Menu for the dropdown, which does not support
+        # corner_radius, border_width, or border_color. We pop them here to prevent crashes.
+        kwargs.pop('dropdown_corner_radius', None)
+        kwargs.pop('dropdown_border_width', None)
+        kwargs.pop('dropdown_border_color', None)
+        
         super().__init__(*args, **kwargs)
+        
         # Patch the internal DropdownMenu's _add_menu_commands to include icons
         if hasattr(self, "_dropdown_menu"):
             self._dropdown_menu._add_menu_commands = self._patched_add_menu_commands
@@ -1016,11 +1024,20 @@ if platform.system() == "Windows":
     CONTEXT_MENU_BG_COLOR = "#383838"  # Refined button background
     CONTEXT_MENU_BORDER_COLOR = "#181818"  # Darker, more subtle border
     CONTEXT_MENU_HOVER_COLOR = "#4A4A4A"  # Slightly lighter hover for better visibility with #383838 bg
-else: # macOS and Linux
+    CONTEXT_MENU_CORNER_RADIUS = 8  # Windows 11-style rounded corners
+    CONTEXT_MENU_BUTTON_CORNER_RADIUS = 4
+elif platform.system() == "Darwin": # macOS
     CONTEXT_MENU_BG_COLOR = "#2A2D2F"
     CONTEXT_MENU_BORDER_COLOR = "#535254"
     CONTEXT_MENU_HOVER_COLOR = "#1F6AA5"
-CONTEXT_MENU_CORNER_RADIUS = 8  # Windows 11-style rounded corners
+    CONTEXT_MENU_CORNER_RADIUS = 8
+    CONTEXT_MENU_BUTTON_CORNER_RADIUS = 4
+else: # Linux and others
+    CONTEXT_MENU_BG_COLOR = "#2B2B2B"
+    CONTEXT_MENU_BORDER_COLOR = "#000000"  # Black frame border
+    CONTEXT_MENU_HOVER_COLOR = "#474747"
+    CONTEXT_MENU_CORNER_RADIUS = 0  # Squared corners
+    CONTEXT_MENU_BUTTON_CORNER_RADIUS = 0  # Squared buttons
 # Icon and text color for context menu items (match so icons = text)
 CONTEXT_MENU_TEXT_COLOR = "#FFFFFF"
 CONTEXT_MENU_TEXT_DISABLED = "#777777"  # Adjusted for better contrast on #383838
@@ -3494,7 +3511,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                             font=("Segoe UI", 11),
                                             fg_color=button_color,
                                             hover_color=hover_color_artwork,
-                                            corner_radius=4,
+                                            corner_radius=CONTEXT_MENU_BUTTON_CORNER_RADIUS,
                                             text_color=CONTEXT_MENU_TEXT_COLOR,
                                             text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
                                             border_width=0,
@@ -3518,7 +3535,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                             font=("Segoe UI", 11),
                                             fg_color=button_color,
                                             hover_color=hover_color_artwork,
-                                            corner_radius=4,
+                                            corner_radius=CONTEXT_MENU_BUTTON_CORNER_RADIUS,
                                             text_color=CONTEXT_MENU_TEXT_COLOR,
                                             text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
                                             border_width=0,
@@ -7222,7 +7239,7 @@ def _create_menu():
         font=("Segoe UI", 11),
         fg_color=button_color, 
         hover_color=CONTEXT_MENU_HOVER_COLOR, 
-        corner_radius=4,
+        corner_radius=CONTEXT_MENU_BUTTON_CORNER_RADIUS,
         text_color=CONTEXT_MENU_TEXT_COLOR,
         text_color_disabled=CONTEXT_MENU_TEXT_DISABLED, 
         border_width=0,
@@ -7250,7 +7267,7 @@ def _create_menu():
         font=("Segoe UI", 11),
         fg_color=button_color, 
         hover_color=CONTEXT_MENU_HOVER_COLOR, 
-        corner_radius=4,
+        corner_radius=CONTEXT_MENU_BUTTON_CORNER_RADIUS,
         text_color=CONTEXT_MENU_TEXT_COLOR,
         text_color_disabled=CONTEXT_MENU_TEXT_DISABLED, 
         border_width=0,
@@ -7274,7 +7291,7 @@ def _create_menu():
         font=("Segoe UI", 11),
         fg_color=button_color, 
         hover_color=CONTEXT_MENU_HOVER_COLOR, 
-        corner_radius=4,
+        corner_radius=CONTEXT_MENU_BUTTON_CORNER_RADIUS,
         text_color=CONTEXT_MENU_TEXT_COLOR,
         text_color_disabled=CONTEXT_MENU_TEXT_DISABLED, 
         border_width=0,
@@ -10972,7 +10989,7 @@ def _create_search_context_menu():
             font=("Segoe UI", 11),
             fg_color= button_color,
             hover_color=CONTEXT_MENU_HOVER_COLOR,
-            corner_radius=4,
+            corner_radius=CONTEXT_MENU_BUTTON_CORNER_RADIUS,
             text_color=CONTEXT_MENU_TEXT_COLOR,
             text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
             border_width=0,
@@ -11008,7 +11025,7 @@ def _create_search_context_menu():
                 font=("Segoe UI", 11),
                 fg_color=button_color,
                 hover_color=CONTEXT_MENU_HOVER_COLOR,
-                corner_radius=4,
+                corner_radius=CONTEXT_MENU_BUTTON_CORNER_RADIUS,
                 text_color=CONTEXT_MENU_TEXT_COLOR,
                 text_color_disabled=CONTEXT_MENU_TEXT_DISABLED,
                 border_width=0,
@@ -15318,7 +15335,12 @@ if __name__ == "__main__":
         search_tab_initial_platforms = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
         platform_var = tkinter.StringVar(value=search_tab_initial_platforms[0] if search_tab_initial_platforms else ""); 
         # Using custom CTkImageComboBox to show platform icons in dropdown
-        platform_combo = CTkImageComboBox(controls_frame, values=search_tab_initial_platforms, variable=platform_var, width=140, state="readonly", height=30, dropdown_fg_color="#2B2B2B"); 
+        platform_combo = CTkImageComboBox(controls_frame, values=search_tab_initial_platforms, variable=platform_var, width=140, state="readonly", height=30, 
+                                          dropdown_fg_color="#2B2B2B",
+                                          dropdown_hover_color="#474747" if platform.system() != "Windows" and platform.system() != "Darwin" else "#1F6AA5",
+                                          dropdown_corner_radius=0 if platform.system() != "Windows" and platform.system() != "Darwin" else 8,
+                                          dropdown_border_width=1 if platform.system() != "Windows" and platform.system() != "Darwin" else 0,
+                                          dropdown_border_color="#000000" if platform.system() != "Windows" and platform.system() != "Darwin" else None); 
         platform_combo.grid(row=0, column=1, padx=(5, 6), sticky="n"); 
         platform_var.trace_add("write", on_platform_change)
         platform_var.trace_add("write", lambda *a: clear_focus())
@@ -15326,7 +15348,12 @@ if __name__ == "__main__":
         customtkinter.CTkLabel(controls_frame, text="Type").grid(row=0, column=2, padx=(5,5), sticky="nw")
         type_var = tkinter.StringVar()
         # Using custom CTkImageComboBox to show type icons in dropdown
-        type_combo = CTkImageComboBox(controls_frame, values=[], variable=type_var, width=100, state="readonly", height=30, dropdown_fg_color="#2B2B2B")
+        type_combo = CTkImageComboBox(controls_frame, values=[], variable=type_var, width=100, state="readonly", height=30, 
+                                      dropdown_fg_color="#2B2B2B",
+                                      dropdown_hover_color="#474747" if platform.system() != "Windows" and platform.system() != "Darwin" else "#1F6AA5",
+                                      dropdown_corner_radius=0 if platform.system() != "Windows" and platform.system() != "Darwin" else 8,
+                                      dropdown_border_width=1 if platform.system() != "Windows" and platform.system() != "Darwin" else 0,
+                                      dropdown_border_color="#000000" if platform.system() != "Windows" and platform.system() != "Darwin" else None)
         type_combo.grid(row=0, column=3, padx=(2, 1), sticky="n")
         type_var.trace_add("write", _update_search_placeholder)
         type_var.trace_add("write", _update_atmos_filter_visibility)
