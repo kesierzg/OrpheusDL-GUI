@@ -385,7 +385,7 @@ SERVICE_DISPLAY_NAMES = {
 }
 
 # Standardized UI Colors
-SECONDARY_TEXT_COLOR = "#9F9F9F"
+SECONDARY_TEXT_COLOR = "#A2A2A2"
 LINK_COLOR = "#1F6AA5"
 LINK_HOVER_COLOR = "#4A9EFF"
 WARNING_COLOR = "#F2C94C"
@@ -5570,7 +5570,7 @@ def _show_deno_install_message():
         main_frame,
         text="Ensure deno is in your system PATH, or symlink it to the OrpheusDL root folder.",
         font=("", 11),
-        text_color="#9F9F9F",
+        text_color="#7F7F7F",
         justify="left",
         wraplength=520
     )
@@ -13167,7 +13167,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step1_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             dashboard_link = customtkinter.CTkLabel(step1_text_frame, text="Spotify Dashboard", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             dashboard_link.pack(side="left")
@@ -13175,22 +13175,22 @@ def _create_credential_tab_content(platform_name, tab_frame):
             dashboard_link.bind("<Enter>", lambda e: dashboard_link.configure(text_color=LINK_HOVER_COLOR))
             dashboard_link.bind("<Leave>", lambda e: dashboard_link.configure(text_color=LINK_COLOR))
             
-            customtkinter.CTkLabel(step1_text_frame, text=" ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
-            customtkinter.CTkLabel(step1_text_frame, text="(active Premium subscription required)", font=("Segoe UI", 12, "italic"), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text=" ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="(active Premium subscription required)", font=("Segoe UI", 12, "italic"), text_color="#7F7F7F").pack(side="left")
             
             # Step 2
             step2_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step2_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step2_frame, text="2.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step2_frame, text="Take over username & fill in above", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step2_frame, text="Take over username & fill in above", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             # Step 3
             step3_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step3_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step3_frame, text="In the dashboard, create an app (or use existing one)", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step3_frame, text="In the dashboard, create an app (or use existing one)", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             # Step 4
             step4_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
@@ -13201,7 +13201,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step4_text_frame = customtkinter.CTkFrame(step4_frame, fg_color="transparent")
             step4_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step4_text_frame, text="Add Redirect URI ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step4_text_frame, text="Add Redirect URI ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             copy_url = "http://127.0.0.1:4381/login"
             url_label = customtkinter.CTkLabel(step4_text_frame, text=copy_url, font=("Segoe UI", 11), text_color=LINK_COLOR)
@@ -13232,11 +13232,11 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step5_text_frame = customtkinter.CTkFrame(step5_frame, fg_color="transparent")
             step5_text_frame.pack(side="left", anchor="w")
             # Use anchor="s" so labels share the same baseline (avoids vertical drift)
-            customtkinter.CTkLabel(step5_text_frame, text="Save → Copy ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left", anchor="s")
+            customtkinter.CTkLabel(step5_text_frame, text="Save → Copy ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left", anchor="s")
             customtkinter.CTkLabel(step5_text_frame, text="Client ID", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left", anchor="s")
-            customtkinter.CTkLabel(step5_text_frame, text=" + ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left", anchor="s")
+            customtkinter.CTkLabel(step5_text_frame, text=" + ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left", anchor="s")
             customtkinter.CTkLabel(step5_text_frame, text="Secret", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left", anchor="s")
-            customtkinter.CTkLabel(step5_text_frame, text=", paste them above — Save.", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left", anchor="s")
+            customtkinter.CTkLabel(step5_text_frame, text=", paste them above — Save.", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left", anchor="s")
             
             _add_clear_session_icon(help_frame, "Spotify")
         
@@ -13291,14 +13291,14 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_frame.pack(anchor="w", pady=0)
             
             customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step1_frame, text="Install extension", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step1_frame, text="Install extension", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             # Step 1 bullets
             step1_bullets_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step1_bullets_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step1_bullets_frame, text="", width=35).pack(side="left") # Indent
             
-            customtkinter.CTkLabel(step1_bullets_frame, text="• Chrome / Edge → ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step1_bullets_frame, text="• Chrome / Edge → ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             chrome_link = customtkinter.CTkLabel(step1_bullets_frame, text="Get cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             chrome_link.pack(side="left")
@@ -13306,7 +13306,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             chrome_link.bind("<Enter>", lambda e: chrome_link.configure(text_color=LINK_HOVER_COLOR))
             chrome_link.bind("<Leave>", lambda e: chrome_link.configure(text_color=LINK_COLOR))
             
-            customtkinter.CTkLabel(step1_bullets_frame, text=" or Firefox → ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step1_bullets_frame, text=" or Firefox → ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             firefox_link = customtkinter.CTkLabel(step1_bullets_frame, text="cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             firefox_link.pack(side="left")
@@ -13323,7 +13323,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step2_text_frame = customtkinter.CTkFrame(step2_frame, fg_color="transparent")
             step2_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step2_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step2_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             apple_link = customtkinter.CTkLabel(step2_text_frame, text="Apple Music", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             apple_link.pack(side="left")
@@ -13331,22 +13331,22 @@ def _create_credential_tab_content(platform_name, tab_frame):
             apple_link.bind("<Enter>", lambda e: apple_link.configure(text_color=LINK_HOVER_COLOR))
             apple_link.bind("<Leave>", lambda e: apple_link.configure(text_color=LINK_COLOR))
             
-            customtkinter.CTkLabel(step2_text_frame, text=" ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
-            customtkinter.CTkLabel(step2_text_frame, text="(active subscription required)", font=("Segoe UI", 12, "italic"), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step2_text_frame, text=" ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
+            customtkinter.CTkLabel(step2_text_frame, text="(active subscription required)", font=("Segoe UI", 12, "italic"), text_color="#7F7F7F").pack(side="left")
 
             # Step 3
             step3_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step3_frame.pack(anchor="w", pady=(5, 0))
             
             customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step3_frame, text="Export & save as cookies.txt", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step3_frame, text="Export & save as cookies.txt", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             # Step 3 Path
             step3_path_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step3_path_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step3_path_frame, text="", width=35).pack(side="left") # Indent
-            customtkinter.CTkLabel(step3_path_frame, text="Path: ", font=("Segoe UI", 12, "italic"), text_color="#9F9F9F").pack(side="left")
-            customtkinter.CTkLabel(step3_path_frame, text="./config/cookies.txt", font=("Segoe UI", 12, "italic"), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step3_path_frame, text="Path: ", font=("Segoe UI", 12, "italic"), text_color="#7F7F7F").pack(side="left")
+            customtkinter.CTkLabel(step3_path_frame, text="./config/cookies.txt", font=("Segoe UI", 12, "italic"), text_color="#7F7F7F").pack(side="left")
             
             # --- Right Column: How to set up wrapper ---
             right_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
@@ -13412,7 +13412,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 right_col, 
                 text="See demo / description below the video", 
                 font=("Segoe UI", 12), 
-                text_color="#9F9F9F"
+                text_color="#7F7F7F"
             )
             # Use same padding from icon edge (5+20+10 = 35) to align with title text
             desc_label.pack(anchor="w", padx=(35, 0), pady=(15, 0))
@@ -13469,14 +13469,14 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_frame.pack(anchor="w", pady=0)
             
             customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step1_frame, text="Install extension", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step1_frame, text="Install extension", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             # Step 1 bullets
             step1_bullets_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step1_bullets_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step1_bullets_frame, text="", width=35).pack(side="left") # Indent
             
-            customtkinter.CTkLabel(step1_bullets_frame, text="• Chrome / Edge → ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step1_bullets_frame, text="• Chrome / Edge → ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             chrome_link = customtkinter.CTkLabel(step1_bullets_frame, text="Get cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             chrome_link.pack(side="left")
@@ -13484,7 +13484,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             chrome_link.bind("<Enter>", lambda e: chrome_link.configure(text_color=LINK_HOVER_COLOR))
             chrome_link.bind("<Leave>", lambda e: chrome_link.configure(text_color=LINK_COLOR))
             
-            customtkinter.CTkLabel(step1_bullets_frame, text=" or Firefox → ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step1_bullets_frame, text=" or Firefox → ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             firefox_link = customtkinter.CTkLabel(step1_bullets_frame, text="cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             firefox_link.pack(side="left")
@@ -13497,13 +13497,13 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step2_frame.pack(anchor="w", pady=0)
             
             customtkinter.CTkLabel(step2_frame, text="2.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step2_frame, text='Manage extension → Enable \'Allow in incognito / private window\'', font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step2_frame, text='Manage extension → Enable \'Allow in incognito / private window\'', font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             # Step 3: Open a new private / incognito window
             step3_incognito_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step3_incognito_frame.pack(anchor="w", pady=0)
             customtkinter.CTkLabel(step3_incognito_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step3_incognito_frame, text="Open a new private / incognito window", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step3_incognito_frame, text="Open a new private / incognito window", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
 
             # Helper function to copy value to clipboard with feedback (persistent)
             def _copy_youtube_value(value, button):
@@ -13534,7 +13534,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step4_text_frame = customtkinter.CTkFrame(step4_frame, fg_color="transparent")
             step4_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step4_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step4_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             youtube_link = customtkinter.CTkLabel(step4_text_frame, text="YouTube", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             youtube_link.pack(side="left", padx=(0, 4))
@@ -13563,7 +13563,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step4_sub_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step4_sub_frame, text="", width=35).pack(side="left") # Indent
             
-            customtkinter.CTkLabel(step4_sub_frame, text="In same tab open: ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step4_sub_frame, text="In same tab open: ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             step4_value = "youtube.com/robots.txt"
             customtkinter.CTkLabel(step4_sub_frame, text=step4_value, font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left", padx=(0, 4))
@@ -13589,21 +13589,21 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step5_frame.pack(anchor="w", pady=0)
             
             customtkinter.CTkLabel(step5_frame, text="5.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step5_frame, text="Export & save as youtube-cookies.txt", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step5_frame, text="Export & save as youtube-cookies.txt", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             # Step 5 Path
             step5_path_frame = customtkinter.CTkFrame(right_col, fg_color="transparent")
             step5_path_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step5_path_frame, text="", width=35).pack(side="left") # Indent
-            customtkinter.CTkLabel(step5_path_frame, text="Path: ", font=("Segoe UI", 12, "italic"), text_color="#9F9F9F").pack(side="left")
-            customtkinter.CTkLabel(step5_path_frame, text="./config/youtube-cookies.txt", font=("Segoe UI", 12, "italic"), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step5_path_frame, text="Path: ", font=("Segoe UI", 12, "italic"), text_color="#7F7F7F").pack(side="left")
+            customtkinter.CTkLabel(step5_path_frame, text="./config/youtube-cookies.txt", font=("Segoe UI", 12, "italic"), text_color="#7F7F7F").pack(side="left")
 
             # Step 6: Close window
             step6_frame = customtkinter.CTkFrame(right_col, fg_color="transparent")
             step6_frame.pack(anchor="w", pady=0)
             
             customtkinter.CTkLabel(step6_frame, text="6.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step6_frame, text="Close the private window immediately — Save.", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step6_frame, text="Close the private window immediately — Save.", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
 
             # See Demo Button (YouTube setup demo video)
             demo_btn = customtkinter.CTkButton(
@@ -13684,7 +13684,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
-            customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="#9F9F9F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="#7F7F7F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             deezer_link = customtkinter.CTkLabel(step1_text_frame, text="Deezer", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             deezer_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
             deezer_link.bind("<Button-1>", lambda e: _open_url("https://www.deezer.com"))
@@ -13693,21 +13693,21 @@ def _create_credential_tab_content(platform_name, tab_frame):
             note_frame = customtkinter.CTkFrame(left_col_email, fg_color="transparent")
             note_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(note_frame, text="", width=35).pack(side="left")
-            customtkinter.CTkLabel(note_frame, text="(active subscription required)", font=("Segoe UI", 12, "italic"), text_color="#9F9F9F").pack(side="left")
-            customtkinter.CTkLabel(note_frame, text=" — Save.", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(note_frame, text="(active subscription required)", font=("Segoe UI", 12, "italic"), text_color="#7F7F7F").pack(side="left")
+            customtkinter.CTkLabel(note_frame, text=" — Save.", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
 
             # ARL instructions
             def _deezer_step(parent, num, text):
                 f = customtkinter.CTkFrame(parent, fg_color="transparent")
                 f.pack(anchor="w", pady=(0, 5))
                 customtkinter.CTkLabel(f, text=f"{num}.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-                customtkinter.CTkLabel(f, text=text, font=("Segoe UI", 12), text_color="#9F9F9F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+                customtkinter.CTkLabel(f, text=text, font=("Segoe UI", 12), text_color="#7F7F7F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
                 return f
             left_col_arl = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step1_arl = customtkinter.CTkFrame(left_col_arl, fg_color="transparent")
             step1_arl.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step1_arl, text="1.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step1_arl, text="Log in to ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step1_arl, text="Log in to ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             deezer_arl_link = customtkinter.CTkLabel(step1_arl, text="Deezer", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             deezer_arl_link.pack(side="left")
             deezer_arl_link.bind("<Button-1>", lambda e: _open_url("https://www.deezer.com"))
@@ -13718,9 +13718,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step4_arl = customtkinter.CTkFrame(left_col_arl, fg_color="transparent")
             step4_arl.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step4_arl, text="4.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step4_arl, text="Seek for ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step4_arl, text="Seek for ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             customtkinter.CTkLabel(step4_arl, text="arl", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left")
-            customtkinter.CTkLabel(step4_arl, text=" → copy & paste above — Save.", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step4_arl, text=" → copy & paste above — Save.", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
 
             def _deezer_help_update(use_arl):
                 if use_arl:
@@ -13775,7 +13775,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 row = customtkinter.CTkFrame(parent, fg_color="transparent")
                 row.pack(anchor="w", pady=(0, 5))
                 
-                customtkinter.CTkLabel(row, text=f"{label}: ", font=("Segoe UI", 11), text_color="#9F9F9F").pack(side="left")
+                customtkinter.CTkLabel(row, text=f"{label}: ", font=("Segoe UI", 11), text_color="#7F7F7F").pack(side="left")
                 customtkinter.CTkLabel(row, text=value, font=("Segoe UI", 11), text_color=LINK_COLOR).pack(side="left", padx=(0, 5))
                 
                 copy_btn = customtkinter.CTkButton(
@@ -13853,7 +13853,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
-            customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="#9F9F9F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="#7F7F7F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             qobuz_link = customtkinter.CTkLabel(step1_text_frame, text="Qobuz", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             qobuz_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
             qobuz_link.bind("<Button-1>", lambda e: _open_url("https://www.qobuz.com"))
@@ -13862,8 +13862,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
             note_frame = customtkinter.CTkFrame(left_col_email, fg_color="transparent")
             note_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(note_frame, text="", width=35).pack(side="left")
-            customtkinter.CTkLabel(note_frame, text="(active subscription required)", font=("Segoe UI", 12, "italic"), text_color="#9F9F9F").pack(side="left")
-            customtkinter.CTkLabel(note_frame, text=" — Save.", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(note_frame, text="(active subscription required)", font=("Segoe UI", 12, "italic"), text_color="#7F7F7F").pack(side="left")
+            customtkinter.CTkLabel(note_frame, text=" — Save.", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
 
             # --- ID/Token instructions: left = steps 1–3, right = steps 4–5 (no Recommended Values header) ---
             left_col_idtoken = customtkinter.CTkFrame(left_col, fg_color="transparent")
@@ -13871,31 +13871,31 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 f = customtkinter.CTkFrame(parent, fg_color="transparent")
                 f.pack(anchor="w", pady=(0, 5))
                 customtkinter.CTkLabel(f, text=f"{num}.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-                customtkinter.CTkLabel(f, text=text, font=("Segoe UI", 12), text_color="#9F9F9F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+                customtkinter.CTkLabel(f, text=text, font=("Segoe UI", 12), text_color="#7F7F7F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
                 return f
             step1_id_frame = customtkinter.CTkFrame(left_col_idtoken, fg_color="transparent")
             step1_id_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step1_id_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step1_id_frame, text="Log in to Qobuz (", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step1_id_frame, text="Log in to Qobuz (", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             qobuz_play_link = customtkinter.CTkLabel(step1_id_frame, text="https://play.qobuz.com", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             qobuz_play_link.pack(side="left")
             qobuz_play_link.bind("<Button-1>", lambda e: _open_url("https://play.qobuz.com"))
             qobuz_play_link.bind("<Enter>", lambda e: qobuz_play_link.configure(text_color=LINK_HOVER_COLOR))
             qobuz_play_link.bind("<Leave>", lambda e: qobuz_play_link.configure(text_color=LINK_COLOR))
-            customtkinter.CTkLabel(step1_id_frame, text=")", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step1_id_frame, text=")", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             _qobuz_step(left_col_idtoken, 2, "Open Developer Tools in your browser")
             # Step 3: one-liner (no wrap)
             step3_id_frame = customtkinter.CTkFrame(left_col_idtoken, fg_color="transparent")
             step3_id_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step3_id_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step3_id_frame, text="Go to Application/Storage → Local storage → play.qobuz.com", font=("Segoe UI", 12), text_color="#9F9F9F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+            customtkinter.CTkLabel(step3_id_frame, text="Go to Application/Storage → Local storage → play.qobuz.com", font=("Segoe UI", 12), text_color="#7F7F7F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
 
             # --- Right Column: "Recommended Values" header (same height as "How to set up") + app_id / app_secret ---
             right_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
             right_col.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
             right_header = customtkinter.CTkFrame(right_col, fg_color="transparent")
             right_header.pack(anchor="w", pady=(0, 15))
-            key_icon = customtkinter.CTkLabel(right_header, text="🔑", font=("Segoe UI", 20), text_color="#9F9F9F")
+            key_icon = customtkinter.CTkLabel(right_header, text="🔑", font=("Segoe UI", 20), text_color="#7F7F7F")
             key_icon.pack(side="left", padx=(0, 10))
             rec_title = customtkinter.CTkLabel(right_header, text="Recommended Values", font=("Segoe UI", 16, "bold"), text_color="#DCE4EE")
             rec_title.pack(side="left")
@@ -13904,7 +13904,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 row = customtkinter.CTkFrame(parent, fg_color="transparent")
                 row.pack(anchor="w", pady=(0, 5))
                 
-                customtkinter.CTkLabel(row, text=f"{label}: ", font=("Segoe UI", 11), text_color="#9F9F9F").pack(side="left")
+                customtkinter.CTkLabel(row, text=f"{label}: ", font=("Segoe UI", 11), text_color="#7F7F7F").pack(side="left")
                 customtkinter.CTkLabel(row, text=value, font=("Segoe UI", 11), text_color=LINK_COLOR).pack(side="left", padx=(0, 5))
                 
                 copy_btn = customtkinter.CTkButton(
@@ -13927,16 +13927,16 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step4_right = customtkinter.CTkFrame(right_col_idtoken, fg_color="transparent")
             step4_right.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step4_right, text="4.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step4_right, text="Seek for ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step4_right, text="Seek for ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             customtkinter.CTkLabel(step4_right, text="local user", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left")
             step5_right = customtkinter.CTkFrame(right_col_idtoken, fg_color="transparent")
             step5_right.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step5_right, text="5.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step5_right, text="Copy ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step5_right, text="Copy ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             customtkinter.CTkLabel(step5_right, text="ID", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left")
-            customtkinter.CTkLabel(step5_right, text=" + ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step5_right, text=" + ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             customtkinter.CTkLabel(step5_right, text="Token", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left")
-            customtkinter.CTkLabel(step5_right, text=" & paste above — Save.", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step5_right, text=" & paste above — Save.", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
 
             def _qobuz_help_update(use_id):
                 if use_id:
@@ -14010,7 +14010,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step1_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             soundcloud_link = customtkinter.CTkLabel(step1_text_frame, text="SoundCloud", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
             soundcloud_link.pack(side="left")
@@ -14018,22 +14018,22 @@ def _create_credential_tab_content(platform_name, tab_frame):
             soundcloud_link.bind("<Enter>", lambda e: soundcloud_link.configure(text_color=LINK_HOVER_COLOR))
             soundcloud_link.bind("<Leave>", lambda e: soundcloud_link.configure(text_color=LINK_COLOR))
             
-            customtkinter.CTkLabel(step1_text_frame, text=" ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
-            customtkinter.CTkLabel(step1_text_frame, text="(active SoundCloud Go+ subscription required)", font=("Segoe UI", 12, "italic"), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text=" ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="(active SoundCloud Go+ subscription required)", font=("Segoe UI", 12, "italic"), text_color="#7F7F7F").pack(side="left")
             
             # Step 2
             step2_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step2_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step2_frame, text="2.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step2_frame, text="Open Developer Tools in your browser", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step2_frame, text="Open Developer Tools in your browser", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             # Step 3
             step3_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step3_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step3_frame, text="Go to Application/Storage → Cookies → https://soundcloud.com", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step3_frame, text="Go to Application/Storage → Cookies → https://soundcloud.com", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
 
             # Step 4
             step4_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
@@ -14044,9 +14044,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step4_text_frame = customtkinter.CTkFrame(step4_frame, fg_color="transparent")
             step4_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step4_text_frame, text="Seek for ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step4_text_frame, text="Seek for ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             customtkinter.CTkLabel(step4_text_frame, text="oauth_token", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left")
-            customtkinter.CTkLabel(step4_text_frame, text=" which looks like: ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step4_text_frame, text=" which looks like: ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             customtkinter.CTkLabel(step4_text_frame, text="2-000000-0000000000-xxxxxxxxxxxxx", font=("Segoe UI", 11), text_color=LINK_COLOR).pack(side="left")
             
             # Step 5
@@ -14054,7 +14054,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step5_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step5_frame, text="5.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step5_frame, text="Copy & paste above — Save.", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step5_frame, text="Copy & paste above — Save.", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             _add_clear_session_icon(help_frame, "SoundCloud")
         
@@ -14111,7 +14111,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step1_frame, text="Just enter url to download or use search function", font=("Segoe UI", 12), text_color="#9F9F9F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+            customtkinter.CTkLabel(step1_frame, text="Just enter url to download or use search function", font=("Segoe UI", 12), text_color="#7F7F7F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             
             # Step 2
             step2_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
@@ -14122,11 +14122,11 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step2_text_frame = customtkinter.CTkFrame(step2_frame, fg_color="transparent")
             step2_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step2_text_frame, text="In the browser window that opens, fill in the email & password", font=("Segoe UI", 12), text_color="#9F9F9F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(anchor="w")
+            customtkinter.CTkLabel(step2_text_frame, text="In the browser window that opens, fill in the email & password", font=("Segoe UI", 12), text_color="#7F7F7F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(anchor="w")
             
             step2_line2 = customtkinter.CTkFrame(step2_text_frame, fg_color="transparent")
             step2_line2.pack(anchor="w")
-            customtkinter.CTkLabel(step2_line2, text="created, when signed up to ", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(step2_line2, text="created, when signed up to ", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             
             tidal_link = customtkinter.CTkLabel(step2_line2, text="TIDAL", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor=HAND_CURSOR)
             tidal_link.pack(side="left")
@@ -14139,7 +14139,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step3_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color="#DCE4EE", width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step3_frame, text="Hit continue to link your device & close the browser", font=("Segoe UI", 12), text_color="#9F9F9F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+            customtkinter.CTkLabel(step3_frame, text="Hit continue to link your device & close the browser", font=("Segoe UI", 12), text_color="#7F7F7F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             
             
             # --- Right Column: Recommended Values ---
@@ -14171,7 +14171,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 row = customtkinter.CTkFrame(parent, fg_color="transparent")
                 row.pack(anchor="w", pady=(0, 5))
                 
-                customtkinter.CTkLabel(row, text=f"{label}: ", font=("Segoe UI", 11), text_color="#9F9F9F").pack(side="left")
+                customtkinter.CTkLabel(row, text=f"{label}: ", font=("Segoe UI", 11), text_color="#7F7F7F").pack(side="left")
                 customtkinter.CTkLabel(row, text=value, font=("Segoe UI", 11), text_color="#1F6AA5").pack(side="left", padx=(0, 5))
                 
                 copy_btn = customtkinter.CTkButton(
@@ -14230,7 +14230,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="#9F9F9F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="#7F7F7F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             
             beatport_link = customtkinter.CTkLabel(step1_text_frame, text="Beatport", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor=HAND_CURSOR)
             beatport_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
@@ -14242,8 +14242,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
             note_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             note_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(note_frame, text="", width=35).pack(side="left") # Indent
-            customtkinter.CTkLabel(note_frame, text="(active Beatport Professional subscription required)", font=("Segoe UI", 12, "italic"), text_color="#9F9F9F").pack(side="left")
-            customtkinter.CTkLabel(note_frame, text=" — Save.", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(note_frame, text="(active Beatport Professional subscription required)", font=("Segoe UI", 12, "italic"), text_color="#7F7F7F").pack(side="left")
+            customtkinter.CTkLabel(note_frame, text=" — Save.", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             _add_clear_session_icon(help_frame, "Beatport")
 
         # Add help text for Beatsource module
@@ -14286,7 +14286,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
             
-            customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="#9F9F9F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+            customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color="#7F7F7F", justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             
             beatsource_link = customtkinter.CTkLabel(step1_text_frame, text="Beatsource", font=("Segoe UI", 12, "underline"), text_color="#1F6AA5", cursor=HAND_CURSOR)
             beatsource_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
@@ -14298,8 +14298,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
             note_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             note_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(note_frame, text="", width=35).pack(side="left") # Indent
-            customtkinter.CTkLabel(note_frame, text="(active Beatsource Pro subscription required)", font=("Segoe UI", 12, "italic"), text_color="#9F9F9F").pack(side="left")
-            customtkinter.CTkLabel(note_frame, text=" — Save.", font=("Segoe UI", 12), text_color="#9F9F9F").pack(side="left")
+            customtkinter.CTkLabel(note_frame, text="(active Beatsource Pro subscription required)", font=("Segoe UI", 12, "italic"), text_color="#7F7F7F").pack(side="left")
+            customtkinter.CTkLabel(note_frame, text=" — Save.", font=("Segoe UI", 12), text_color="#7F7F7F").pack(side="left")
             _add_clear_session_icon(help_frame, "Beatsource")
 
         # --- "See demo" button for ALL platforms ---
@@ -14328,7 +14328,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     help_container, 
                     text=title_text,
                     font=("Segoe UI", 11),
-                    text_color="#9F9F9F"
+                    text_color="#7F7F7F"
                  )
                  help_title.grid(row=0, column=0, sticky="ne", padx=(0, 20), pady=0)
 
@@ -15275,7 +15275,7 @@ if __name__ == "__main__":
         path_button = customtkinter.CTkButton(path_frame, text="Browse", width=100, height=30, command=lambda: browse_output_path(path_var_main), fg_color="#343638", hover_color="#1F6AA5"); path_button.grid(row=0, column=2, sticky="e", padx=5)
         open_path_button = customtkinter.CTkButton(path_frame, text="Open", width=100, height=30, command=open_download_path, fg_color="#343638", hover_color="#1F6AA5"); open_path_button.grid(row=0, column=3, sticky="e", padx=5)
         output_frame = customtkinter.CTkFrame(download_tab, fg_color="transparent"); output_frame.grid(row=2, column=0, columnspan=4, sticky="nsew", padx=15, pady=(15, 15)); output_frame.grid_rowconfigure(1, weight=1); output_frame.grid_columnconfigure(0, weight=1)
-        output_label = customtkinter.CTkLabel(output_frame, text="OUTPUT", text_color="#9F9F9F", font=("Segoe UI", 11)); output_label.grid(row=0, column=0, sticky="w", pady=(0, 3)) 
+        output_label = customtkinter.CTkLabel(output_frame, text="OUTPUT", text_color="#7F7F7F", font=("Segoe UI", 11)); output_label.grid(row=0, column=0, sticky="w", pady=(0, 3)) 
         textbox_container = customtkinter.CTkFrame(output_frame, fg_color="#1D1E1E"); textbox_container.grid(row=1, column=0, sticky="nsew"); textbox_container.grid_columnconfigure(0, weight=1); textbox_container.grid_rowconfigure(0, weight=1); textbox_container.grid_columnconfigure(1, weight=0)  
         current_os = platform.system()
         if current_os == "Windows":
@@ -15430,9 +15430,9 @@ if __name__ == "__main__":
         )
         _back_to_search_button.pack(side="left", anchor="w", padx=(6, 12), pady=0)
         _back_to_search_button.pack_forget()  # Hidden until user opens an album/playlist track list
-        results_label = customtkinter.CTkLabel(results_header_frame, text="RESULTS", text_color="#9F9F9F", font=("Segoe UI", 11)); results_label.pack(side="left", anchor="w", padx=6, pady=0)
+        results_label = customtkinter.CTkLabel(results_header_frame, text="RESULTS", text_color="#7F7F7F", font=("Segoe UI", 11)); results_label.pack(side="left", anchor="w", padx=6, pady=0)
         # Label shown after 8s when expand takes long (walking dots + "(this can take up to ~1 minute)")
-        globals()["_expand_loading_label"] = customtkinter.CTkLabel(results_header_frame, text="", text_color="#9F9F9F", font=("Segoe UI", 11))
+        globals()["_expand_loading_label"] = customtkinter.CTkLabel(results_header_frame, text="", text_color="#7F7F7F", font=("Segoe UI", 11))
         _expand_loading_label.pack_forget()
         # Content-type badge (Album / Playlist / Artist) with border; tight padding so border sits close to text
         _content_type_badge = customtkinter.CTkFrame(results_header_frame, fg_color="transparent", border_width=1, border_color="#565B5E", corner_radius=6, width=60, height=24)
@@ -15440,13 +15440,13 @@ if __name__ == "__main__":
             _content_type_badge.pack_propagate(False)  # keep fixed size
         except AttributeError:
             pass
-        _content_type_badge_label = customtkinter.CTkLabel(_content_type_badge, text="Album", text_color="#9F9F9F", font=("Segoe UI", 11))
+        _content_type_badge_label = customtkinter.CTkLabel(_content_type_badge, text="Album", text_color="#7F7F7F", font=("Segoe UI", 11))
         _content_type_badge_label.pack(padx=8, pady=(1, 1))  # tight horizontal padding; pady balanced to avoid clipping at 125% scale
         # Badge is not packed here; _update_results_header_context() packs it when showing album/playlist/artist view
         # Volume control frame (Windows only; macOS/Linux cannot regulate volume from GUI)
         if platform.system() == "Windows":
             _volume_frame = customtkinter.CTkFrame(results_header_frame, fg_color="transparent")
-            _volume_label = customtkinter.CTkLabel(_volume_frame, text="VOLUME", text_color="#9F9F9F", font=("Segoe UI", 10)); _volume_label.pack(side="left", padx=(0, 8))
+            _volume_label = customtkinter.CTkLabel(_volume_frame, text="VOLUME", text_color="#7F7F7F", font=("Segoe UI", 10)); _volume_label.pack(side="left", padx=(0, 8))
             _volume_slider = customtkinter.CTkSlider(_volume_frame, from_=0, to=100, number_of_steps=100, width=120, height=16, command=on_volume_change); _volume_slider.set(_current_volume); _volume_slider.pack(side="left", padx=(0, 0))
         else:
             _volume_frame = None
@@ -15490,7 +15490,7 @@ if __name__ == "__main__":
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print(f"[Style Non-Windows] Using system default font, Row height: {scaled_row_height}px")
             heading_font_config = (None, 10, 'normal')
-        tree_bg_color = "#1D1E1E"; tree_fg_color = "#DCE4EE"; tree_header_bg = "#1D1E1E"; tree_header_fg = "#9F9F9F"; tree_selected_bg = "#1F6AA5"; tree_selected_fg = "#FFFFFF"
+        tree_bg_color = "#1D1E1E"; tree_fg_color = "#DCE4EE"; tree_header_bg = "#1D1E1E"; tree_header_fg = "#7F7F7F"; tree_selected_bg = "#1F6AA5"; tree_selected_fg = "#FFFFFF"
         style.configure("Custom.Treeview",
                         background=tree_bg_color,
                         foreground=tree_fg_color,
@@ -15687,7 +15687,7 @@ Unnecessary Lossless-to-Lossless""",
         }
         for section_key, section_value in DEFAULT_SETTINGS["globals"].items():
             if isinstance(section_value, dict):
-                customtkinter.CTkLabel(global_settings_frame, text=section_key.replace("_", " ").upper(), text_color="#9F9F9F", font=("Segoe UI", 11)).grid(row=row, column=0, columnspan=3, sticky="w", padx=(0, 10), pady=(10, 5)); row += 1
+                customtkinter.CTkLabel(global_settings_frame, text=section_key.replace("_", " ").upper(), text_color="#7F7F7F", font=("Segoe UI", 11)).grid(row=row, column=0, columnspan=3, sticky="w", padx=(0, 10), pady=(10, 5)); row += 1
                 for field, default_value in section_value.items():
                     current_value = current_settings["globals"].get(section_key, {}).get(field, default_value); full_key = f"{section_key}.{field}"
                     if full_key == "advanced.conversion_flags":
@@ -16230,7 +16230,7 @@ Unnecessary Lossless-to-Lossless""",
         site_button = customtkinter.CTkButton(links_frame, text="Website", command=site_command, width=100, height=30, fg_color="#343638", hover_color=LINK_COLOR)
         site_button.pack(side="left", padx=2)
         section_header_font = ("Segoe UI", 11)
-        section_header_color = SECONDARY_TEXT_COLOR
+        section_header_color = "#7F7F7F"
         version_heading_label = customtkinter.CTkLabel(mid_inner, text="GUI VERSION", font=section_header_font, text_color=section_header_color)
         version_heading_label.pack(pady=(10, 0))
         version_number_label = customtkinter.CTkLabel(mid_inner, text=__version__)
