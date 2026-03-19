@@ -15347,8 +15347,14 @@ if __name__ == "__main__":
             if selected_tab == "Search":
                 pass
             elif selected_tab == "Settings":
-                if 'settings_tabview' in globals() and settings_tabview and settings_tabview.winfo_exists() and '_handle_settings_tab_change' in globals() and callable(_handle_settings_tab_change):
-                     app.after(10, _handle_settings_tab_change)
+                if 'settings_tabview' in globals() and settings_tabview and settings_tabview.winfo_exists():
+                    # Force a focus and update to fix macOS rendering bug where content stays blank until mouse move
+                    if platform.system() == "Darwin":
+                        settings_tabview.focus_set()
+                        settings_tabview.update_idletasks()
+                    
+                    if '_handle_settings_tab_change' in globals() and callable(_handle_settings_tab_change):
+                         app.after(10, _handle_settings_tab_change)
 
         tabview = customtkinter.CTkTabview(master=app, command=_on_tab_change)
         tabview.pack(padx=10, pady=10, expand=True, fill="both")
