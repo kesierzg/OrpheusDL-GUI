@@ -7752,7 +7752,7 @@ def _setup_log_textbox_styles():
         log_textbox.tag_configure("error", foreground="#FF4444")
         log_textbox.tag_configure("detail_text", foreground=SECONDARY_TEXT_COLOR)
         log_textbox.tag_configure("normal", foreground=SECONDARY_TEXT_COLOR)
-        log_textbox.tag_configure("hyperlink", foreground="royal blue", underline=True)
+        log_textbox.tag_configure("hyperlink", foreground="#1F6AA5", underline=True)
         log_textbox.tag_configure("emoji_success", foreground="#00C851")
         log_textbox.tag_configure("emoji_error", foreground="#FF4444")
         log_textbox.tag_configure("emoji_warning", foreground="#CCA700")
@@ -9823,6 +9823,35 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
         password = (beatsource_creds.get("password") or "").strip()
         if not username or not password:
             show_centered_messagebox("Download Error", "Beatsource credentials are required for downloading. Please fill in your username and password in the settings.", dialog_type="warning")
+            return False
+
+    # Apple Music: require cookies.txt before download
+    if 'music.apple.com' in url_to_download:
+        apple_creds = (current_settings.get("credentials") or {}).get("Apple Music") or {}
+        cookies_path = apple_creds.get("cookies_path", "") or os.path.join(application_path, "config", "cookies.txt")
+        if not os.path.isfile(cookies_path):
+            show_centered_messagebox("Download Error", "Apple Music cookies.txt are required for downloading. Please provide cookies.txt in /config folder.", dialog_type="warning")
+            return False
+
+    # Deezer: require email/password or arl before download
+    if 'deezer.com' in url_to_download:
+        deezer_creds = (current_settings.get("credentials") or {}).get("Deezer") or {}
+        email = (deezer_creds.get("email") or "").strip()
+        password = (deezer_creds.get("password") or "").strip()
+        arl = (deezer_creds.get("arl") or "").strip()
+        if not arl and (not email or not password):
+            show_centered_messagebox("Download Error", "Deezer credentials are required for downloading. Please fill in either email and password, or arl in the settings.", dialog_type="warning")
+            return False
+
+    # Qobuz: require email/password or id/token before download
+    if 'qobuz.com' in url_to_download:
+        qobuz_creds = (current_settings.get("credentials") or {}).get("Qobuz") or {}
+        username = (qobuz_creds.get("username") or "").strip()
+        password = (qobuz_creds.get("password") or "").strip()
+        user_id = (qobuz_creds.get("user_id") or "").strip()
+        auth_token = (qobuz_creds.get("auth_token") or "").strip()
+        if (not user_id or not auth_token) and (not username or not password):
+            show_centered_messagebox("Download Error", "Qobuz credentials are required for downloading. Please fill in either email and password, or id/token in the settings.", dialog_type="warning")
             return False
 
     # macOS/Linux: Deno is not bundled; required for YouTube downloads. Show install pop-up if missing.
