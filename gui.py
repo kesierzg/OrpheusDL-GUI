@@ -1039,7 +1039,7 @@ else: # Linux and others
     CONTEXT_MENU_CORNER_RADIUS = 0  # Squared corners
     CONTEXT_MENU_BUTTON_CORNER_RADIUS = 0  # Squared buttons
 # Icon and text color for context menu items (match so icons = text)
-CONTEXT_MENU_TEXT_COLOR = "#FFFFFF"
+CONTEXT_MENU_TEXT_COLOR = "#DCE4EE"
 CONTEXT_MENU_TEXT_DISABLED = "#777777"  # Adjusted for better contrast on #383838
 CONTEXT_MENU_OPACITY = 0.95  # 95% opacity for a modern translucent feel
 # Background for all tooltips and right-click context menus
@@ -15291,7 +15291,7 @@ if __name__ == "__main__":
 
         log_textbox = tkinter.Text(textbox_container, wrap=tkinter.WORD, state='disabled', font=log_font, 
                                    bg="#1D1E1E", fg=SECONDARY_TEXT_COLOR, insertbackground=SECONDARY_TEXT_COLOR, 
-                                   selectbackground="#1F6AA5", selectforeground="#FFFFFF",
+                                   selectbackground="#1F6AA5", selectforeground="#DCE4EE",
                                    relief="flat", borderwidth=0, highlightthickness=0)
         log_textbox.grid(row=0, column=0, sticky="nsew", padx=(5,0), pady=3)
         log_scrollbar = customtkinter.CTkScrollbar(textbox_container, command=log_textbox.yview); log_textbox.configure(yscrollcommand=log_scrollbar.set)
@@ -15490,7 +15490,7 @@ if __name__ == "__main__":
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print(f"[Style Non-Windows] Using system default font, Row height: {scaled_row_height}px")
             heading_font_config = (None, 10, 'normal')
-        tree_bg_color = "#1D1E1E"; tree_fg_color = "#DCE4EE"; tree_header_bg = "#1D1E1E"; tree_header_fg = "#7F7F7F"; tree_selected_bg = "#1F6AA5"; tree_selected_fg = "#FFFFFF"
+        tree_bg_color = "#1D1E1E"; tree_fg_color = "#DCE4EE"; tree_header_bg = "#1D1E1E"; tree_header_fg = "#7F7F7F"; tree_selected_bg = "#1F6AA5"; tree_selected_fg = "#DCE4EE"
         style.configure("Custom.Treeview",
                         background=tree_bg_color,
                         foreground=tree_fg_color,
@@ -16365,7 +16365,7 @@ Unnecessary Lossless-to-Lossless""",
                             command=lambda: copy_command(homebrew_cmd, copy1_btn)
                         )
                         copy1_btn.pack(side="right", padx=8, pady=5)
-                        copy1_btn.bind("<Enter>", lambda e: copy1_btn.configure(text_color="#FFFFFF"))
+                        copy1_btn.bind("<Enter>", lambda e: copy1_btn.configure(text_color="#DCE4EE"))
                         copy1_btn.bind("<Leave>", lambda e: copy1_btn.configure(text_color="gray"))
                         
                         # Step 2: FFmpeg
@@ -16390,7 +16390,7 @@ Unnecessary Lossless-to-Lossless""",
                             command=lambda: copy_command(ffmpeg_cmd, copy2_btn)
                         )
                         copy2_btn.pack(side="right", padx=8, pady=5)
-                        copy2_btn.bind("<Enter>", lambda e: copy2_btn.configure(text_color="#FFFFFF"))
+                        copy2_btn.bind("<Enter>", lambda e: copy2_btn.configure(text_color="#DCE4EE"))
                         copy2_btn.bind("<Leave>", lambda e: copy2_btn.configure(text_color="gray"))
                         
                         step3_label = customtkinter.CTkLabel(main_frame, text="3. Restart OrpheusDL GUI", anchor="w")
@@ -16516,7 +16516,7 @@ Unnecessary Lossless-to-Lossless""",
                             command=lambda: copy_command(winget_cmd, copy1_btn)
                         )
                         copy1_btn.pack(side="right", padx=8, pady=5)
-                        copy1_btn.bind("<Enter>", lambda e: copy1_btn.configure(text_color="#FFFFFF"))
+                        copy1_btn.bind("<Enter>", lambda e: copy1_btn.configure(text_color="#DCE4EE"))
                         copy1_btn.bind("<Leave>", lambda e: copy1_btn.configure(text_color="gray"))
                         
                         # Option 2: Manual Download
@@ -16634,7 +16634,7 @@ Unnecessary Lossless-to-Lossless""",
                             )
                             copy_btn.configure(command=lambda c=cmd, b=copy_btn: copy_command(c, b))
                             copy_btn.pack(side="right", padx=8, pady=5)
-                            copy_btn.bind("<Enter>", lambda e, b=copy_btn: b.configure(text_color="#FFFFFF"))
+                            copy_btn.bind("<Enter>", lambda e, b=copy_btn: b.configure(text_color="#DCE4EE"))
                             copy_btn.bind("<Leave>", lambda e, b=copy_btn: b.configure(text_color="gray"))
                         
                         restart_label = customtkinter.CTkLabel(main_frame, text="Then restart OrpheusDL GUI", anchor="w")
