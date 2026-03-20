@@ -5373,11 +5373,17 @@ def resource_path(relative_path):
             
     return path
 
+_ffmpeg_cache = None
+
 def find_system_ffmpeg():
     """
     Find FFmpeg on macOS, Linux, or Windows. Returns (found: bool, path: str).
     Checks common locations first, then system PATH.
     """
+    global _ffmpeg_cache
+    if _ffmpeg_cache is not None:
+        return _ffmpeg_cache
+
     import subprocess
     
     system = platform.system()
@@ -5423,7 +5429,8 @@ def find_system_ffmpeg():
             try:
                 result = subprocess.run([path, '-version'], capture_output=True, timeout=3)
                 if result.returncode == 0:
-                    return True, path
+                    _ffmpeg_cache = (True, path)
+                    return _ffmpeg_cache
             except:
                 pass
     
@@ -5434,11 +5441,13 @@ def find_system_ffmpeg():
         if result.returncode == 0:
             ffmpeg_path = result.stdout.decode().strip().split('\n')[0].strip()
             if ffmpeg_path and os.path.isfile(ffmpeg_path):
-                return True, ffmpeg_path
+                _ffmpeg_cache = (True, ffmpeg_path)
+                return _ffmpeg_cache
     except:
         pass
     
-    return False, None
+    _ffmpeg_cache = (False, None)
+    return _ffmpeg_cache
 
 
 def find_system_deno():
@@ -5626,7 +5635,7 @@ def _show_deno_install_message():
     )
     note_label.pack(fill="x", pady=(10, 5))
 
-    ok_btn = customtkinter.CTkButton(main_frame, text="OK", command=dialog.destroy, width=100)
+    ok_btn = customtkinter.CTkButton(main_frame, text="OK", command=lambda: _destroy_dialog(dialog), width=100)
     ok_btn.pack(pady=(10, 0))
 
     dialog.update_idletasks()
@@ -6995,6 +7004,19 @@ def _masked_entry_focus_out(widget):
         pass
     handle_focus_out(widget)
 
+def _destroy_dialog(dialog):
+    """Helper to destroy a dialog window with a small delay on Linux to prevent event bleed-through."""
+    if not dialog or not dialog.winfo_exists():
+        return
+    if platform.system() == "Linux":
+        # On Linux, immediately destroying a modal dialog upon ButtonRelease or ButtonPress
+        # can cause the subsequent event queue items (like Motion or ButtonRelease) to be
+        # incorrectly delivered to the underlying parent window's widgets (especially tkinter.Text).
+        # A small delay ensures the dialog's callback system fully consumes the event sequence.
+        dialog.after(100, dialog.destroy)
+    else:
+        dialog.destroy()
+
 
 def show_centered_messagebox(title, message, dialog_type="info", parent=None):
     """Creates and displays a centered CTkToplevel message box."""
@@ -7044,7 +7066,7 @@ def show_centered_messagebox(title, message, dialog_type="info", parent=None):
     parent_width = parent.winfo_width(); parent_height = parent.winfo_height(); parent_x = parent.winfo_x(); parent_y = parent.winfo_y(); dialog_width = dialog.winfo_width(); dialog_height = dialog.winfo_height()
     center_x = parent_x + (parent_width // 2) - (dialog_width // 2); center_y = parent_y + (parent_height // 2) - (dialog_height // 2); dialog.geometry(f"+{center_x}+{center_y}")
     message_label = customtkinter.CTkLabel(dialog, text=message, wraplength=400, justify="left"); message_label.pack(pady=(20, 10), padx=20, expand=True, fill="both")
-    ok_button = customtkinter.CTkButton(dialog, text="OK", command=dialog.destroy, width=100); ok_button.pack(pady=(0, 20)); ok_button.focus_set(); dialog.bind("<Return>", lambda event: ok_button.invoke())
+    ok_button = customtkinter.CTkButton(dialog, text="OK", command=lambda: _destroy_dialog(dialog), width=100); ok_button.pack(pady=(0, 20)); ok_button.focus_set(); dialog.bind("<Return>", lambda event: ok_button.invoke())
     dialog.grab_set(); dialog.wait_window()
 
 def show_centered_confirm(title, message, parent=None):
@@ -7058,10 +7080,10 @@ def show_centered_confirm(title, message, parent=None):
     result = [False]  # Use list to allow closure to mutate
     def on_yes():
         result[0] = True
-        dialog.destroy()
+        _destroy_dialog(dialog)
     def on_no():
         result[0] = False
-        dialog.destroy()
+        _destroy_dialog(dialog)
     dialog = customtkinter.CTkToplevel(parent)
     dialog.title(title)
     dialog.geometry("450x150")
@@ -15398,7 +15420,7 @@ if __name__ == "__main__":
         log_textbox = tkinter.Text(textbox_container, wrap=tkinter.WORD, state='disabled', font=log_font, 
                                    bg=SURFACE_COLOR, fg=SECONDARY_TEXT_COLOR, insertbackground=SECONDARY_TEXT_COLOR, 
                                    selectbackground=LINK_COLOR, selectforeground=WHITE_TEXT_COLOR,
-                                   relief="flat", borderwidth=0, highlightthickness=0)
+                                   relief="flat", borderwidth=0, highlightthickness=0, exportselection=False)
         log_textbox.grid(row=0, column=0, sticky="nsew", padx=(5,0), pady=3)
         log_scrollbar = customtkinter.CTkScrollbar(textbox_container, command=log_textbox.yview); log_textbox.configure(yscrollcommand=log_scrollbar.set)
         _setup_log_textbox_styles()
@@ -15427,6 +15449,9 @@ if __name__ == "__main__":
         clear_output_button = customtkinter.CTkButton(bottom_frame, text="Clear Output", width=100, height=30, command=clear_output_log, fg_color=UI_ELEMENT_BG_COLOR, hover_color=LINK_COLOR); clear_output_button.grid(row=0, column=1, sticky="e", padx=(5, 10))
         stop_button = customtkinter.CTkButton(bottom_frame, text="Stop", width=100, height=30, command=stop_download, fg_color=UI_ELEMENT_BG_COLOR, hover_color=LINK_COLOR, state=tkinter.DISABLED); stop_button.grid(row=0, column=2, sticky="e", padx=(0, 5))
         search_tab = tabview.add("Search"); search_main_frame = customtkinter.CTkFrame(search_tab, fg_color="transparent"); search_main_frame.pack(fill="both", expand=True, padx=9, pady=(10,0))
+        # Add tabs early so their buttons are available on first paint.
+        tabview.add("Settings")
+        tabview.add("About")
         
         def clear_focus(event=None):
             app.focus_set()
@@ -15697,7 +15722,7 @@ if __name__ == "__main__":
                 tree.selection_set(item)
                 return "break"
             tree.bind("<Button-1>", handle_macos_click)
-        settings_tab = tabview.add("Settings")
+        settings_tab = tabview.tab("Settings")
         settings_tabview = customtkinter.CTkTabview(master=settings_tab, command=_handle_settings_tab_change)
         settings_tabview.pack(expand=True, fill="both", padx=5, pady=5)
         global_settings_tab = settings_tabview.add("Global")
@@ -16235,7 +16260,7 @@ Unnecessary Lossless-to-Lossless""",
         save_status_label.pack(side="left", padx=(0, 10))
         save_button = customtkinter.CTkButton(save_controls_frame, text="Save", width=100, height=30, command=handle_save_settings, fg_color=BUTTON_COLOR, hover_color=LINK_COLOR)
         save_button.pack(side="left", padx=5, pady=(0, 0))
-        about_tab = tabview.add("About")
+        about_tab = tabview.tab("About")
         about_container = customtkinter.CTkFrame(about_tab, fg_color="transparent")
         about_container.pack(fill="both", expand=True, padx=16, pady=(0, 0))
         canvas = customtkinter.CTkFrame(about_container, fg_color="transparent")
@@ -16250,67 +16275,71 @@ Unnecessary Lossless-to-Lossless""",
         mid_inner = customtkinter.CTkFrame(about_mid, fg_color="transparent")
         icon_title_frame = customtkinter.CTkFrame(mid_inner, fg_color="transparent")
         icon_title_frame.pack(pady=(0, 5))
-        try:
-            current_platform = platform.system()
-            if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                print(f"[DEBUG AboutIcon] Platform detected: {current_platform}")
-            # Standardize About icon size across all platforms
-            # Adjustment for Linux because it scales significantly larger than Windows/macOS
-            if current_platform == "Linux":
-                icon_display_size = (60, 60)
-            else:
-                icon_display_size = (80, 80)
-            
-            if current_platform == "Linux":
-                icon_filename = "icon.png"
-            elif current_platform == "Darwin":
-                icon_filename = "icon.icns"
-            else:
-                # Prefer icon.png for the About image on Windows if available, as PIL handles PNG better than some ICOs
-                if os.path.exists(resource_path("icon.png")):
-                    icon_filename = "icon.png"
-                else:
-                    icon_filename = "icon.ico"
-
-            if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                print(f"[DEBUG AboutIcon] Set standardized display size to {icon_display_size}")
-                print(f"[DEBUG AboutIcon] Determined icon filename: {icon_filename}")
-            
-            icon_path = resource_path(icon_filename)
-            if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                print(f"[DEBUG AboutIcon] Generated icon path: {icon_path}")
-                print(f"[DEBUG AboutIcon] Looking for AboutTab icon at: {icon_path}")
-
-            icon_exists = os.path.exists(icon_path)
-            if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                print(f"[DEBUG AboutIcon] Does icon exist at path? {icon_exists}")
-
-            if icon_path and icon_exists:
-
-                try:
-                    if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                        print("[DEBUG AboutIcon] Attempting to open image...")
-                    
-                    # Open original image WITHOUT manual resize. 
-                    # Passing high-res image to CTkImage allows it to scale properly for the display's DPI.
-                    img = Image.open(icon_path)
-                    if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                        print("[DEBUG AboutIcon] Image opened successfully.")
-                    icon_image = customtkinter.CTkImage(light_image=img, dark_image=img, size=icon_display_size)
-                    if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                        print("[DEBUG AboutIcon] CTkImage created successfully.")
-                    icon_label = customtkinter.CTkLabel(icon_title_frame, text="", image=icon_image)
-                    icon_pady = 0 if current_platform == "Darwin" else 5
-                    icon_label.pack(pady=icon_pady)
-                except Exception as img_e:
-                    if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                        print(f"[DEBUG AboutIcon] Could not load/process icon image: {type(img_e).__name__}: {img_e}")
-            else:
+        def _load_about_icon():
+            try:
+                current_platform = platform.system()
                 if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                    print(f"[DEBUG AboutIcon] Icon file not found or path invalid: {icon_path}")
-        except Exception as path_e:
-            if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
-                print(f"[DEBUG AboutIcon] Error during icon path processing/loading: {type(path_e).__name__}: {path_e}")
+                    print(f"[DEBUG AboutIcon] Platform detected: {current_platform}")
+                # Standardize About icon size across all platforms
+                # Adjustment for Linux because it scales significantly larger than Windows/macOS
+                if current_platform == "Linux":
+                    icon_display_size = (60, 60)
+                else:
+                    icon_display_size = (80, 80)
+                
+                if current_platform == "Linux":
+                    icon_filename = "icon.png"
+                elif current_platform == "Darwin":
+                    icon_filename = "icon.icns"
+                else:
+                    # Prefer icon.png for the About image on Windows if available, as PIL handles PNG better than some ICOs
+                    if os.path.exists(resource_path("icon.png")):
+                        icon_filename = "icon.png"
+                    else:
+                        icon_filename = "icon.ico"
+
+                if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                    print(f"[DEBUG AboutIcon] Set standardized display size to {icon_display_size}")
+                    print(f"[DEBUG AboutIcon] Determined icon filename: {icon_filename}")
+                
+                icon_path = resource_path(icon_filename)
+                if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                    print(f"[DEBUG AboutIcon] Generated icon path: {icon_path}")
+                    print(f"[DEBUG AboutIcon] Looking for AboutTab icon at: {icon_path}")
+
+                icon_exists = os.path.exists(icon_path)
+                if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                    print(f"[DEBUG AboutIcon] Does icon exist at path? {icon_exists}")
+
+                if icon_path and icon_exists:
+
+                    try:
+                        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                            print("[DEBUG AboutIcon] Attempting to open image...")
+                        
+                        # Open original image WITHOUT manual resize. 
+                        # Passing high-res image to CTkImage allows it to scale properly for the display's DPI.
+                        img = Image.open(icon_path)
+                        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                            print("[DEBUG AboutIcon] Image opened successfully.")
+                        icon_image = customtkinter.CTkImage(light_image=img, dark_image=img, size=icon_display_size)
+                        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                            print("[DEBUG AboutIcon] CTkImage created successfully.")
+                        icon_label = customtkinter.CTkLabel(icon_title_frame, text="", image=icon_image)
+                        icon_pady = 0 if current_platform == "Darwin" else 5
+                        icon_label.pack(pady=icon_pady)
+                    except Exception as img_e:
+                        if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                            print(f"[DEBUG AboutIcon] Could not load/process icon image: {type(img_e).__name__}: {img_e}")
+                else:
+                    if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                        print(f"[DEBUG AboutIcon] Icon file not found or path invalid: {icon_path}")
+            except Exception as path_e:
+                if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+                    print(f"[DEBUG AboutIcon] Error during icon path processing/loading: {type(path_e).__name__}: {path_e}")
+        
+        # Build About content immediately so the tab is fully visible on first paint.
+        _load_about_icon()
         title_label = customtkinter.CTkLabel(icon_title_frame, text="OrpheusDL GUI", font=customtkinter.CTkFont(weight="bold"))
         title_label.pack(pady=(0, 0))
         description_text = ("A cross-platform graphical user interface for OrpheusDL.\nSearch & download across multiple music streaming services with ease.")
@@ -16378,26 +16407,36 @@ Unnecessary Lossless-to-Lossless""",
         button_height = 30
         button_padx = 2
         button_pady = 2
-        for index, (name, url) in enumerate(module_buttons_data):
-            row = index // cols
-            col = index % cols
-            command = lambda u=url: (subprocess.Popen(["open", u]) if platform.system() == "Darwin" else subprocess.Popen(["xdg-open", u]) if platform.system() == "Linux" else os.startfile(u))
-            button = customtkinter.CTkButton(
-                modules_frame,
-                text=name,
-                command=command,
-                width=button_width,
-                height=button_height,
-                fg_color=UI_ELEMENT_BG_COLOR,
-                hover_color=LINK_COLOR
-            )
-            button.grid(row=row, column=col, padx=button_padx, pady=button_pady, sticky="nw")
+        def _build_module_buttons():
+            for index, (name, url) in enumerate(module_buttons_data):
+                row = index // cols
+                col = index % cols
+                command = lambda u=url: (subprocess.Popen(["open", u]) if platform.system() == "Darwin" else subprocess.Popen(["xdg-open", u]) if platform.system() == "Linux" else os.startfile(u))
+                button = customtkinter.CTkButton(
+                    modules_frame,
+                    text=name,
+                    command=command,
+                    width=button_width,
+                    height=button_height,
+                    fg_color=UI_ELEMENT_BG_COLOR,
+                    hover_color=LINK_COLOR
+                )
+                button.grid(row=row, column=col, padx=button_padx, pady=button_pady, sticky="nw")
+        _build_module_buttons()
 
         
         # Check for FFmpeg on Windows/macOS/Linux and show helpful message if missing
         if platform.system() in ('Windows', 'Darwin', 'Linux'):
-            ffmpeg_found, ffmpeg_path = find_system_ffmpeg()
-            if not ffmpeg_found:
+            # Moved check to background thread to avoid blocking the main UI thread during initialization
+            def _run_ffmpeg_check_and_show_warning():
+                _f_found, _ = find_system_ffmpeg()
+                if not _f_found:
+                    try:
+                        app.after(1000, _show_ffmpeg_install_message)
+                    except:
+                        pass
+
+            if True: # Keep indentation for the large function block below
                 def _show_ffmpeg_install_message():
                     # Check if user chose to hide this message
                     if current_settings.get("globals", {}).get("advanced", {}).get("hide_ffmpeg_warning", False):
@@ -16764,7 +16803,7 @@ Unnecessary Lossless-to-Lossless""",
                             settings_vars["globals"]["advanced.hide_ffmpeg_warning"] = tkinter.BooleanVar(value=True)
                             
                             save_settings(show_confirmation=False)
-                        dialog.destroy()
+                        _destroy_dialog(dialog)
                     
                     checkbox_frame = customtkinter.CTkFrame(main_frame, fg_color="transparent")
                     checkbox_frame.pack(fill="x", pady=(15, 5))
@@ -16822,7 +16861,7 @@ Unnecessary Lossless-to-Lossless""",
                     
                     dialog.grab_set()
                     
-                app.after(1000, _show_ffmpeg_install_message)
+                threading.Thread(target=_run_ffmpeg_check_and_show_warning, daemon=True).start()
         
         setup_logging(output_queue)
         update_log_area()
@@ -16919,13 +16958,13 @@ Unnecessary Lossless-to-Lossless""",
                     button_frame.pack(fill="x", padx=20, pady=(0, 20))
                     
                     def view_logs():
-                        dialog.destroy()
+                        _destroy_dialog(dialog)
                         show_log_viewer("Initialization Logs", parent=app)
                     
                     view_logs_btn = customtkinter.CTkButton(button_frame, text="View Logs", command=view_logs, width=120, fg_color=PRIMARY_ACTION_COLOR, hover_color=LINK_COLOR)
                     view_logs_btn.pack(side="left", padx=5)
                     
-                    ok_btn = customtkinter.CTkButton(button_frame, text="OK", command=dialog.destroy, width=100)
+                    ok_btn = customtkinter.CTkButton(button_frame, text="OK", command=lambda: _destroy_dialog(dialog), width=100)
                     ok_btn.pack(side="right", padx=5)
                     
                     dialog.grab_set()
