@@ -7405,7 +7405,7 @@ def show_shortcuts_popup(parent=None):
         parent_y = parent.winfo_y()
         x = parent_x + (parent_width // 2) - (width // 2)
         y = parent_y + (parent_height // 2) - (height // 2)
-        dialog.geometry(f"{width}x{height}+{x}+{y}")
+        dialog.geometry(f"+{x}+{y}")
 
     # Content
     container = customtkinter.CTkFrame(dialog, fg_color="transparent")
