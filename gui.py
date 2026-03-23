@@ -7441,7 +7441,7 @@ def show_shortcuts_popup(parent=None):
         ("SEARCH", ""),
         ("▲ / ▼", "Navigate through search results"),
         ("Shift + ▲ / ▼", "Select multiple results (range)"),
-        (f"{mod} + Space", "Toggle individual selection"),
+        ("Cmd + Click" if is_mac else f"{mod} + Space", "Toggle individual selection"),
         ("Enter", "Play preview or expand item"),
     ])
     
@@ -17062,9 +17062,9 @@ Unnecessary Lossless-to-Lossless""",
         shortcuts_button = customtkinter.CTkButton(
             about_tab,
             text="⌨",
-            width=33,
+            width=36 if platform.system() == "Darwin" else 33,
             height=26,
-            font=("Segoe UI", 10 if platform.system() == "Darwin" else 13),
+            font=("Segoe UI", 22 if platform.system() == "Darwin" else 13),
             fg_color=BUTTON_COLOR,
             hover_color=LINK_COLOR,
             command=show_shortcuts_popup
