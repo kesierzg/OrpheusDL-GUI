@@ -136,6 +136,9 @@ if sys.platform == "win32":
     except Exception as e:
         print(f"[Patch] WARNING: Failed to set asyncio.WindowsProactorEventLoopPolicy(): {e}")
 
+# Global state flags for keyboard navigation and selection focus
+_ignore_selection_change = False
+
 # ============================================================================
 # Global Subprocess Patches for Windows (Hide Console Windows)
 # ============================================================================
@@ -180,6 +183,142 @@ if platform.system() == "Windows":
     try:
         print("[Patch] Applied global subprocess & asyncio patches to suppress console windows on Windows.")
     except Exception: pass
+
+# ============================================================================
+# Keyboard Navigation Enhancements
+# ============================================================================
+def _enable_keyboard_navigation():
+    """Monkey-patch customtkinter widgets to enable TAB focus by default."""
+    interactive_widgets = [
+        customtkinter.CTkButton,
+        customtkinter.CTkCheckBox,
+        customtkinter.CTkSwitch,
+        customtkinter.CTkRadioButton,
+        customtkinter.CTkOptionMenu,
+        customtkinter.CTkSegmentedButton,
+        customtkinter.CTkSlider,
+        # CTkEntry, CTkTextbox, and CTkComboBox are excluded here because they have
+        # internal focusable components; setting takefocus on the wrapper causes a double stop.
+    ]
+    def _patch_widget(widget_class):
+        old_init = widget_class.__init__
+        def new_init(self, *args, **kwargs):
+            old_init(self, *args, **kwargs)
+            try:
+                # Target internal component if possible to avoid double TAB stops
+                # This ensures we land on the actual interactive part in 1 press
+                target = None
+                if hasattr(self, "_canvas"): target = self._canvas
+                elif hasattr(self, "_entry"): target = self._entry
+                elif hasattr(self, "_textbox"): target = self._textbox
+                
+                if target:
+                    target.configure(takefocus=1)
+                elif hasattr(self, "tk") and hasattr(self, "_w"):
+                    # Fallback to the wrapper if no obvious child
+                    self.tk.call(self._w, 'configure', '-takefocus', '1')
+            except: pass
+        widget_class.__init__ = new_init
+
+    def _patch_dropdown_focus(widget_class):
+        old_callback = widget_class._dropdown_callback
+        def new_callback(self, value):
+            old_callback(self, value)
+            # Return focus to the widget so TAB continues from here
+            try:
+                self.focus_set()
+            except:
+                pass
+        widget_class._dropdown_callback = new_callback
+ 
+    def _patch_slider_keys(widget_class):
+        def _on_left(self):
+            val = self.get()
+            # Step is 1/100th of range or 1 unit if steps are defined
+            # CTkSlider internal attributes: _from_ (with trailing underscore) and _to (without)
+            step = (self._to - self._from_) / (self._number_of_steps if self._number_of_steps > 0 else 100)
+            new_val = max(self._from_, val - step)
+            self.set(new_val)
+            if self._command: self._command(new_val)
+        def _on_right(self):
+            val = self.get()
+            step = (self._to - self._from_) / (self._number_of_steps if self._number_of_steps > 0 else 100)
+            new_val = min(self._to, val + step)
+            self.set(new_val)
+            if self._command: self._command(new_val)
+
+        old_init = widget_class.__init__
+        def new_init(self, *args, **kwargs):
+            old_init(self, *args, **kwargs)
+            self.bind("<Left>", lambda e: _on_left(self))
+            self.bind("<Right>", lambda e: _on_right(self))
+        widget_class.__init__ = new_init
+
+    def _patch_interaction_keys(widget_class):
+        old_init = widget_class.__init__
+        def new_init(self, *args, **kwargs):
+            old_init(self, *args, **kwargs)
+            
+            def _on_trigger(event):
+                try:
+                    if isinstance(self, (customtkinter.CTkCheckBox, customtkinter.CTkSwitch)):
+                        self.toggle()
+                    elif isinstance(self, customtkinter.CTkButton):
+                        if hasattr(self, "_clicked"): self._clicked()
+                        else: self.invoke()
+                    elif isinstance(self, customtkinter.CTkRadioButton):
+                        self.select()
+                    return "break"
+                except: pass
+
+            self.bind("<space>", _on_trigger)
+            self.bind("<Return>", _on_trigger)
+        widget_class.__init__ = new_init
+
+    def _patch_input_field_keys(widget_class):
+        """Reorder bindtags to block Home/End bubble only after class bindings have run."""
+        old_init = widget_class.__init__
+        def new_init(self, *args, **kwargs):
+            old_init(self, *args, **kwargs)
+            target = None
+            if hasattr(self, "_entry"): target = self._entry
+            elif hasattr(self, "_textbox"): target = self._textbox
+            
+            if target:
+                try:
+                    # Default bindtags: (instance, class, toplevel, all)
+                    # We move the instance tag after the class tag so ours runs second.
+                    tags = list(target.bindtags())
+                    instance_tag = str(target)
+                    class_tag = target.winfo_class()
+                    if instance_tag in tags and class_tag in tags:
+                        tags.remove(instance_tag)
+                        tags.insert(tags.index(class_tag) + 1, instance_tag)
+                        target.bindtags(tuple(tags))
+                    
+                    # This now runs AFTER the default Entry/Text Home/End logic
+                    target.bind("<Home>", lambda e: "break")
+                    target.bind("<End>", lambda e: "break")
+                except: pass
+        widget_class.__init__ = new_init
+
+    for widget_class in interactive_widgets:
+        _patch_widget(widget_class)
+    
+    _patch_dropdown_focus(customtkinter.CTkComboBox)
+    _patch_slider_keys(customtkinter.CTkSlider)
+    _patch_dropdown_focus(customtkinter.CTkOptionMenu)
+
+    # Apply Home/End bubble block via bindtag reordering to input widgets
+    _patch_input_field_keys(customtkinter.CTkEntry)
+    _patch_input_field_keys(customtkinter.CTkTextbox)
+    _patch_input_field_keys(customtkinter.CTkComboBox)
+    
+    # Apply primary interaction (Space/Enter) to all clickable widgets
+    for widget_class in [customtkinter.CTkButton, customtkinter.CTkCheckBox, customtkinter.CTkSwitch, customtkinter.CTkRadioButton]:
+        _patch_interaction_keys(widget_class)
+
+_enable_keyboard_navigation()
 # ============================================================================
 
 # Native Audio Playback Imports
@@ -388,12 +527,13 @@ SERVICE_DISPLAY_NAMES = {
 
 # Standardized UI Colors
 WHITE_TEXT_COLOR = "#E4E5E6"
+PURE_WHITE_TEXT_COLOR = "#FFFFFF"
 SECONDARY_TEXT_COLOR = "#A8A8AA"
 GRAY_TEXT_COLOR = "#8A8C8F"
 LINK_COLOR = "#1F6AA5"
 LINK_HOVER_COLOR = "#4A9EFF"
 WARNING_COLOR = "#F2C94C"
-ERROR_COLOR = "#FF6B6B"
+ERROR_COLOR = "#E53935"
 
 # UI Element Colors
 SURFACE_COLOR = "#1D1E1E"          # Main application surface (textboxes, lists)
@@ -412,7 +552,6 @@ MUTE_TEXT_COLOR = "#999999"       # Muted gray for secondary descriptions
 # Additional UI elements
 DARKER_SURFACE_COLOR = "#222323"   # Odd rows and tooltip backgrounds
 SEPARATOR_COLOR = "#333333"        # Horizontal separators in menus
-DANGER_HOVER_COLOR = "#E53935"    # Hover for destructive actions (Clear Session)
 
 # Context Menu Platform-Specific Grays (Consolidated)
 CONTEXT_MENU_BORDER_SUBTLE = "#181818"
@@ -428,8 +567,29 @@ ROW_HOVER_COLOR = "#272828"    # Subtle highlight for row hovers
 BUTTON_COLOR = (WHITE_TEXT_COLOR, UI_ELEMENT_BG_COLOR)
 BORDER = BORDER_COLOR
 
-# Cursor for clickable items: macOS uses "pointinghand", Windows/Linux use "hand2" (unified for context menus and tree hover)
-HAND_CURSOR = "pointinghand" if sys.platform == "darwin" else "hand2"
+# Cursor constants: Hand cursor for all interactive elements on all platforms
+if sys.platform == "win32":
+    HAND_CURSOR = "hand2"
+    HAND_CURSOR_BUTTON = "hand2"
+    HAND_CURSOR_SEARCH = "hand2"
+    HAND_CURSOR_LINK = "hand2"
+    HAND_CURSOR_COPY = "hand2"
+    HAND_CURSOR_MENU = "hand2"
+elif sys.platform == "darwin":
+    HAND_CURSOR = "pointinghand"
+    HAND_CURSOR_BUTTON = "pointinghand"
+    HAND_CURSOR_SEARCH = "pointinghand"
+    HAND_CURSOR_LINK = "pointinghand"
+    HAND_CURSOR_COPY = "pointinghand"
+    HAND_CURSOR_MENU = "pointinghand" # Hand cursor for macOS context menus too
+else:
+    # Linux
+    HAND_CURSOR = "hand2"
+    HAND_CURSOR_BUTTON = "hand2" # Hand cursor for Linux buttons, etc.
+    HAND_CURSOR_SEARCH = "hand2"
+    HAND_CURSOR_LINK = "hand2"
+    HAND_CURSOR_COPY = "hand2"   # Hand cursor for Linux copy icons
+    HAND_CURSOR_MENU = "hand2"
 
 def _simple_slugify(text):
     if not text: return None
@@ -1258,6 +1418,10 @@ def create_placeholder_cover(size=COVER_SIZE):
 
 def _show_placeholder_cover(item_iid):
     """Show placeholder cover for an item."""
+    # Avoid GUI-thread work (PhotoImage/tree updates) while a search is running.
+    # This keeps the Tk animation loop responsive (indeterminate progress bar smoothness).
+    if globals().get("search_process_active", False) and not globals().get("download_process_active", False):
+        return
     global _cover_load_requested, _cover_image_cache, _cover_hover_cache, tree
     _cover_load_requested.add(item_iid)
     placeholder = get_placeholder_cover()
@@ -1444,6 +1608,8 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None, apply_to_iids=None)
     """
     def _apply_cover_on_main(img, darkened_img, item_iid, apply_to_iids=None):
         """Create Tk PhotoImages and update tree on main thread (PIL/Tk must not run in worker). Composites platform icon onto cover when available."""
+        if globals().get("search_process_active", False) and not globals().get("download_process_active", False):
+            return
         global tree, app, _cover_image_cache, _cover_hover_cache, _cover_hover_iid, _cover_fade_in_progress_count, search_results_data
         try:
             from PIL import ImageTk
@@ -1579,6 +1745,8 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None, apply_to_iids=None)
                 
                 # PhotoImage must be created on main thread to avoid GIL/crash
                 if 'app' in globals() and app and app.winfo_exists():
+                    if globals().get("search_process_active", False) and not globals().get("download_process_active", False):
+                        return
                     app.after(0, lambda: _apply_cover_on_main(img, darkened_img, item_iid, apply_to_iids))
             elif response.status_code == 403:
                 # 403 Forbidden - Tidal is blocking the request
@@ -1614,6 +1782,8 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None, apply_to_iids=None)
                                 
                                 # PhotoImage must be created on main thread to avoid GIL/crash
                                 if 'app' in globals() and app and app.winfo_exists():
+                                    if globals().get("search_process_active", False) and not globals().get("download_process_active", False):
+                                        return
                                     app.after(0, lambda: _apply_cover_on_main(img, darkened_img, item_iid, apply_to_iids))
                                 return  # Success, exit early
                         except Exception as e:
@@ -1624,18 +1794,24 @@ def load_cover_from_url(url, size=COVER_SIZE, item_iid=None, apply_to_iids=None)
                 if debug_mode:
                     print(f"[{platform_name} Cover Load] 403 Forbidden for item {item_iid}, showing placeholder")
                 if 'app' in globals() and app and app.winfo_exists():
+                    if globals().get("search_process_active", False) and not globals().get("download_process_active", False):
+                        return
                     app.after(0, lambda: _show_placeholder_cover(item_iid))
             elif response.status_code == 404:
                 # 404 Not Found - show placeholder
                 if debug_mode:
                     print(f"[{platform_name} Cover Load] 404 Not Found for item {item_iid}, showing placeholder")
                 if 'app' in globals() and app and app.winfo_exists():
+                    if globals().get("search_process_active", False) and not globals().get("download_process_active", False):
+                        return
                     app.after(0, lambda: _show_placeholder_cover(item_iid))
         except Exception as e:
             if debug_mode:
                 print(f"[{platform_name} Cover Load] Exception loading cover for item {item_iid}: {e}")
             # Show placeholder on error
             if 'app' in globals() and app and app.winfo_exists():
+                if globals().get("search_process_active", False) and not globals().get("download_process_active", False):
+                    return
                 app.after(0, lambda: _show_placeholder_cover(item_iid))
     
     threading.Thread(target=_load, daemon=True).start()
@@ -1685,6 +1861,8 @@ def get_visible_tree_items():
 
 def lazy_load_visible_covers():
     """Load covers only for currently visible items in the treeview."""
+    if globals().get("search_process_active", False) and not globals().get("download_process_active", False):
+        return
     global search_results_data, _cover_load_requested, _cover_image_cache, _cover_hover_cache, tree
     
     try:
@@ -2039,6 +2217,7 @@ def _start_pulse_animation():
     
     def pulse():
         global _pulse_state, _pulse_after_id, _currently_playing_preview_iid, tree, _preview_hover_iid
+        is_searching = bool(globals().get("search_process_active", False) and not globals().get("download_process_active", False))
         if _currently_playing_preview_iid is None or ('tree' not in globals() or not tree or not tree.winfo_exists()):
             _stop_pulse_animation()
             return
@@ -2047,20 +2226,21 @@ def _start_pulse_animation():
             # Toggle pulse state
             _pulse_state = not _pulse_state
             
-            # Get current values
-            current_values = list(tree.item(_currently_playing_preview_iid, 'values'))
-            if len(current_values) > 0:
-                # Only pulse if not hovering (hover has its own icon)
-                if _preview_hover_iid != _currently_playing_preview_iid:
-                    if _pulse_state:
-                        current_values[0] = PREVIEW_STOP_ICON_PULSE
-                    else:
-                        current_values[0] = PREVIEW_STOP_ICON
-                    tree.item(_currently_playing_preview_iid, values=tuple(current_values), tags=_tree_row_tags(_currently_playing_preview_iid, playing=True))
+            # While searching, skip the expensive tree.item updates to keep UI smooth.
+            if not is_searching:
+                current_values = list(tree.item(_currently_playing_preview_iid, 'values'))
+                if len(current_values) > 0:
+                    # Only pulse if not hovering (hover has its own icon)
+                    if _preview_hover_iid != _currently_playing_preview_iid:
+                        if _pulse_state:
+                            current_values[0] = PREVIEW_STOP_ICON_PULSE
+                        else:
+                            current_values[0] = PREVIEW_STOP_ICON
+                        tree.item(_currently_playing_preview_iid, values=tuple(current_values), tags=_tree_row_tags(_currently_playing_preview_iid, playing=True))
             
             # Schedule next pulse (500ms interval for smooth animation)
             if 'app' in globals() and app and app.winfo_exists():
-                _pulse_after_id = app.after(500, pulse)
+                _pulse_after_id = app.after(1000 if is_searching else 500, pulse)
         except:
             _stop_pulse_animation()
     
@@ -2091,33 +2271,39 @@ def _start_loading_animation(item_iid):
     
     def animate_dots():
         global _loading_after_id, _loading_dot_position, _loading_animation_iid, tree
+        is_searching = bool(globals().get("search_process_active", False) and not globals().get("download_process_active", False))
         # Check if this item is still supposed to be animating
         if _loading_animation_iid != item_iid or item_iid is None or ('tree' not in globals() or not tree or not tree.winfo_exists()):
             _stop_loading_animation()
             return
         
         try:
-            # Get current values
-            current_values = list(tree.item(item_iid, 'values'))
-            if len(current_values) > 0:
-                # Check if current icon is still a loading state (might have been changed by another function)
-                current_icon = current_values[0] if current_values else ""
-                # If icon was changed to something other than loading states, stop animation
-                if current_icon not in LOADING_ANIMATION_FRAMES and current_icon != PREVIEW_LOADING_ICON:
-                    _stop_loading_animation()
-                    return
-                
-                # Create walking dots pattern: " . ", " .. ", " ... ", then repeat
-                current_values[0] = LOADING_ANIMATION_FRAMES[_loading_dot_position]
-                
-                tree.item(item_iid, values=tuple(current_values))
-                
-                # Move to next position (0 -> 1 -> 2 -> 0)
+            # While searching, skip expensive tree.item updates (helps keep progress bar smooth).
+            if not is_searching:
+                # Get current values
+                current_values = list(tree.item(item_iid, 'values'))
+                if len(current_values) > 0:
+                    # Check if current icon is still a loading state (might have been changed by another function)
+                    current_icon = current_values[0] if current_values else ""
+                    # If icon was changed to something other than loading states, stop animation
+                    if current_icon not in LOADING_ANIMATION_FRAMES and current_icon != PREVIEW_LOADING_ICON:
+                        _stop_loading_animation()
+                        return
+                    
+                    # Create walking dots pattern: " . ", " .. ", " ... ", then repeat
+                    current_values[0] = LOADING_ANIMATION_FRAMES[_loading_dot_position]
+                    
+                    tree.item(item_iid, values=tuple(current_values))
+                    
+                    # Move to next position (0 -> 1 -> 2 -> 0)
+                    _loading_dot_position = (_loading_dot_position + 1) % len(LOADING_ANIMATION_FRAMES)
+            else:
+                # Still advance dot position so it looks correct after search completes.
                 _loading_dot_position = (_loading_dot_position + 1) % len(LOADING_ANIMATION_FRAMES)
             
             # Schedule next animation frame (300ms for smooth walking effect)
             if 'app' in globals() and app and app.winfo_exists():
-                _loading_after_id = app.after(300, animate_dots)
+                _loading_after_id = app.after(600 if is_searching else 300, animate_dots)
         except:
             _stop_loading_animation()
     
@@ -2174,8 +2360,8 @@ def _estimate_expand_time(track_count, platform_name, estimate_type='track', con
     else:
         # Per-track fetch time in seconds (measured with 100-track playlists)
         per_track_rates = {
-            'spotify': 0.64,
-            'deezer': 0.018,
+            'spotify': 0.025,
+            'deezer': 0.098,
             'tidal': 0.42,
             'qobuz': 0.25,
             'applemusic': 0.005,    # loads almost instantly
@@ -2193,11 +2379,16 @@ def _estimate_expand_time(track_count, platform_name, estimate_type='track', con
         if rounded < 10:
             return None  # Too fast for a meaningful ETA
         return f"~{rounded} seconds"
-    elif estimated_seconds < 90:
-        return "~1 minute"
-    elif estimated_seconds < 150:
-        return "~2 minutes"
+    elif estimated_seconds < 240:
+        # Round to nearest 0.5 minute for medium-length operations
+        half_mins = int(round(estimated_seconds / 30))
+        if half_mins % 2 == 0:
+            count = half_mins // 2
+            return f"~{count} minute{'s' if count > 1 else ''}"
+        else:
+            return f"~{half_mins / 2} minutes"
     else:
+        # Round to nearest full minute for long operations
         mins = int(round(estimated_seconds / 60))
         return f"~{mins} minutes"
 
@@ -2504,9 +2695,9 @@ def on_tree_motion(event):
         item_iid = tree.identify_row(event.y)
         region = tree.identify("region", event.x, event.y)
         
-        # Heading hover: show hand cursor so user knows columns are clickable to sort
+        # Heading hover: hand cursor on search result headers
         try:
-            tree.configure(cursor="hand2" if region == "heading" else "")
+            tree.configure(cursor=HAND_CURSOR if region == "heading" else "")
         except (tkinter.TclError, Exception):
             pass
         
@@ -2540,8 +2731,8 @@ def on_tree_motion(event):
             # Accept any region type for tree column (tree, cell, etc.)
             item_data = next((item for item in search_results_data if str(item.get('tree_iid')) == str(item_iid)), None)
             if item_data and item_data.get('cover_url'):
-                # Change cursor to hand for clickable covers (same as context menu on macOS)
-                tree.configure(cursor=HAND_CURSOR)
+                # Change cursor to hand for clickable covers
+                tree.configure(cursor=HAND_CURSOR_SEARCH)
                 
                 # Apply hover effect (darken cover)
                 if _cover_hover_iid != item_iid:
@@ -2573,14 +2764,16 @@ def on_tree_motion(event):
                 is_album_playlist = item_data.get('is_album_playlist')
                 is_artist = item_data.get('is_artist')
                 if has_preview or can_lazy_load or is_youtube_track or is_album_playlist or is_artist:
-                    tree.configure(cursor=HAND_CURSOR)
+                    tree.configure(cursor=HAND_CURSOR_SEARCH)
                     if (has_preview or can_lazy_load or is_youtube_track or is_album_playlist or is_artist) and _preview_hover_iid != item_iid:
                         _preview_hover_iid = item_iid
                         _enlarge_preview_icon(item_iid)
                     return
         
         # Reset cursor and restore icon if not over preview/cover column or no preview/cover available
-        tree.configure(cursor="")
+        # But NOT if we're over the header (region == "heading")
+        if region != "heading":
+            tree.configure(cursor="")
         
         # Restore cover hover if we were hovering over a cover
         if _cover_hover_iid:
@@ -3461,10 +3654,10 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                         _artwork_copy_photo = ImageTk.PhotoImage(_artwork_copy_pil())
                                         _artwork_save_photo = ImageTk.PhotoImage(_artwork_download_pil())
                                         
-                                        copy_row_tk = tkinter.Frame(menu_frame, bg=button_color, height=26, width=CONTEXT_MENU_WIDTH, cursor="", highlightthickness=0)
+                                        copy_row_tk = tkinter.Frame(menu_frame, bg=button_color, height=26, width=CONTEXT_MENU_WIDTH, cursor=HAND_CURSOR_MENU, highlightthickness=0)
                                         copy_row_tk.pack(pady=(2, 1), padx=2)
                                         copy_row_tk.pack_propagate(False)
-                                        copy_lbl_tk = tkinter.Label(copy_row_tk, text=" Copy Image", image=_artwork_copy_photo, compound="left", bg=button_color, fg=text_fg, font=("Segoe UI", 11), anchor="w", cursor="", highlightthickness=0)
+                                        copy_lbl_tk = tkinter.Label(copy_row_tk, text=" Copy Image", image=_artwork_copy_photo, compound="left", bg=button_color, fg=text_fg, font=("Segoe UI", 11), anchor="w", cursor=HAND_CURSOR_MENU, highlightthickness=0)
                                         copy_lbl_tk.pack(fill="both", expand=True, padx=4, pady=1)
                                         copy_lbl_tk.image = _artwork_copy_photo
                                         
@@ -3472,10 +3665,10 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                         sep_tk.pack(fill="x", padx=2, pady=2)
                                         sep_tk.pack_propagate(False)
                                         
-                                        save_row_tk = tkinter.Frame(menu_frame, bg=button_color, height=26, width=CONTEXT_MENU_WIDTH, cursor="", highlightthickness=0)
+                                        save_row_tk = tkinter.Frame(menu_frame, bg=button_color, height=26, width=CONTEXT_MENU_WIDTH, cursor=HAND_CURSOR_MENU, highlightthickness=0)
                                         save_row_tk.pack(pady=(1, 2), padx=2)
                                         save_row_tk.pack_propagate(False)
-                                        save_lbl_tk = tkinter.Label(save_row_tk, text=" Save as...", image=_artwork_save_photo, compound="left", bg=button_color, fg=text_fg, font=("Segoe UI", 11), anchor="w", cursor="", highlightthickness=0)
+                                        save_lbl_tk = tkinter.Label(save_row_tk, text=" Save as...", image=_artwork_save_photo, compound="left", bg=button_color, fg=text_fg, font=("Segoe UI", 11), anchor="w", cursor=HAND_CURSOR_MENU, highlightthickness=0)
                                         save_lbl_tk.pack(fill="both", expand=True, padx=4, pady=1)
                                         save_lbl_tk.image = _artwork_save_photo
                                         
@@ -3492,17 +3685,17 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                             in_save = r2x <= x_root < r2x + r2w and r2y <= y_root < r2y + r2h
                                             hover = hover_color_artwork
                                             if in_copy:
-                                                copy_row_tk.config(bg=hover, cursor=HAND_CURSOR)
-                                                copy_lbl_tk.config(bg=hover, fg=text_fg, image=_artwork_copy_photo, cursor=HAND_CURSOR)
+                                                copy_row_tk.config(bg=hover, cursor=HAND_CURSOR_MENU)
+                                                copy_lbl_tk.config(bg=hover, fg=text_fg, image=_artwork_copy_photo, cursor=HAND_CURSOR_MENU)
                                                 save_row_tk.config(bg=button_color, cursor="")
                                                 save_lbl_tk.config(bg=button_color, fg=text_fg, image=_artwork_save_photo, cursor="")
-                                                context_menu.configure(cursor=HAND_CURSOR)
+                                                context_menu.configure(cursor=HAND_CURSOR_MENU)
                                             elif in_save:
-                                                save_row_tk.config(bg=hover, cursor=HAND_CURSOR)
-                                                save_lbl_tk.config(bg=hover, fg=text_fg, image=_artwork_save_photo, cursor=HAND_CURSOR)
+                                                save_row_tk.config(bg=hover, cursor=HAND_CURSOR_MENU)
+                                                save_lbl_tk.config(bg=hover, fg=text_fg, image=_artwork_save_photo, cursor=HAND_CURSOR_MENU)
                                                 copy_row_tk.config(bg=button_color, cursor="")
                                                 copy_lbl_tk.config(bg=button_color, fg=text_fg, image=_artwork_copy_photo, cursor="")
-                                                context_menu.configure(cursor=HAND_CURSOR)
+                                                context_menu.configure(cursor=HAND_CURSOR_MENU)
                                             else:
                                                 copy_row_tk.config(bg=button_color, cursor="")
                                                 copy_lbl_tk.config(bg=button_color, fg=text_fg, image=_artwork_copy_photo, cursor="")
@@ -3534,7 +3727,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                         save_row_tk.bind("<Button-1>", lambda e: (_save_image_to_file(context_menu), _deferred_destroy_menu(context_menu)))
                                         save_lbl_tk.bind("<Button-1>", lambda e: (_save_image_to_file(context_menu), _deferred_destroy_menu(context_menu)))
                                     else:
-                                        menu_frame.configure(cursor=HAND_CURSOR)
+                                        menu_frame.configure(cursor=HAND_CURSOR_MENU)
                                         copy_icon = _create_copy_icon(color=CONTEXT_MENU_TEXT_COLOR)
                                         copy_btn = customtkinter.CTkButton(
                                             menu_frame,
@@ -3720,6 +3913,49 @@ def on_tree_click(event):
             _try_lazy_load_preview(item_iid, item_data)
     except Exception as e:
         print(f"[Preview] Error handling tree click: {e}")
+
+def on_tree_enter(event):
+    """Handle Enter key on the treeview for play/expand actions."""
+    global tree, search_results_data
+    try:
+        if 'tree' not in globals() or not tree or not tree.winfo_exists():
+            return
+        
+        items = tree.selection()
+        if not items:
+            return
+        
+        # Use the first selected item for expansion/playback
+        item_iid = items[0]
+        item_data = next((item for item in search_results_data if str(item.get('tree_iid')) == str(item_iid)), None)
+        if not item_data:
+            return
+            
+        # Standard play/expand logic from on_tree_click
+        if (item_data.get('type') or '').lower() == 'label' or item_data.get('is_artist'):
+            _fetch_and_show_artist_albums(item_iid, item_data)
+            return
+        if item_data.get('is_album_playlist'):
+            _fetch_and_expand_album_playlist(item_iid, item_data)
+            return
+            
+        # Track logic
+        current_platform = item_data.get('platform', '').lower() if item_data.get('platform') else ''
+        if current_platform == 'youtube':
+            video_id = item_data.get('id')
+            if video_id:
+                try:
+                    _open_url(f"https://www.youtube.com/watch?v={video_id}")
+                except: pass
+            return
+            
+        preview_url = item_data.get('preview_url')
+        if preview_url:
+            toggle_preview_playback(item_iid, preview_url)
+        else:
+            _try_lazy_load_preview(item_iid, item_data)
+    except Exception:
+        pass
 
 def _collapse_album_playlist(parent_iid):
     """Remove child track rows from an expanded album/playlist and update parent icon."""
@@ -5854,6 +6090,33 @@ try:
 
     CTkEntry._draw = _patched_ctkentry_draw
     print("[Patch] Patched CTkEntry._draw method.")
+
+    # Global cursor patching for platform consistency
+    from customtkinter import CTkButton, CTkCheckBox, CTkSlider, CTkSwitch, CTkComboBox
+
+    def patch_widget_cursor(cls, cursor_val):
+        original_init = cls.__init__
+        def new_init(self, *args, **kwargs):
+            if 'cursor' not in kwargs:
+                kwargs['cursor'] = cursor_val
+            original_init(self, *args, **kwargs)
+            # Apply cursor to internal elements that might not inherit it correctly on some platforms
+            for attr in ['_canvas', '_text_label', '_label', '_bg_canvas', '_entry', '_image_label', '_top_label', '_bottom_label', '_bg_label']:
+                if hasattr(self, attr):
+                    widget = getattr(self, attr)
+                    if widget and hasattr(widget, 'configure'):
+                        try:
+                            widget.configure(cursor=cursor_val)
+                        except: pass
+        cls.__init__ = new_init
+
+    patch_widget_cursor(CTkButton, HAND_CURSOR_BUTTON)
+    patch_widget_cursor(CTkCheckBox, HAND_CURSOR_BUTTON)
+    patch_widget_cursor(CTkSlider, HAND_CURSOR_BUTTON)
+    patch_widget_cursor(CTkSwitch, HAND_CURSOR_BUTTON)
+    # CTkComboBox intentionally skipped to prevent wonky behavior on macOS/Linux
+    patch_widget_cursor(CTkRadioButton, HAND_CURSOR_BUTTON) # Radio buttons (switches) now have hand cursor
+    print("[Patch] Applied global cursor patches for CTk widgets.")
     _original_ctkcheckbox_draw = CTkCheckBox._draw
 
     def _patched_ctkcheckbox_draw(self, *args, **kwargs):
@@ -6163,7 +6426,7 @@ def load_settings():
                              deep_merge(settings["globals"][section_key], section_data)
         if "modules" in file_settings:
             settings["modules"] = copy.deepcopy(file_settings["modules"])
-            platform_map_from_orpheus = { "bugs": "BugsMusic", "nugs": "Nugs", "soundcloud": "SoundCloud", "tidal": "TIDAL", "qobuz": "Qobuz", "deezer": "Deezer", "idagio": "Idagio", "kkbox": "KKBOX", "napster": "Napster", "beatport": "Beatport", "beatsource": "Beatsource", "musixmatch": "Musixmatch", "spotify": "Spotify", "applemusic": "Apple Music", "youtube": "YouTube" }
+            platform_map_from_orpheus = { "bugs": "Bugs", "nugs": "Nugs", "soundcloud": "SoundCloud", "tidal": "TIDAL", "qobuz": "Qobuz", "deezer": "Deezer", "idagio": "Idagio", "kkbox": "KKBOX", "napster": "Napster", "beatport": "Beatport", "beatsource": "Beatsource", "musixmatch": "Musixmatch", "spotify": "Spotify", "applemusic": "Apple Music", "youtube": "YouTube" }
             for orpheus_platform, creds_from_file in file_settings["modules"].items():
                 gui_platform = platform_map_from_orpheus.get(orpheus_platform)
                 if gui_platform and gui_platform in DEFAULT_SETTINGS["credentials"]:
@@ -6566,7 +6829,7 @@ def save_settings(show_confirmation: bool = True):
                       if section_key == "advanced" and item_key == "conversion_flags":
                           continue
                       mapped_orpheus_updates["global"][section_key][item_key] = item_value
-    platform_map_to_orpheus = { "BugsMusic": "bugs", "Nugs": "nugs", "SoundCloud": "soundcloud", "Tidal": "tidal", "Qobuz": "qobuz", "Deezer": "deezer", "Idagio": "idagio", "KKBOX": "kkbox", "Napster": "napster", "Beatport": "beatport", "Beatsource": "beatsource", "Musixmatch": "musixmatch", "Spotify": "spotify", "Apple Music": "applemusic", "YouTube": "youtube" }
+    platform_map_to_orpheus = { "Bugs": "bugs", "Nugs": "nugs", "SoundCloud": "soundcloud", "TIDAL": "tidal", "Qobuz": "qobuz", "Deezer": "deezer", "Idagio": "idagio", "KKBOX": "kkbox", "Napster": "napster", "Beatport": "beatport", "Beatsource": "beatsource", "Musixmatch": "musixmatch", "Spotify": "spotify", "Apple Music": "applemusic", "YouTube": "youtube" }
     for gui_platform, creds in updated_gui_settings.get("credentials", {}).items():
         orpheus_platform = platform_map_to_orpheus.get(gui_platform)
         if orpheus_platform:
@@ -6896,7 +7159,7 @@ def _add_clear_session_icon(parent_frame, platform_name):
         height=26,
         font=("Segoe UI", _font_size),
         fg_color=BUTTON_COLOR,
-        hover_color=DANGER_HOVER_COLOR,
+        hover_color=ERROR_COLOR,
         command=lambda p=platform_name: _clear_platform_session(p),
     )
     clear_btn.place(relx=1.0, rely=1.0, anchor="se", x=-15, y=-15)
@@ -6970,21 +7233,58 @@ def _auto_save_path_change(*args):
         show_centered_messagebox(dialog_title, error_message_for_dialog, dialog_type="error")
 
 def handle_focus_in(widget):
+    """Safely apply a focus highlight to a widget by changing its border or foreground color."""
     try:
+        # Checkboxes and RadioButtons use border_color for focus
+        if isinstance(widget, (customtkinter.CTkCheckBox, customtkinter.CTkRadioButton)):
+            if not hasattr(widget, '_original_border_color_stored'):
+                widget._original_border_color_stored = widget.cget("border_color")
+            widget.configure(border_color=LINK_COLOR)
+            return
+            
+        # Switches use progress_color for focus
+        if isinstance(widget, customtkinter.CTkSwitch):
+            if not hasattr(widget, '_original_progress_color_stored'):
+                widget._original_progress_color_stored = widget.cget("progress_color")
+            widget.configure(progress_color=LINK_COLOR)
+            return
+
+        # Skip fg_color highlight for SegmentedButtons (used for tabs) 
+        # as it conflicts with the 'active' tab state visual.
+        if isinstance(widget, customtkinter.CTkSegmentedButton):
+            return
+
+        # Simple widgets (Buttons, Entries, Textboxes) use fg_color highlight
         if not hasattr(widget, '_original_fg_color_stored'):
-            original_color = widget.cget("fg_color")
-            widget._original_fg_color_stored = original_color
-        widget.configure(fg_color=CONTAINER_COLOR)
-    except Exception as e:
-        print(f"Error in handle_focus_in for {widget}: {e}")
+            widget._original_fg_color_stored = widget.cget("fg_color")
+        
+        focus_color = LINK_COLOR
+        if isinstance(widget, (customtkinter.CTkEntry, customtkinter.CTkTextbox)):
+            focus_color = CONTAINER_COLOR
+            
+        widget.configure(fg_color=focus_color)
+    except Exception:
+        pass
 
 def handle_focus_out(widget):
+    """Restore a widget's original attributes when it loses focus."""
     try:
+        # Restore CheckBox / RadioButton border
+        if hasattr(widget, '_original_border_color_stored'):
+            widget.configure(border_color=widget._original_border_color_stored)
+            
+        # Restore Switch progress color
+        if hasattr(widget, '_original_progress_color_stored'):
+            widget.configure(progress_color=widget._original_progress_color_stored)
+            
+        # Restore fg_color for Buttons / Entries
         if hasattr(widget, '_original_fg_color_stored'):
-            original_color = widget._original_fg_color_stored
-            widget.configure(fg_color=original_color)
-    except Exception as e:
-        print(f"Error in handle_focus_out for {widget}: {e}")
+            widget.configure(fg_color=widget._original_fg_color_stored)
+            
+        # Note: We NO LONGER manually reset _hover or call grab_release here,
+        # as it can interfere with normal event propagation and hover lifecycle.
+    except Exception:
+        pass
 
 
 def _masked_entry_focus_in(widget):
@@ -7008,14 +7308,26 @@ def _destroy_dialog(dialog):
     """Helper to destroy a dialog window with a small delay on Linux to prevent event bleed-through."""
     if not dialog or not dialog.winfo_exists():
         return
+
+    # Store reference to parent for focus restoration
+    parent = None
+    try:
+        parent = dialog.master
+    except:
+        pass
+
     if platform.system() == "Linux":
-        # On Linux, immediately destroying a modal dialog upon ButtonRelease or ButtonPress
-        # can cause the subsequent event queue items (like Motion or ButtonRelease) to be
-        # incorrectly delivered to the underlying parent window's widgets (especially tkinter.Text).
-        # A small delay ensures the dialog's callback system fully consumes the event sequence.
         dialog.after(100, dialog.destroy)
     else:
         dialog.destroy()
+
+    # Explicitly return focus to main window after a small delay to ensure
+    # the modal grab is fully cleared and hover states are re-evaluated.
+    if parent and hasattr(parent, "focus_set"):
+        try:
+            parent.after(10, lambda: parent.focus_set())
+        except:
+            pass
 
 
 def show_centered_messagebox(title, message, dialog_type="info", parent=None):
@@ -7068,6 +7380,111 @@ def show_centered_messagebox(title, message, dialog_type="info", parent=None):
     message_label = customtkinter.CTkLabel(dialog, text=message, wraplength=400, justify="left"); message_label.pack(pady=(20, 10), padx=20, expand=True, fill="both")
     ok_button = customtkinter.CTkButton(dialog, text="OK", command=lambda: _destroy_dialog(dialog), width=100); ok_button.pack(pady=(0, 20)); ok_button.focus_set(); dialog.bind("<Return>", lambda event: ok_button.invoke())
     dialog.grab_set(); dialog.wait_window()
+
+def show_shortcuts_popup(parent=None):
+    """Displays a popup with all keyboard shortcuts."""
+    global app
+    if parent is None:
+        parent = app if 'app' in globals() and app else None
+    
+    dialog = customtkinter.CTkToplevel(parent)
+    dialog.title("Keyboard Shortcuts")
+    dialog.geometry("500x580")
+    dialog.resizable(False, False)
+    dialog.attributes("-topmost", True)
+    dialog.transient(parent)
+    
+    # Center the dialog
+    dialog.update_idletasks()
+    width = dialog.winfo_width()
+    height = dialog.winfo_height()
+    if parent:
+        parent_width = parent.winfo_width()
+        parent_height = parent.winfo_height()
+        parent_x = parent.winfo_x()
+        parent_y = parent.winfo_y()
+        x = parent_x + (parent_width // 2) - (width // 2)
+        y = parent_y + (parent_height // 2) - (height // 2)
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+
+    # Content
+    container = customtkinter.CTkFrame(dialog, fg_color="transparent")
+    container.pack(fill="both", expand=True, padx=25, pady=15)
+    
+    shortcuts_frame = customtkinter.CTkFrame(container, fg_color="transparent")
+    shortcuts_frame.pack(fill="both", expand=True)
+    shortcuts_frame.columnconfigure(0, weight=3)
+    shortcuts_frame.columnconfigure(1, weight=2)
+    
+    is_mac = platform.system() == "Darwin"
+    mod = "Cmd" if is_mac else "Ctrl"
+
+    shortcuts = [
+        ("TABS", ""),
+        (f"{mod} + D", "Switch to Download tab"),
+        (f"{mod} + F", "Switch to Search tab"),
+        (f"{mod} + S", "Switch to Settings tab"),
+        ("F1", "Open Keyboard shortcuts"),
+        ("GLOBAL", ""),
+        ("Tab ( + Shift )", "Navigate forwards (or backwards) between elements"),
+        ("Space / Enter", "Toggle checkbox/switch or click button"),
+        ("◀ / ▶", "Adjust slider values"),
+    ]
+    
+    if is_mac:
+        shortcuts.append(("Fn + ▲ / ▼", "Scroll page up / down"))
+    else:
+        shortcuts.append(("PgUp / PgDn", "Scroll page up / down"))
+        
+    shortcuts.extend([
+        ("Home / End", "Jump to top / bottom"),
+        ("SEARCH", ""),
+        ("▲ / ▼", "Navigate through search results"),
+        ("Shift + ▲ / ▼", "Select multiple results (range)"),
+        (f"{mod} + Space", "Toggle individual selection"),
+        ("Enter", "Play preview or expand item"),
+    ])
+    
+    for i, (key_text, action) in enumerate(shortcuts):
+        if not action: # Header section
+            header = customtkinter.CTkLabel(shortcuts_frame, text=key_text, font=("Segoe UI", 11), text_color=GRAY_TEXT_COLOR)
+            header.grid(row=i, column=0, columnspan=2, sticky="w", pady=(8 if i > 0 else 0, 3))
+        else:
+            # Action description (left column) - indented and brighter
+            a = customtkinter.CTkLabel(shortcuts_frame, text=action, font=("Segoe UI", 11), anchor="w", text_color=WHITE_TEXT_COLOR)
+            a.grid(row=i, column=0, sticky="w", pady=1, padx=(20, 0))
+
+            # Container for the keys (right column)
+            key_container = customtkinter.CTkFrame(shortcuts_frame, fg_color="transparent")
+            key_container.grid(row=i, column=1, sticky="w", padx=(15, 0), pady=1)
+            
+            # Split key_text by ' / ' (alternatives) or ' + ' (combinations)
+            parts = key_text.split(" ")
+            for p_idx, part in enumerate(parts):
+                if part in ("+", "/", "(", ")"):
+                    sep = customtkinter.CTkLabel(key_container, text=part, font=("Segoe UI", 10), text_color=SECONDARY_TEXT_COLOR)
+                    sep.pack(side="left", padx=2)
+                elif part in ("▲", "▼", "◀", "▶"): # Special handling for symbols
+                    k_frame = customtkinter.CTkFrame(key_container, fg_color=UI_ELEMENT_BG_COLOR, corner_radius=5, height=22)
+                    k_frame.pack(side="left", padx=1)
+                    k_label = customtkinter.CTkLabel(k_frame, text=part, font=("Segoe UI", 9), padx=6)
+                    k_label.pack()
+                elif part: # Key-like frame for text keys
+                    k_frame = customtkinter.CTkFrame(key_container, fg_color=UI_ELEMENT_BG_COLOR, corner_radius=5, height=22)
+                    k_frame.pack(side="left", padx=1)
+                    k_label = customtkinter.CTkLabel(k_frame, text=part, font=("Segoe UI", 10, "bold"), padx=6)
+                    k_label.pack()
+
+    close_button = customtkinter.CTkButton(container, text="Close", command=lambda: _destroy_dialog(dialog), width=120, fg_color=UI_ELEMENT_BG_COLOR, hover_color=LINK_COLOR)
+    close_button.pack(pady=(15, 0))
+    
+    # Auto-focus the close button so Enter/Space closes the popup immediately
+    app.after(100, lambda: close_button.focus_set())
+    
+    dialog.bind("<Return>", lambda e: _destroy_dialog(dialog))
+    dialog.bind("<Escape>", lambda e: _destroy_dialog(dialog))
+    dialog.grab_set()
+    dialog.wait_window()
 
 def show_centered_confirm(title, message, parent=None):
     """Creates and displays a centered CTkToplevel confirmation dialog with Yes/No. Returns True if Yes, False if No."""
@@ -7223,10 +7640,11 @@ def show_log_viewer(title="Application Logs", parent=None):
     save_btn = customtkinter.CTkButton(button_frame, text="Save to File", command=save_logs, width=120)
     save_btn.pack(side="left", padx=5)
     
-    close_btn = customtkinter.CTkButton(button_frame, text="Close", command=dialog.destroy, width=100)
+    close_btn = customtkinter.CTkButton(button_frame, text="Close", command=lambda: _destroy_dialog(dialog), width=100)
     close_btn.pack(side="right", padx=5)
     
     dialog.grab_set()
+    dialog.wait_window()
 
 def _bind_hover_effect(widget, hover_color=None, normal_color=CONTEXT_MENU_TEXT_COLOR, hover_bg=CONTEXT_MENU_HOVER_COLOR, normal_bg=None, hover_image=None, normal_image=None):
     """Binds Enter/Leave events to change text color, background color, and image on hover."""
@@ -7687,7 +8105,7 @@ def _clean_ansi_and_process_markers(text):
     # Colorize 'Downloading ...' specific values in white
     import re
     text = re.sub(r'=== (Downloading \S+) (.*?) (\([^)]+\)) ===', r'=== \1 |WHITE|\2|RESET| \3 ===', text)
-    text = re.sub(r'(Artists?: )([^(]+?)(?:\s+(\([^)]+\)))?$', lambda m: m.group(1) + "|WHITE|" + m.group(2) + "|RESET|" + (" " + m.group(3) if m.group(3) else ""), text)
+    text = re.sub(r'(Artists?: )(.+?)(?:\s+(\(\d+\)))?$', lambda m: m.group(1) + "|WHITE|" + m.group(2) + "|RESET|" + (" " + m.group(3) if m.group(3) else ""), text)
     text = re.sub(r'(Playlist creator: )(.*)', r'\1|WHITE|\2|RESET|', text)
     text = re.sub(r'(Playlist creation year: )(.*)', r'\1|WHITE|\2|RESET|', text)
     text = re.sub(r'(Number of tracks: )(.*)', r'\1|WHITE|\2|RESET|', text)
@@ -7696,6 +8114,7 @@ def _clean_ansi_and_process_markers(text):
     text = re.sub(r'(Release year: )(.*)', r'\1|WHITE|\2|RESET|', text)
     text = re.sub(r'(Year: )(.*)', r'\1|WHITE|\2|RESET|', text)
     text = re.sub(r'(Duration: )(.*)', r'\1|WHITE|\2|RESET|', text)
+    text = re.sub(r'(Quality: )(.*)', r'\1|WHITE|\2|RESET|', text)
     text = re.sub(r'(\s+\d+/\d+ [✓❌▶⚠] )(.*)', r'\1|WHITE|\2|RESET|', text)
     
     # Colorize '... cancelled' text in red inside headers (e.g., Playlist <ID> cancelled)
@@ -7838,7 +8257,7 @@ def _setup_log_textbox_styles():
             log_textbox.tag_configure(f"service_{service.replace(' ', '_')}", foreground=color)
             log_textbox.tag_configure(f"platform_{service.replace(' ', '_')}", foreground=color)
             
-        log_textbox.tag_bind("hyperlink", "<Enter>", lambda e: log_textbox.config(cursor=HAND_CURSOR))
+        log_textbox.tag_bind("hyperlink", "<Enter>", lambda e: log_textbox.config(cursor=HAND_CURSOR_LINK))
         log_textbox.tag_bind("hyperlink", "<Leave>", lambda e: log_textbox.config(cursor=""))
         log_textbox.tag_bind("hyperlink", "<Button-1>", _on_hyperlink_click)
     except Exception as e:
@@ -8088,15 +8507,29 @@ _has_shown_unavailable_warning = False
 
 def update_log_area():
     global output_queue, app, _has_shown_unavailable_warning, _current_download_context
+    is_searching = bool(globals().get("search_process_active", False) and not globals().get("download_process_active", False))
     try:
         messages_processed = 0
-        max_messages_per_update = 5
         start_time = time.time()
-        max_processing_time = 0.02
+        if is_searching:
+            # While searching we keep the GUI responsive by avoiding heavy widget updates.
+            # The progress bar animation is tied to the GUI event loop, so any long log rendering causes stutter.
+            max_messages_per_update = 2
+            max_processing_time = 0.004
+        else:
+            max_messages_per_update = 5
+            max_processing_time = 0.02
         
         while messages_processed < max_messages_per_update:
             try: 
                 msg = output_queue.get_nowait()
+                if is_searching:
+                    # Drain quickly; skip log_textbox parsing/rendering during search.
+                    messages_processed += 1
+                    if time.time() - start_time > max_processing_time:
+                        break
+                    continue
+
                 msg_strip = msg.strip()
                 if msg_strip.startswith('[Apple Music]'):
                     continue
@@ -8210,7 +8643,7 @@ def update_log_area():
             except Exception as e: 
                 print(f"Error processing message from queue: {e}")
                 break
-        if 'app' in globals() and app and app.winfo_exists():
+        if (not is_searching) and 'app' in globals() and app and app.winfo_exists():
             app.update_idletasks()
             try:
                 if 'log_textbox' in globals() and log_textbox and log_textbox.winfo_exists():
@@ -8224,8 +8657,12 @@ def update_log_area():
     finally:
         try:
             if 'app' in globals() and app and app.winfo_exists():
-                queue_size = output_queue.qsize() if output_queue else 0
-                update_interval = min(100, max(25, queue_size * 2))
+                if is_searching:
+                    # Keep progress bar animation smooth: avoid frequent rescheduling while searching.
+                    update_interval = 120
+                else:
+                    queue_size = output_queue.qsize() if output_queue else 0
+                    update_interval = min(100, max(25, queue_size * 2))
                 app.after(update_interval, update_log_area)
             else:
                 print("[Debug] update_log_area: 'app' not found or destroyed, stopping log polling.")
@@ -8420,6 +8857,30 @@ class QueueWriter(io.TextIOBase):
 
     def write(self, msg):
         global current_settings
+        # Search-mode optimization:
+        # When QueueWriter is used for `All`/single-platform searches, we don't need verbose stdout.
+        # Keeping the parsing/regex work minimal reduces CPU/GIL contention and improves GUI animation smoothness.
+        if self.media_type is None:
+            try:
+                if '\r' in msg:
+                    msg = msg.split('\r')[-1]
+                stripped = (msg or "").strip()
+                if not stripped:
+                    return len(msg)
+                # Keep only meaningful messages to avoid flooding the GUI/main thread.
+                if (
+                    '[ERROR]' in stripped or
+                    '[WARNING]' in stripped or
+                    'Error during search' in stripped or
+                    'timed out' in stripped or
+                    stripped.startswith('TIDAL:') or
+                    'TIDAL Auth' in stripped
+                ):
+                    self.queue.put(stripped + '\n')
+                return len(msg)
+            except Exception:
+                # Never let logging/output handling break the search/download flow.
+                return len(msg)
         
         if '\r' in msg:
             parts = msg.split('\r')
@@ -10893,8 +11354,8 @@ def start_search():
         if search_process_active: show_centered_messagebox("Busy", "A search is already in progress!", dialog_type="warning"); return
 
         clear_search_ui()
-        set_ui_state_searching(True)
         search_process_active = True
+        set_ui_state_searching(True)
         if platform_name == "All":
             platforms_list = get_searchable_platforms(current_settings, installed_platform_keys or [], get_data_directory() or application_path)
             if not platforms_list:
@@ -10925,50 +11386,69 @@ def start_search():
         search_process_active = False
 
 def on_tree_select(event):
-    global tree, search_results_data, selection_var, search_download_button
+    global tree, search_results_data, selection_var, search_download_button, _ignore_selection_change, _tree_selection_anchor
     try:
         if 'tree' not in globals() or not tree or not tree.winfo_exists(): return
         if 'selection_var' not in globals() or not selection_var: return
         if 'search_download_button' not in globals() or not search_download_button or not search_download_button.winfo_exists(): return
 
         selection = tree.selection()
-        if selection:
-            selected_count = len(selection)
-            if selected_count == 1:
-                selected_iid = selection[0]
-                selected_item_data = next((item for item in search_results_data if str(item.get('tree_iid')) == str(selected_iid)), None)
-                if selected_item_data: 
-                    selection_var.set(selected_item_data['number'])
-                    search_download_button.configure(state="normal", text="Download")
-                else: 
-                    print(f"Selected iid {selected_iid} not found in search_results_data.")
-                    selection_var.set("")
-                    search_download_button.configure(state="disabled", text="Download")
-            else:
-                selected_numbers = []
-                for selected_iid in selection:
-                    selected_item_data = next((item for item in search_results_data if str(item.get('tree_iid')) == str(selected_iid)), None)
-                    if selected_item_data:
-                        selected_numbers.append(selected_item_data['number'])
-                try:
-                    selected_numbers.sort(key=int)
-                except ValueError:
-                    pass
+        
+        # Prevent recursion loop with selection_entry
+        _ignore_selection_change = True
+        try:
+            if selection:
+                selected_count = len(selection)
+                # Update anchor if only one item is selected (either by click or non-shift keyboard nav)
+                if selected_count == 1:
+                    _tree_selection_anchor = selection[0]
                 
-                selection_var.set(",".join(selected_numbers))
-                search_download_button.configure(state="normal", text=f"Download {selected_count} IDs")
-        else: 
-            selection_var.set("")
-            search_download_button.configure(state="disabled", text="Download")
+                if selected_count == 1:
+                    selected_iid = selection[0]
+                    selected_item_data = next((item for item in search_results_data if str(item.get('tree_iid')) == str(selected_iid)), None)
+                    if selected_item_data: 
+                        selection_var.set(selected_item_data['number'])
+                        search_download_button.configure(state="normal", text="Download")
+                    else: 
+                        print(f"Selected iid {selected_iid} not found in search_results_data.")
+                        selection_var.set("")
+                        search_download_button.configure(state="disabled", text="Download")
+                else:
+                    selected_numbers = []
+                    for selected_iid in selection:
+                        selected_item_data = next((item for item in search_results_data if str(item.get('tree_iid')) == str(selected_iid)), None)
+                        if selected_item_data:
+                            selected_numbers.append(selected_item_data['number'])
+                    try:
+                        selected_numbers.sort(key=int)
+                    except ValueError:
+                        pass
+                    
+                    selection_var.set(",".join(selected_numbers))
+                    search_download_button.configure(state="normal", text=f"Download {selected_count} IDs")
+            else: 
+                selection_var.set("")
+                search_download_button.configure(state="disabled", text="Download")
+        finally:
+            _ignore_selection_change = False
+        
+        # Update visual focus indicator
+        if '_update_keyboard_focus' in locals():
+            _update_keyboard_focus()
+        elif '_update_keyboard_focus' in globals():
+            _update_keyboard_focus()
     except NameError: pass
     except tkinter.TclError as e: print(f"TclError in tree select (widget destroyed?): {e}")
     except Exception as e: print(f"Error in tree select: {e}")
 
 def on_selection_change(*args):
-    global selection_var, search_results_data, search_download_button, selection_entry
+    global selection_var, search_results_data, search_download_button, selection_entry, _ignore_selection_change
     try:
         if 'selection_var' not in globals() or not selection_var: return
         if 'search_download_button' not in globals() or not search_download_button or not search_download_button.winfo_exists(): return
+        
+        # Break recursion loop
+        if _ignore_selection_change: return
 
         selection_str = selection_var.get().strip()
         
@@ -10987,7 +11467,15 @@ def on_selection_change(*args):
 
         if not selection_str: 
             search_download_button.configure(state="disabled", text="Download")
+            # Clear tree selection if manually cleared
+            if 'tree' in globals() and tree and tree.winfo_exists():
+                _ignore_selection_change = True
+                try:
+                    tree.selection_set([])
+                finally:
+                    _ignore_selection_change = False
             return
+            
         if "," in selection_str:
             # Multi-selection logic is handled in on_tree_select, but we still need to enable button if valid
             # If it contains commas, it's likely a list of IDs.
@@ -11007,6 +11495,17 @@ def on_selection_change(*args):
         try:
             selection_num = int(selection_str)
             matching_item = next((item for item in search_results_data if item.get('number') == str(selection_num)), None)
+            if matching_item and 'tree' in globals() and tree and tree.winfo_exists():
+                # Sync entry with treeview selection
+                iid = matching_item.get('tree_iid')
+                if iid:
+                    # Prevent trigger loop
+                    _ignore_selection_change = True
+                    try:
+                        tree.selection_set(iid)
+                        tree.see(iid) # Scroll to item
+                    finally:
+                        _ignore_selection_change = False
             search_download_button.configure(state="normal" if matching_item else "disabled", text="Download")
         except ValueError:
             search_download_button.configure(state="disabled", text="Download")
@@ -11097,7 +11596,8 @@ def _create_search_context_menu():
                 pywinstyles.set_opacity(_search_context_menu, value=CONTEXT_MENU_OPACITY)
         except Exception:
             pass
-        _search_context_menu.configure(cursor=HAND_CURSOR)
+        _search_context_menu.configure(cursor=HAND_CURSOR_MENU)
+        _search_context_menu_wrapper.configure(cursor=HAND_CURSOR_MENU)
         button_color = CONTEXT_MENU_BG_COLOR
         
         # Open URL button - same style as copy/paste buttons (icon color = text color)
@@ -12866,6 +13366,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     else:
                         _entry.bind("<FocusIn>", lambda e, w=_entry: handle_focus_in(w))
                         _entry.bind("<FocusOut>", lambda e, w=_entry: handle_focus_out(w))
+                    # Bind auto-save for Qobuz special fields
+                    for _k, _entry in [("username", qobuz_entry1), ("password", qobuz_entry2)]:
+                        _entry.bind("<KeyRelease>", lambda event, p=platform_name, k=_k, w=_entry: _auto_save_credential_change(p, k, w))
                 # Checkbox below help section (packed in Qobuz help block)
                 chk_container = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
                 chk_qobuz_id_token = customtkinter.CTkCheckBox(chk_container, text="Use ID/Token (instead of Email/Password)", variable=var_use_id_token)
@@ -12934,6 +13437,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     else:
                         _entry.bind("<FocusIn>", _deezer_entry1_focus_in)
                         _entry.bind("<FocusOut>", _deezer_entry1_focus_out)
+                # Bind auto-save for Deezer special fields
+                for _k, _entry in [("email", deezer_entry1), ("password", deezer_entry2)]:
+                    _entry.bind("<KeyRelease>", lambda event, p=platform_name, k=_k, w=_entry: _auto_save_credential_change(p, k, w))
                 chk_deezer_arl = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
                 chk_use_arl = customtkinter.CTkCheckBox(chk_deezer_arl, text="Use ARL (instead of Email/Password)", variable=var_use_arl)
 
@@ -13293,7 +13799,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
-            dashboard_link = customtkinter.CTkLabel(step1_text_frame, text="Spotify Dashboard", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            dashboard_link = customtkinter.CTkLabel(step1_text_frame, text="Spotify Dashboard", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             dashboard_link.pack(side="left")
             dashboard_link.bind("<Button-1>", lambda e: _open_url("https://developer.spotify.com/dashboard"))
             dashboard_link.bind("<Enter>", lambda e: dashboard_link.configure(text_color=LINK_HOVER_COLOR))
@@ -13424,7 +13930,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_bullets_frame, text="• Chrome / Edge → ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
-            chrome_link = customtkinter.CTkLabel(step1_bullets_frame, text="Get cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            chrome_link = customtkinter.CTkLabel(step1_bullets_frame, text="Get cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             chrome_link.pack(side="left")
             chrome_link.bind("<Button-1>", lambda e: _open_url("https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?pli=1"))
             chrome_link.bind("<Enter>", lambda e: chrome_link.configure(text_color=LINK_HOVER_COLOR))
@@ -13432,7 +13938,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_bullets_frame, text=" or Firefox → ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
-            firefox_link = customtkinter.CTkLabel(step1_bullets_frame, text="cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            firefox_link = customtkinter.CTkLabel(step1_bullets_frame, text="cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             firefox_link.pack(side="left")
             firefox_link.bind("<Button-1>", lambda e: _open_url("https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/"))
             firefox_link.bind("<Enter>", lambda e: firefox_link.configure(text_color=LINK_HOVER_COLOR))
@@ -13449,7 +13955,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step2_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
-            apple_link = customtkinter.CTkLabel(step2_text_frame, text="Apple Music", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            apple_link = customtkinter.CTkLabel(step2_text_frame, text="Apple Music", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             apple_link.pack(side="left")
             apple_link.bind("<Button-1>", lambda e: _open_url("https://music.apple.com"))
             apple_link.bind("<Enter>", lambda e: apple_link.configure(text_color=LINK_HOVER_COLOR))
@@ -13602,7 +14108,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_bullets_frame, text="• Chrome / Edge → ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
-            chrome_link = customtkinter.CTkLabel(step1_bullets_frame, text="Get cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            chrome_link = customtkinter.CTkLabel(step1_bullets_frame, text="Get cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             chrome_link.pack(side="left")
             chrome_link.bind("<Button-1>", lambda e: _open_url("https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?pli=1"))
             chrome_link.bind("<Enter>", lambda e: chrome_link.configure(text_color=LINK_HOVER_COLOR))
@@ -13610,7 +14116,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_bullets_frame, text=" or Firefox → ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
-            firefox_link = customtkinter.CTkLabel(step1_bullets_frame, text="cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            firefox_link = customtkinter.CTkLabel(step1_bullets_frame, text="cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             firefox_link.pack(side="left")
             firefox_link.bind("<Button-1>", lambda e: _open_url("https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/"))
             firefox_link.bind("<Enter>", lambda e: firefox_link.configure(text_color=LINK_HOVER_COLOR))
@@ -13660,7 +14166,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step4_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
-            youtube_link = customtkinter.CTkLabel(step4_text_frame, text="YouTube", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            youtube_link = customtkinter.CTkLabel(step4_text_frame, text="YouTube", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             youtube_link.pack(side="left", padx=(0, 4))
             youtube_link.bind("<Button-1>", lambda e: show_centered_messagebox("YouTube", "Open https://youtube.com in a private / incognito window of your browser.", dialog_type="info"))
             youtube_link.bind("<Enter>", lambda e: youtube_link.configure(text_color=LINK_HOVER_COLOR))
@@ -13809,7 +14315,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
             customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR, justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
-            deezer_link = customtkinter.CTkLabel(step1_text_frame, text="Deezer", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            deezer_link = customtkinter.CTkLabel(step1_text_frame, text="Deezer", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             deezer_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
             deezer_link.bind("<Button-1>", lambda e: _open_url("https://www.deezer.com"))
             deezer_link.bind("<Enter>", lambda e: deezer_link.configure(text_color=LINK_HOVER_COLOR))
@@ -13832,7 +14338,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_arl.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step1_arl, text="1.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
             customtkinter.CTkLabel(step1_arl, text="Log in to ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-            deezer_arl_link = customtkinter.CTkLabel(step1_arl, text="Deezer", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            deezer_arl_link = customtkinter.CTkLabel(step1_arl, text="Deezer", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             deezer_arl_link.pack(side="left")
             deezer_arl_link.bind("<Button-1>", lambda e: _open_url("https://www.deezer.com"))
             deezer_arl_link.bind("<Enter>", lambda e: deezer_arl_link.configure(text_color=LINK_HOVER_COLOR))
@@ -13978,7 +14484,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
             step1_text_frame.pack(side="left")
             customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR, justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
-            qobuz_link = customtkinter.CTkLabel(step1_text_frame, text="Qobuz", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            qobuz_link = customtkinter.CTkLabel(step1_text_frame, text="Qobuz", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             qobuz_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
             qobuz_link.bind("<Button-1>", lambda e: _open_url("https://www.qobuz.com"))
             qobuz_link.bind("<Enter>", lambda e: qobuz_link.configure(text_color=LINK_HOVER_COLOR))
@@ -14001,7 +14507,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step1_id_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step1_id_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
             customtkinter.CTkLabel(step1_id_frame, text="Log in to Qobuz (", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-            qobuz_play_link = customtkinter.CTkLabel(step1_id_frame, text="https://play.qobuz.com", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            qobuz_play_link = customtkinter.CTkLabel(step1_id_frame, text="https://play.qobuz.com", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             qobuz_play_link.pack(side="left")
             qobuz_play_link.bind("<Button-1>", lambda e: _open_url("https://play.qobuz.com"))
             qobuz_play_link.bind("<Enter>", lambda e: qobuz_play_link.configure(text_color=LINK_HOVER_COLOR))
@@ -14136,7 +14642,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
-            soundcloud_link = customtkinter.CTkLabel(step1_text_frame, text="SoundCloud", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            soundcloud_link = customtkinter.CTkLabel(step1_text_frame, text="SoundCloud", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             soundcloud_link.pack(side="left")
             soundcloud_link.bind("<Button-1>", lambda e: _open_url("https://soundcloud.com"))
             soundcloud_link.bind("<Enter>", lambda e: soundcloud_link.configure(text_color=LINK_HOVER_COLOR))
@@ -14252,7 +14758,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step2_line2.pack(anchor="w")
             customtkinter.CTkLabel(step2_line2, text="created, when signed up to ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
-            tidal_link = customtkinter.CTkLabel(step2_line2, text="TIDAL", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            tidal_link = customtkinter.CTkLabel(step2_line2, text="TIDAL", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             tidal_link.pack(side="left")
             tidal_link.bind("<Button-1>", lambda e: _open_url("https://tidal.com"))
             tidal_link.bind("<Enter>", lambda e: tidal_link.configure(text_color=LINK_HOVER_COLOR))
@@ -14356,7 +14862,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR, justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             
-            beatport_link = customtkinter.CTkLabel(step1_text_frame, text="Beatport", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            beatport_link = customtkinter.CTkLabel(step1_text_frame, text="Beatport", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             beatport_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
             beatport_link.bind("<Button-1>", lambda e: _open_url("https://www.beatport.com"))
             beatport_link.bind("<Enter>", lambda e: beatport_link.configure(text_color=LINK_HOVER_COLOR))
@@ -14412,7 +14918,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             customtkinter.CTkLabel(step1_text_frame, text="Fill in the username & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR, justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
             
-            beatsource_link = customtkinter.CTkLabel(step1_text_frame, text="Beatsource", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR)
+            beatsource_link = customtkinter.CTkLabel(step1_text_frame, text="Beatsource", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
             beatsource_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
             beatsource_link.bind("<Button-1>", lambda e: _open_url("https://www.beatsource.com"))
             beatsource_link.bind("<Enter>", lambda e: beatsource_link.configure(text_color=LINK_HOVER_COLOR))
@@ -15008,7 +15514,7 @@ def _auto_save_credential_change(platform_name, key, widget=None, *args):
         storage_path = os.path.join(data_dir, 'config', 'loginstorage.bin')
         
         # Qobuz: If email/password changes, clear auth_token and user_id
-        if platform_name == "Qobuz" and key in ("username", "email", "password"):
+        if platform_name == "Qobuz" and key in ("username", "password"):
             # Clear in current_settings
             creds = current_settings.get("credentials", {}).get("Qobuz", {})
             creds["auth_token"] = ""
@@ -15228,6 +15734,7 @@ if __name__ == "__main__":
         output_queue = queue.Queue()
         stop_event = threading.Event()
         search_results_data = []
+        _tree_selection_anchor = None
         sort_states = {}
         search_process_active = False
         download_process_active = False
@@ -15272,10 +15779,160 @@ if __name__ == "__main__":
         # Use alpha to hide window instead of withdraw, as withdraw can cause issues on some systems
         app.attributes('-alpha', 0)
         app.title("OrpheusDL GUI")
-        app.geometry("940x600")
+        
+        # Global Enter key binding to trigger focused buttons and expand dropdowns
+        def _on_enter_key(event):
+            focused_widget = app.focus_get()
+            
+            # If it's a CTk widget's internal component, find the master CTk widget
+            ctk_parent = None
+            try:
+                if hasattr(focused_widget, "master"):
+                    ctk_parent = focused_widget.master
+            except: pass
+            
+            target_btn = None
+            if isinstance(focused_widget, customtkinter.CTkButton):
+                target_btn = focused_widget
+            elif isinstance(ctk_parent, customtkinter.CTkButton):
+                target_btn = ctk_parent
+                
+            if target_btn:
+                target_btn.invoke()
+                # Ensure we don't leave focused state stuck if focus moved elsewhere
+                def _safe_reset(w=target_btn):
+                    try:
+                        if w.winfo_exists():
+                            # Only release grab if it might have been held by the widget
+                            try: w.grab_release()
+                            except: pass
+                    except: pass
+                app.after(100, _safe_reset)
+                return "break"
+                
+            # Handle Dropdowns (ComboBox / OptionMenu)
+            if isinstance(ctk_parent, (customtkinter.CTkComboBox, customtkinter.CTkOptionMenu)):
+                if hasattr(ctk_parent, "_clicked"):
+                    ctk_parent._clicked()
+                    return "break"
+        
+        def _on_pg_scroll(event):
+            try:
+                # Ignore numpad variants (KP_Home, KP_End, etc.) to allow numeric input
+                if event.keysym.startswith("KP_"):
+                    return
+                selected_tab = tabview.get()
+                target = None
+                if selected_tab == "Settings":
+                    sets_tab = globals().get('settings_tabview')
+                    if sets_tab and sets_tab.get() == "Global":
+                        gs_frame = globals().get('global_settings_frame')
+                        if gs_frame and gs_frame.winfo_exists():
+                            target = getattr(gs_frame, "_parent_canvas", None)
+                elif selected_tab == "Search":
+                    target = globals().get('tree')
+                elif selected_tab == "Download":
+                    target = globals().get('log_textbox')
+
+                if target and target.winfo_exists():
+                    if event.keysym == "Prior": target.yview("scroll", -1, "pages")
+                    elif event.keysym == "Next": target.yview("scroll", 1, "pages")
+                    elif event.keysym == "Home": target.yview("moveto", 0)
+                    elif event.keysym == "End": target.yview("moveto", 1)
+                    
+                    # Trigger lazy loading specifically for search results
+                    if selected_tab == "Search":
+                        on_tree_scroll()
+                    return "break"
+            except: pass
+
+        def _switch_tab(tab_name):
+            try:
+                if 'tabview' in globals():
+                    globals()['tabview'].set(tab_name)
+                    # Manually trigger focus as .set() doesn't fire the command callback
+                    if tab_name == "Download":
+                        w = globals().get('url_entry')
+                        if w and w.winfo_exists():
+                            app.after(100, lambda: _safe_focus(w))
+                    elif tab_name == "Search":
+                        w = globals().get('search_entry')
+                        if w and w.winfo_exists():
+                            app.after(100, lambda: _safe_focus(w))
+            except: pass
+
+        app.bind("<Return>", _on_enter_key)
+        app.bind("<Prior>", _on_pg_scroll)
+        app.bind("<Next>", _on_pg_scroll)
+        app.bind("<Home>", _on_pg_scroll)
+        app.bind("<End>", _on_pg_scroll)
+        
+        # Shortcuts popup hotkey
+        app.bind("<F1>", lambda e: show_shortcuts_popup())
+        
+        # Tab switching hotkeys (Ctrl on Win/Linux, Command on macOS)
+        mod = "Command" if platform.system() == "Darwin" else "Control"
+        app.bind(f"<{mod}-d>", lambda e: _switch_tab("Download"))
+        app.bind(f"<{mod}-f>", lambda e: _switch_tab("Search"))
+        app.bind(f"<{mod}-s>", lambda e: _switch_tab("Settings"))
+        
+        # Ensure lowercase and uppercase variants both work for the letter keys
+        app.bind(f"<{mod}-D>", lambda e: _switch_tab("Download"))
+        app.bind(f"<{mod}-F>", lambda e: _switch_tab("Search"))
+        app.bind(f"<{mod}-S>", lambda e: _switch_tab("Settings"))
+        
+        # Global Focus Tracker for keyboard navigation visuals
+        _interactive_widget_classes = (
+            customtkinter.CTkButton, customtkinter.CTkCheckBox, customtkinter.CTkSwitch,
+            customtkinter.CTkRadioButton, customtkinter.CTkComboBox, customtkinter.CTkOptionMenu,
+            customtkinter.CTkSegmentedButton, customtkinter.CTkSlider
+        )
+
+        def _on_global_focus_in(event):
+            try:
+                widget = app.nametowidget(event.widget)
+                ctk_widget = None
+                if isinstance(widget, _interactive_widget_classes):
+                    ctk_widget = widget
+                elif hasattr(widget, "master") and isinstance(widget.master, _interactive_widget_classes):
+                    ctk_widget = widget.master
+                
+                if ctk_widget:
+                    # Use standard color manipulation instead of faking _hover
+                    handle_focus_in(ctk_widget)
+            except: pass
+
+        def _on_global_focus_out(event):
+            try:
+                widget = app.nametowidget(event.widget)
+                ctk_widget = None
+                if isinstance(widget, _interactive_widget_classes):
+                    ctk_widget = widget
+                elif hasattr(widget, "master") and isinstance(widget.master, _interactive_widget_classes):
+                    ctk_widget = widget.master
+                
+                if ctk_widget:
+                    # Use standard color restoration
+                    handle_focus_out(ctk_widget)
+                    # Ensure any internal temporary grab from keyboard activation is released
+                    try: ctk_widget.grab_release()
+                    except: pass
+            except: pass
+
+        app.bind_all("<FocusIn>", _on_global_focus_in)
+        app.bind_all("<FocusOut>", _on_global_focus_out)
+
+        def _on_window_activate(event):
+            if event.widget == app:
+                # Ensure no ghost grabs linger when returning to the app
+                try: app.grab_release()
+                except: pass
+        app.bind("<Activate>", _on_window_activate)
+
+        app.geometry("1009x600")
         
         # Set initial size
-        app.geometry("940x600")
+        app.geometry("1009x600")
         app.update() # Force update to ensure window is created and resized
         
         # Load platform icons now that the Tk root is ready
@@ -15364,27 +16021,55 @@ if __name__ == "__main__":
         loaded_credential_tabs = {"Global"}
         credential_tabs_config = {}
 
+        def _safe_focus(widget):
+            if not widget or not widget.winfo_exists(): return
+            try:
+                widget.focus_set()
+                widget.focus_force()
+                # Also try to focus internal components for CTk widgets
+                if hasattr(widget, "_entry") and widget._entry.winfo_exists():
+                    widget._entry.focus_set()
+                    widget._entry.focus_force()
+                elif hasattr(widget, "_textbox") and widget._textbox.winfo_exists():
+                    widget._textbox.focus_set()
+                    widget._textbox.focus_force()
+            except: pass
+
         def _on_tab_change():
             selected_tab = tabview.get()
-            if selected_tab == "Search":
-                pass
-            elif selected_tab == "Settings":
-                if 'settings_tabview' in globals() and settings_tabview and settings_tabview.winfo_exists():
+            
+
+            if selected_tab == "Settings":
+                w = globals().get('settings_tabview')
+                if w and w.winfo_exists():
                     # Force a focus and update to fix macOS rendering bug where content stays blank until mouse move
                     if platform.system() == "Darwin":
-                        settings_tabview.focus_set()
-                        settings_tabview.update_idletasks()
+                        w.focus_set()
+                        w.update_idletasks()
+                    
+                    # For all platforms, focus the inner tabview
+                    app.after(100, lambda: _safe_focus(w))
                     
                     if '_handle_settings_tab_change' in globals() and callable(_handle_settings_tab_change):
                          app.after(10, _handle_settings_tab_change)
+            elif selected_tab == "Download":
+                w = globals().get('url_entry')
+                if w and w.winfo_exists():
+                    app.after(100, lambda: _safe_focus(w))
+            elif selected_tab == "Search":
+                w = globals().get('search_entry')
+                if w and w.winfo_exists():
+                    app.after(100, lambda: _safe_focus(w))
 
         tabview = customtkinter.CTkTabview(master=app, command=_on_tab_change)
+        globals()['tabview'] = tabview
         tabview.pack(padx=10, pady=10, expand=True, fill="both")
         download_tab = tabview.add("Download")
         download_tab.grid_columnconfigure(1, weight=1); download_tab.grid_rowconfigure(2, weight=1)
         url_frame = customtkinter.CTkFrame(download_tab, fg_color="transparent"); url_frame.grid(row=0, column=0, columnspan=4, sticky="ew", padx=10, pady=(15,5)); url_frame.grid_columnconfigure(1, weight=1)
         url_label = customtkinter.CTkLabel(url_frame, text="Input"); url_label.grid(row=0, column=0, sticky="w", padx=5)
         url_entry = customtkinter.CTkEntry(url_frame, placeholder_text="Enter URL or text-file (e.g. urls.txt)...", height=30, placeholder_text_color=GRAY_TEXT_COLOR); url_entry.grid(row=0, column=1, sticky="ew", padx=5)
+        globals()['url_entry'] = url_entry
         url_entry.bind("<Return>", lambda event: start_download_thread()); url_entry.bind("<Button-3>", show_context_menu); url_entry.bind("<Button-2>", show_context_menu); url_entry.bind("<Control-Button-1>", show_context_menu)
         url_entry.bind("<Control-c>", _handle_ctrl_c_copy); url_entry.bind("<Control-C>", _handle_ctrl_c_copy)
         url_entry.bind("<FocusIn>", lambda e, w=url_entry: handle_focus_in(w))
@@ -15417,10 +16102,8 @@ if __name__ == "__main__":
             log_font_size = 11
         log_font = (log_font_family, log_font_size)
 
-        log_textbox = tkinter.Text(textbox_container, wrap=tkinter.WORD, state='disabled', font=log_font, 
-                                   bg=SURFACE_COLOR, fg=SECONDARY_TEXT_COLOR, insertbackground=SECONDARY_TEXT_COLOR, 
-                                   selectbackground=LINK_COLOR, selectforeground=WHITE_TEXT_COLOR,
-                                   relief="flat", borderwidth=0, highlightthickness=0, exportselection=False)
+        log_textbox = tkinter.Text(textbox_container, wrap=tkinter.WORD, state='disabled', font=log_font, bg=SURFACE_COLOR, fg=SECONDARY_TEXT_COLOR, insertbackground=SECONDARY_TEXT_COLOR, selectbackground=LINK_COLOR, selectforeground=WHITE_TEXT_COLOR, relief="flat", borderwidth=0, highlightthickness=0, exportselection=False)
+        globals()['log_textbox'] = log_textbox
         log_textbox.grid(row=0, column=0, sticky="nsew", padx=(5,0), pady=3)
         log_scrollbar = customtkinter.CTkScrollbar(textbox_container, command=log_textbox.yview); log_textbox.configure(yscrollcommand=log_scrollbar.set)
         _setup_log_textbox_styles()
@@ -15445,7 +16128,7 @@ if __name__ == "__main__":
         log_textbox.bind("<Button-4>", lambda e: _on_log_mousewheel(type('Event', (), {'delta': 120})()))  # Linux scroll up
         log_textbox.bind("<Button-5>", lambda e: _on_log_mousewheel(type('Event', (), {'delta': -120})()))  # Linux scroll down
         bottom_frame = customtkinter.CTkFrame(download_tab, fg_color="transparent"); bottom_frame.grid(row=3, column=0, columnspan=4, sticky="ew", padx=10, pady=(5, 10)); bottom_frame.grid_columnconfigure(0, weight=1)
-        progress_bar = customtkinter.CTkProgressBar(bottom_frame); progress_bar.set(0); progress_bar.grid(row=0, column=0, sticky="ew", padx=(5, 5))
+        progress_bar = customtkinter.CTkProgressBar(bottom_frame, indeterminate_speed=0.3); progress_bar.set(0); progress_bar.grid(row=0, column=0, sticky="ew", padx=(5, 5))
         clear_output_button = customtkinter.CTkButton(bottom_frame, text="Clear Output", width=100, height=30, command=clear_output_log, fg_color=UI_ELEMENT_BG_COLOR, hover_color=LINK_COLOR); clear_output_button.grid(row=0, column=1, sticky="e", padx=(5, 10))
         stop_button = customtkinter.CTkButton(bottom_frame, text="Stop", width=100, height=30, command=stop_download, fg_color=UI_ELEMENT_BG_COLOR, hover_color=LINK_COLOR, state=tkinter.DISABLED); stop_button.grid(row=0, column=2, sticky="e", padx=(0, 5))
         search_tab = tabview.add("Search"); search_main_frame = customtkinter.CTkFrame(search_tab, fg_color="transparent"); search_main_frame.pack(fill="both", expand=True, padx=9, pady=(10,0))
@@ -15463,15 +16146,14 @@ if __name__ == "__main__":
         controls_frame.configure(height=62)
         controls_frame.grid_rowconfigure(0, minsize=62)
         customtkinter.CTkLabel(controls_frame, text="Platform").grid(row=0, column=0, padx=(5,1), sticky="nw")
-        search_tab_initial_platforms = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
-        platform_var = tkinter.StringVar(value=search_tab_initial_platforms[0] if search_tab_initial_platforms else ""); 
+        search_tab_initial_platforms = ["All"] + [pk for pk in installed_platform_keys if pk != "Musixmatch"]
+        platform_var = tkinter.StringVar(value="All" if "All" in search_tab_initial_platforms else (search_tab_initial_platforms[0] if search_tab_initial_platforms else "")); 
         # Using custom CTkImageComboBox to show platform icons in dropdown
         platform_combo = CTkImageComboBox(controls_frame, values=search_tab_initial_platforms, variable=platform_var, width=140, state="readonly", height=30, 
                                           dropdown_fg_color=CONTAINER_COLOR,
                                           dropdown_hover_color=UI_ELEMENT_HOVER_COLOR); 
         platform_combo.grid(row=0, column=1, padx=(5, 6), sticky="n"); 
         platform_var.trace_add("write", on_platform_change)
-        platform_var.trace_add("write", lambda *a: clear_focus())
 
         customtkinter.CTkLabel(controls_frame, text="Type").grid(row=0, column=2, padx=(5,5), sticky="nw")
         type_var = tkinter.StringVar()
@@ -15482,10 +16164,10 @@ if __name__ == "__main__":
         type_combo.grid(row=0, column=3, padx=(2, 1), sticky="n")
         type_var.trace_add("write", _update_search_placeholder)
         type_var.trace_add("write", _update_atmos_filter_visibility)
-        type_var.trace_add("write", lambda *a: clear_focus())
         search_input_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent", height=62); search_input_frame.grid(row=0, column=4, sticky="new", padx=(10, 5)); search_input_frame.grid_columnconfigure(0, weight=1); search_input_frame.bind("<Button-1>", clear_focus)
         search_entry_row = customtkinter.CTkFrame(search_input_frame, fg_color="transparent", height=1); search_entry_row.grid(row=0, column=0, sticky="ew")
         search_entry = customtkinter.CTkEntry(search_entry_row, placeholder_text="Enter search query...", height=30, placeholder_text_color=GRAY_TEXT_COLOR); search_entry.pack(side="left", fill="x", expand=True, padx=(0, 0))
+        globals()['search_entry'] = search_entry
         search_entry.bind("<Return>", lambda e: start_search()); search_entry.bind("<Button-3>", show_context_menu); search_entry.bind("<Button-2>", show_context_menu); search_entry.bind("<Control-Button-1>", show_context_menu)
         search_entry.bind("<Control-c>", _handle_ctrl_c_copy); search_entry.bind("<Control-C>", _handle_ctrl_c_copy)
         search_entry.bind("<FocusIn>", lambda e, w=search_entry: handle_focus_in(w))
@@ -15506,12 +16188,12 @@ if __name__ == "__main__":
             app.focus_set()
 
         # Larger icon label
-        atmos_icon_label = customtkinter.CTkLabel(atmos_filter_frame, text="◗◖", font=("Segoe UI", 15), text_color=CONTEXT_MENU_TEXT_COLOR, cursor="hand2")
+        atmos_icon_label = customtkinter.CTkLabel(atmos_filter_frame, text="◗◖", font=("Segoe UI", 15), text_color=CONTEXT_MENU_TEXT_COLOR, cursor=HAND_CURSOR_BUTTON)
         atmos_icon_label.pack(side="left", padx=(0, 4))
         atmos_icon_label.bind("<Button-1>", _toggle_atmos_checkbox)
         
         # Standard size text label
-        atmos_text_label = customtkinter.CTkLabel(atmos_filter_frame, text="ATMOS", font=("Segoe UI", 11), text_color=CONTEXT_MENU_TEXT_COLOR, cursor="hand2")
+        atmos_text_label = customtkinter.CTkLabel(atmos_filter_frame, text="ATMOS", font=("Segoe UI", 11), text_color=CONTEXT_MENU_TEXT_COLOR, cursor=HAND_CURSOR_BUTTON)
         atmos_text_label.pack(side="left", pady=(2, 0))
         atmos_text_label.bind("<Button-1>", _toggle_atmos_checkbox)
         # Tooltip styled like Global settings tooltips
@@ -15530,17 +16212,8 @@ if __name__ == "__main__":
         button_search_frame = customtkinter.CTkFrame(controls_frame, fg_color="transparent"); button_search_frame.grid(row=0, column=5, padx=(5,0), sticky="n")
         search_button = customtkinter.CTkButton(button_search_frame, text="Search", command=start_search, width=100, height=30, fg_color=UI_ELEMENT_BG_COLOR, hover_color=LINK_COLOR, state="disabled"); search_button.pack(side="left", padx=(0, 6))
         update_search_types(platform_var.get())
-        # Pack selection frame FIRST (at bottom) so it reserves space before the expanding results frame
-        selection_label_var = tkinter.StringVar(value="Selection: None")
-        selection_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); selection_frame.pack(fill="x", pady=(5, 10), side="bottom")
-        search_progress_bar = customtkinter.CTkProgressBar(selection_frame); search_progress_bar.pack(side="left", fill="x", expand=True, padx=(6, 5)); search_progress_bar.set(0)
-        selection_controls_frame = customtkinter.CTkFrame(selection_frame, fg_color="transparent"); selection_controls_frame.pack(side="right")
-        customtkinter.CTkLabel(selection_controls_frame, text="Selection").pack(side="left", padx=(8, 6)); selection_var = tkinter.StringVar(); selection_entry = customtkinter.CTkEntry(selection_controls_frame, textvariable=selection_var, width=35, height=30); selection_entry.pack(side="left", padx=4); selection_var.trace_add("write", on_selection_change)
-        selection_entry.bind("<FocusIn>", lambda e, w=selection_entry: handle_focus_in(w))
-        selection_entry.bind("<FocusOut>", lambda e, w=selection_entry: handle_focus_out(w))
-        search_download_button = customtkinter.CTkButton(selection_controls_frame, text="Download", command=download_selected, width=100, height=30, state="disabled", fg_color=UI_ELEMENT_BG_COLOR, hover_color=LINK_COLOR); search_download_button.pack(side="left", padx=(5, 6))
-        # Now pack the results frame; bottom padding of 15 creates a 20px gap to bottom section (same as download tab)
-        results_outer_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); results_outer_frame.pack(fill="both", expand=True, pady=(0, 15)); results_outer_frame.bind("<Button-1>", clear_focus)
+        # Results frame (flexible middle): created here for TAB order, but packed later for layout
+        results_outer_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); results_outer_frame.bind("<Button-1>", clear_focus)
         # Results header: optional "← Back" (left), then RESULTS / Album: ... label, then volume
         results_header_frame = customtkinter.CTkFrame(results_outer_frame, fg_color="transparent"); results_header_frame.pack(fill="x", padx=0, pady=0)
         _back_to_search_button = customtkinter.CTkButton(
@@ -15577,7 +16250,7 @@ if __name__ == "__main__":
             _volume_frame = None
             _volume_slider = None
             _volume_label = None
-        treeview_container = customtkinter.CTkFrame(results_outer_frame, fg_color=SURFACE_COLOR); treeview_container.pack(fill="both", expand=True, padx=6, pady=(3,0)); treeview_container.grid_columnconfigure(0, weight=1); treeview_container.grid_rowconfigure(0, weight=1); treeview_container.grid_columnconfigure(1, weight=0)
+        treeview_container = customtkinter.CTkFrame(results_outer_frame, fg_color=SURFACE_COLOR, border_width=0); treeview_container.pack(fill="both", expand=True, padx=6, pady=(3,0)); treeview_container.grid_columnconfigure(0, weight=1); treeview_container.grid_rowconfigure(0, weight=1); treeview_container.grid_columnconfigure(1, weight=0)
         style = ttk.Style();
         try: style.theme_use('clam')
         except Exception: print("Clam theme not available.")
@@ -15615,7 +16288,7 @@ if __name__ == "__main__":
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print(f"[Style Non-Windows] Using system default font, Row height: {scaled_row_height}px")
             heading_font_config = (None, 10, 'normal')
-        tree_bg_color = SURFACE_COLOR; tree_fg_color = WHITE_TEXT_COLOR; tree_header_bg = SURFACE_COLOR; tree_header_fg = GRAY_TEXT_COLOR; tree_selected_bg = LINK_COLOR; tree_selected_fg = WHITE_TEXT_COLOR
+        tree_bg_color = SURFACE_COLOR; tree_fg_color = WHITE_TEXT_COLOR; tree_header_bg = SURFACE_COLOR; tree_header_fg = GRAY_TEXT_COLOR; tree_selected_bg = LINK_COLOR; tree_selected_fg = PURE_WHITE_TEXT_COLOR
         style.configure("Custom.Treeview",
                         background=tree_bg_color,
                         foreground=tree_fg_color,
@@ -15647,11 +16320,33 @@ if __name__ == "__main__":
         style.configure("Custom.Treeview.Item", padding=0)
         style.map("Custom.Treeview", background=[('selected', tree_selected_bg)], foreground=[('selected', tree_selected_fg)])
         style.map("Custom.Treeview.Heading", background=[('active', LINK_COLOR), ('!active', tree_header_bg)], foreground=[('active', tree_selected_fg), ('!active', tree_header_fg)])
-        columns = ("Preview", "#", "Title", "Artist", "Duration", "Year", "Additional", "Explicit", "ID"); tree = ttk.Treeview(treeview_container, columns=columns, show="tree headings", selectmode="extended", style="Custom.Treeview"); tree.grid(row=0, column=0, sticky="nsew", padx=(4,0), pady=3)
+        columns = ("Preview", "#", "Title", "Artist", "Duration", "Year", "Additional", "Explicit", "ID"); tree = ttk.Treeview(treeview_container, columns=columns, show="tree headings", selectmode="extended", style="Custom.Treeview", takefocus=1); tree.grid(row=0, column=0, sticky="nsew", padx=(4,0), pady=3)
+        
+        # Configure focus indicator tag
+        tree.tag_configure("keyboard_focus", background="#333434")
+
+        def _update_keyboard_focus(item=None):
+            """Manage visual focus indicator for keyboard navigation."""
+            try:
+                # Remove tag from all items
+                for tag_item in tree.tag_has("keyboard_focus"):
+                    tags = list(tree.item(tag_item, "tags"))
+                    if "keyboard_focus" in tags:
+                        tags.remove("keyboard_focus")
+                        tree.item(tag_item, tags=tags)
+                
+                # Add tag to target item
+                target = item or tree.focus()
+                if target and tree.exists(target):
+                    tags = list(tree.item(target, "tags"))
+                    if "keyboard_focus" not in tags:
+                        tags.append("keyboard_focus")
+                        tree.item(target, tags=tags)
+            except: pass
         # Configure tree column (#0) for cover images (tight fit, left-aligned)
         tree.column("#0", width=COVER_SIZE + 6, minwidth=COVER_SIZE + 6, stretch=False, anchor="w")
         tree.heading("#0", text="", anchor="center", command=lambda: sort_results("#0"))
-        col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Preview": {"text": "▶", "width": 56, "anchor": "center"}, "Title": {"text": "Title", "width": 120, "anchor": "w"}, "Artist": {"text": "Artist", "width": 80, "anchor": "w"}, "Duration": {"text": "Time", "width": 60, "anchor": "center"}, "Year": {"text": "Year", "width": 55, "anchor": "center"}, "Additional": {"text": "Additional", "width": 125, "anchor": "w"}, "Explicit": {"text": "🅴", "width": 22, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
+        col_configs = {"#": {"text": "#", "width": 40, "anchor": "w"}, "Preview": {"text": "▶", "width": 56, "anchor": "center"}, "Title": {"text": "Title", "width": 110, "anchor": "w"}, "Artist": {"text": "Artist", "width": 70, "anchor": "w"}, "Duration": {"text": "Time", "width": 60, "anchor": "center"}, "Year": {"text": "Year", "width": 55, "anchor": "center"}, "Additional": {"text": "Additional", "width": 145, "anchor": "w"}, "Explicit": {"text": "🅴", "width": 22, "anchor": "center"}, "ID": {"text": "ID", "width": 0, "anchor": "w"}}
         for col in columns: cfg = col_configs[col]; tree.heading(col, text=cfg["text"], anchor=cfg["anchor"], command=lambda c=col: sort_results(c) if c not in ("Preview",) else None); tree.column(col, width=cfg["width"], anchor=cfg["anchor"], stretch=False)
         tree.column("Title", stretch=True); tree.column("Artist", stretch=True)
         # Omit ID from display so theme never draws zero-width slot (avoids right-edge streak)
@@ -15679,6 +16374,89 @@ if __name__ == "__main__":
         # Right-click context menu bindings for search results
         tree.bind("<Button-3>", show_search_context_menu)  # Windows/Linux right-click
         tree.bind("<Button-2>", show_search_context_menu)  # macOS right-click (some configs)
+
+        # Visual focus indicator for treeview: auto-select first item on focus
+        def _on_tree_focus_in(event):
+            if not tree.selection():
+                children = tree.get_children()
+                if children:
+                    first_item = children[0]
+                    tree.selection_set(first_item)
+                    tree.focus(first_item)
+                    tree.see(first_item)
+        tree.bind("<FocusIn>", _on_tree_focus_in, add="+")
+        tree.bind("<Return>", on_tree_enter)
+        
+        # Ensure Shift+Arrow selection works correctly
+        def _extend_selection(target_iid):
+            global _tree_selection_anchor
+            if not _tree_selection_anchor:
+                # If no anchor, use first selected item or target
+                sel = tree.selection()
+                _tree_selection_anchor = sel[0] if sel else target_iid
+            
+            # Get flat list of all items currently in the tree
+            all_items = []
+            def get_all(p=""):
+                for c in tree.get_children(p):
+                    all_items.append(c)
+                    get_all(c)
+            get_all()
+            
+            try:
+                start_idx = all_items.index(_tree_selection_anchor)
+                end_idx = all_items.index(target_iid)
+                if start_idx > end_idx:
+                    start_idx, end_idx = end_idx, start_idx
+                tree.selection_set(all_items[start_idx:end_idx + 1])
+            except (ValueError, IndexError):
+                tree.selection_set(target_iid)
+
+        def _handle_shift_nav(event):
+            curr = tree.focus()
+            if not curr: return
+            target = tree.prev(curr) if event.keysym == "Up" else tree.next(curr)
+            if target:
+                tree.focus(target)
+                tree.see(target)
+                _extend_selection(target)
+                _update_keyboard_focus(target)
+            return "break"
+
+        def _handle_ctrl_nav(event):
+            curr = tree.focus()
+            if not curr: return
+            target = tree.prev(curr) if event.keysym == "Up" else tree.next(curr)
+            if target:
+                tree.focus(target)
+                tree.see(target)
+                _update_keyboard_focus(target)
+            return "break"
+
+        def _toggle_tree_selection(event):
+            item = tree.focus()
+            if item:
+                if item in tree.selection():
+                    tree.selection_remove(item)
+                else:
+                    tree.selection_add(item)
+                    global _tree_selection_anchor
+                    _tree_selection_anchor = item
+                _update_keyboard_focus(item)
+            return "break"
+
+        tree.bind("<Shift-Up>", _handle_shift_nav)
+        tree.bind("<Shift-Down>", _handle_shift_nav)
+        # Handle focus move with Ctrl+Arrows (without changing selection)
+        app_mod = "Control" if platform.system() != "Darwin" else "Command"
+        tree.bind(f"<{app_mod}-Up>", _handle_ctrl_nav)
+        tree.bind(f"<{app_mod}-Down>", _handle_ctrl_nav)
+        # Handle both Control and Command for Space toggle
+        tree.bind(f"<{app_mod}-space>", _toggle_tree_selection)
+        tree.bind("<Control-space>", _toggle_tree_selection)
+        tree.bind("<Control-Key-space>", _toggle_tree_selection)
+        tree.bind("<Command-Key-space>", _toggle_tree_selection)
+
         if platform.system() == "Darwin":
             tree.bind("<Control-Button-1>", show_search_context_menu)  # macOS Ctrl+click
         if platform.system() == "Darwin":
@@ -15688,15 +16466,18 @@ if __name__ == "__main__":
                 if tree.identify_region(event.x, event.y) == "heading":
                     return
 
-                # First, check if this is a click on the Preview column or Cover column
-                column = tree.identify_column(event.x)
-                if column == "#1" or column == "#0":  # Preview column or Cover column
-                    on_tree_click(event)
-                    return "break"
-                
+                # Identify the row first so we can select it for play/cover clicks
                 item = tree.identify_row(event.y)
                 if not item:
                     return
+
+                # First, check if this is a click on the Preview column or Cover column
+                column = tree.identify_column(event.x)
+                if column == "#1" or column == "#0":  # Preview column or Cover column
+                    tree.selection_set(item) # Select the row!
+                    on_tree_click(event)
+                    return "break"
+                
                 if event.state & 0x8:
                     if item in tree.selection():
                         tree.selection_remove(item)
@@ -15722,11 +16503,23 @@ if __name__ == "__main__":
                 tree.selection_set(item)
                 return "break"
             tree.bind("<Button-1>", handle_macos_click)
+        # Pack selection frame FIRST (at bottom) so it reserves space before the expanding results frame
+        selection_label_var = tkinter.StringVar(value="Selection: None")
+        selection_frame = customtkinter.CTkFrame(search_main_frame, fg_color="transparent"); selection_frame.pack(fill="x", pady=(5, 10), side="bottom")
+        # Now pack the flexible results frame; it will take the remaining space above the bottom bar
+        results_outer_frame.pack(fill="both", expand=True, pady=(0, 15))
+        search_progress_bar = customtkinter.CTkProgressBar(selection_frame, indeterminate_speed=0.3); search_progress_bar.pack(side="left", fill="x", expand=True, padx=(6, 5)); search_progress_bar.set(0)
+        selection_controls_frame = customtkinter.CTkFrame(selection_frame, fg_color="transparent"); selection_controls_frame.pack(side="right")
+        customtkinter.CTkLabel(selection_controls_frame, text="Selection").pack(side="left", padx=(8, 6)); selection_var = tkinter.StringVar(); selection_entry = customtkinter.CTkEntry(selection_controls_frame, textvariable=selection_var, width=35, height=30); selection_entry.pack(side="left", padx=4); selection_var.trace_add("write", on_selection_change)
+        selection_entry.bind("<FocusIn>", lambda e, w=selection_entry: handle_focus_in(w))
+        selection_entry.bind("<FocusOut>", lambda e, w=selection_entry: handle_focus_out(w))
+        search_download_button = customtkinter.CTkButton(selection_controls_frame, text="Download", command=download_selected, width=100, height=30, state="disabled", fg_color=UI_ELEMENT_BG_COLOR, hover_color=LINK_COLOR); search_download_button.pack(side="left", padx=(5, 6))
         settings_tab = tabview.tab("Settings")
         settings_tabview = customtkinter.CTkTabview(master=settings_tab, command=_handle_settings_tab_change)
         settings_tabview.pack(expand=True, fill="both", padx=5, pady=5)
         global_settings_tab = settings_tabview.add("Global")
         global_settings_frame = customtkinter.CTkScrollableFrame(global_settings_tab)
+        globals()['global_settings_frame'] = global_settings_frame
         global_settings_frame.pack(expand=True, fill="both", padx=5, pady=(0, 5))
         global_settings_frame.grid_columnconfigure(1, weight=1)
         global_settings_frame.grid_columnconfigure(0, uniform="settings_label_column")
@@ -16263,6 +17056,24 @@ Unnecessary Lossless-to-Lossless""",
         about_tab = tabview.tab("About")
         about_container = customtkinter.CTkFrame(about_tab, fg_color="transparent")
         about_container.pack(fill="both", expand=True, padx=16, pady=(0, 0))
+        
+        # Keyboard Shortcuts button in top-right corner of the tab
+        # Parented to about_tab for better reliability in top-right placement
+        shortcuts_button = customtkinter.CTkButton(
+            about_tab,
+            text="⌨",
+            width=33,
+            height=26,
+            font=("Segoe UI", 10 if platform.system() == "Darwin" else 13),
+            fg_color=BUTTON_COLOR,
+            hover_color=LINK_COLOR,
+            command=show_shortcuts_popup
+        )
+        # Position in top-right corner of the tab frame
+        shortcuts_button.place(relx=1.0, rely=0.0, anchor="ne", x=-10, y=6)
+        shortcuts_button.lift()
+        CTkToolTip(shortcuts_button, message="Keyboard shortcuts", bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+
         canvas = customtkinter.CTkFrame(about_container, fg_color="transparent")
         canvas.pack(fill="both", expand=True)
         canvas.grid_columnconfigure(0, weight=1)
@@ -16599,7 +17410,7 @@ Unnecessary Lossless-to-Lossless""",
                             text="same folder",
                             text_color=INFO_LINK_COLOR,
                             font=link_font,
-                            cursor="pointinghand"
+                            cursor=HAND_CURSOR_LINK
                         )
                         part2_link.pack(side="left", padx=0)
                         part2_link.bind("<Button-1>", open_app_folder)
@@ -16614,7 +17425,7 @@ Unnecessary Lossless-to-Lossless""",
                         
                         # Hover effects for link
                         def on_enter_link(e): 
-                            part2_link.configure(text_color=LINK_COLOR, cursor="pointinghand")
+                            part2_link.configure(text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
                         def on_leave_link(e): 
                             part2_link.configure(text_color=INFO_LINK_COLOR, cursor="arrow")
                         part2_link.bind("<Enter>", on_enter_link)
@@ -16706,7 +17517,7 @@ Unnecessary Lossless-to-Lossless""",
                             text="same folder",
                             text_color=INFO_LINK_COLOR,
                             font=link_font,
-                            cursor="hand2"
+                            cursor=HAND_CURSOR_LINK
                         )
                         part2_link.pack(side="left", padx=0)
                         part2_link.bind("<Button-1>", open_app_folder_win)
@@ -16721,7 +17532,7 @@ Unnecessary Lossless-to-Lossless""",
                         
                         # Hover effects for link
                         def on_enter_link_win(e): 
-                            part2_link.configure(text_color=LINK_COLOR, cursor="hand2")
+                            part2_link.configure(text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
                         def on_leave_link_win(e): 
                             part2_link.configure(text_color=INFO_LINK_COLOR, cursor="arrow")
                         part2_link.bind("<Enter>", on_enter_link_win)
@@ -16860,6 +17671,7 @@ Unnecessary Lossless-to-Lossless""",
                     dialog.geometry(f"{dialog_width}x{dialog_height}+{center_x}+{center_y}")
                     
                     dialog.grab_set()
+                    dialog.wait_window()
                     
                 threading.Thread(target=_run_ffmpeg_check_and_show_warning, daemon=True).start()
         
@@ -16968,12 +17780,17 @@ Unnecessary Lossless-to-Lossless""",
                     ok_btn.pack(side="right", padx=5)
                     
                     dialog.grab_set()
+                    dialog.wait_window()
 
                 if app and app.winfo_exists():
                     app.after(0, show_init_error)
 
         threading.Thread(target=run_async_init, daemon=True).start()
         
+        # Ensure initial focus on Download tab input field after UI is settled
+        if 'url_entry' in globals():
+            app.after(500, lambda: _safe_focus(globals()['url_entry']))
+
         app.mainloop()
     else:
         print(f"[Child Process {os.getpid()}] Detected, exiting.")
