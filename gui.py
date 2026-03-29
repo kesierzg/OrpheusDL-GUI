@@ -6684,13 +6684,23 @@ def save_settings(show_confirmation: bool = True):
     else:
         parse_errors.append(f"MP3 setting var not found or invalid type for key '{mp3_var_key}'. Using default.")
         collected_conversion_flags["mp3"] = DEFAULT_SETTINGS["globals"]["advanced"]["conversion_flags"]["mp3"].copy()
+
+    opus_var_key = "advanced.conversion_flags.opus.b:a"
+    opus_var = settings_vars.get("globals", {}).get(opus_var_key)
+    if isinstance(opus_var, tkinter.StringVar):
+        collected_conversion_flags["opus"] = {"b:a": opus_var.get()}
+    else:
+        parse_errors.append(f"Opus bitrate var not found or invalid type for key '{opus_var_key}'. Using default.")
+        collected_conversion_flags["opus"] = DEFAULT_SETTINGS["globals"]["advanced"]["conversion_flags"]["opus"].copy()
+
     if "globals" not in updated_gui_settings: updated_gui_settings["globals"] = {}
     if "advanced" not in updated_gui_settings["globals"]: updated_gui_settings["globals"]["advanced"] = {}
     updated_gui_settings["globals"]["advanced"]["conversion_flags"] = collected_conversion_flags
     slider_handled_conversion_flag_keys = [
         "advanced.conversion_flags.aac.audio_bitrate",
         "advanced.conversion_flags.flac.compression_level",
-        "advanced.conversion_flags.mp3.setting"
+        "advanced.conversion_flags.mp3.setting",
+        "advanced.conversion_flags.opus.b:a"
     ]
 
     # Ensure hide_ffmpeg_warning is preserved even if the Global settings tab hasn't been opened yet
@@ -6883,6 +6893,8 @@ def save_settings(show_confirmation: bool = True):
                 current_settings["globals"]["advanced"]["conversion_flags"]["flac"] = clean_conversion_flags_from_ui["flac"].copy()
             if "mp3" in clean_conversion_flags_from_ui:
                 current_settings["globals"]["advanced"]["conversion_flags"]["mp3"] = clean_conversion_flags_from_ui["mp3"].copy()
+            if "opus" in clean_conversion_flags_from_ui:
+                current_settings["globals"]["advanced"]["conversion_flags"]["opus"] = clean_conversion_flags_from_ui["opus"].copy()
         if orpheus_instance:
             try:
                 # To guarantee modules fetch the updated settings strings (like SoundCloud web_access_token),
@@ -13207,6 +13219,12 @@ def _update_settings_tab_widgets():
                 resolved_display_val = "VBR -V0"
             mp3_setting_var.set(resolved_display_val)
         
+        opus_br_var = settings_vars.get("globals", {}).get("advanced.conversion_flags.opus.b:a")
+        if opus_br_var and isinstance(opus_br_var, tkinter.StringVar):
+            opus_default_val = DEFAULT_SETTINGS["globals"]["advanced"]["conversion_flags"]["opus"]["b:a"]
+            opus_current_br_from_settings = str(current_settings.get("globals", {}).get("advanced", {}).get("conversion_flags", {}).get("opus", {}).get("b:a", opus_default_val))
+            opus_br_var.set(opus_current_br_from_settings)
+        
         if 'path_var_main' in globals() and isinstance(path_var_main, tkinter.Variable) and "general.output_path" not in settings_vars.get("globals", {}):
              main_path_val = current_settings.get("globals", {}).get("general", {}).get("output_path")
              if main_path_val is not None:
@@ -15679,7 +15697,8 @@ if __name__ == "__main__":
                     "conversion_flags": {
                         "flac": { "compression_level": 5 },
                         "mp3": { "qscale:a": "0" },
-                        "aac": { "audio_bitrate": "256k" }
+                        "aac": { "audio_bitrate": "256k" },
+                        "opus": { "b:a": "192k" }
                     },
                     "conversion_keep_original": False,
                     "ffmpeg_path": "ffmpeg",
@@ -16601,7 +16620,8 @@ Unnecessary Lossless-to-Lossless""",
             "advanced.ignore_different_artists": "When downloading albums, ignore tracks where the artist differs from the main album artist.",
             "advanced.hide_ffmpeg_warning": "Hide the warning message that appears when FFmpeg is not found on the system.",
             "advanced.conversion_flags.aac.audio_bitrate": "Set AAC audio bitrate. Higher is better quality but larger file. Options: 128k, 192k, 256k, 320k.",
-            "advanced.conversion_flags.flac.compression_level": "Set FLAC compression level (0-8). Higher level means smaller file but slower encoding, 0 is fastest, 8 is smallest."
+            "advanced.conversion_flags.flac.compression_level": "Set FLAC compression level (0-8). Higher level means smaller file but slower encoding, 0 is fastest, 8 is smallest.",
+            "advanced.conversion_flags.opus.b:a": "Set OPUS audio bitrate. Higher is better quality but larger file. Options: 64k, 96k, 128k, 160k, 192k, 256k, 320k."
         }
         for section_key, section_value in DEFAULT_SETTINGS["globals"].items():
             if isinstance(section_value, dict):
@@ -16715,6 +16735,41 @@ Unnecessary Lossless-to-Lossless""",
                         tooltip_mp3_text = tooltip_texts.get("advanced.conversion_flags.mp3.setting", "MP3 Encoding Settings:\n128k-320k are Constant Bitrate (CBR).\nVBR -V0 uses qscale:a 0 for highest variable bitrate quality.")
                         CTkToolTip(mp3_label, message=tooltip_mp3_text, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
                         CTkToolTip(mp3_slider_frame, message=tooltip_mp3_text, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+                        row += 1
+                        
+                        opus_label_text = "OPUS Audio Bitrate"
+                        opus_full_key = "advanced.conversion_flags.opus.b:a"
+                        opus_default_val = DEFAULT_SETTINGS["globals"]["advanced"]["conversion_flags"]["opus"]["b:a"]
+                        opus_current_val = str(current_settings["globals"].get("advanced", {}).get("conversion_flags", {}).get("opus", {}).get("b:a", opus_default_val))
+                        
+                        opus_label = customtkinter.CTkLabel(global_settings_frame, text=opus_label_text)
+                        opus_label.grid(row=row, column=0, sticky="w", padx=(20, 10), pady=2)
+                        opus_slider_frame = customtkinter.CTkFrame(global_settings_frame, fg_color="transparent")
+                        opus_slider_frame.grid(row=row, column=1, sticky="ew", padx=(5, 5), pady=2)
+                        opus_slider_frame.grid_columnconfigure(0, weight=1)
+
+                        opus_options_list = ["64k", "96k", "128k", "160k", "192k", "256k", "320k"]
+                        opus_options_map = {val: i for i, val in enumerate(opus_options_list)}
+                        
+                        opus_var = tkinter.StringVar(value=opus_current_val)
+                        if "globals" not in settings_vars: settings_vars["globals"] = {}
+                        settings_vars["globals"][opus_full_key] = opus_var
+                        
+                        opus_value_disp_label = customtkinter.CTkLabel(global_settings_frame, text=opus_current_val, width=100, anchor="center")
+                        opus_value_disp_label.grid(row=row, column=2, sticky="e", padx=(5, 5))
+
+                        def _update_opus_slider_display(slider_value_idx, var=opus_var, disp_label=opus_value_disp_label):
+                            selected_bitrate = opus_options_list[int(slider_value_idx)]
+                            var.set(selected_bitrate)
+                            disp_label.configure(text=selected_bitrate)
+
+                        opus_slider_pos = opus_options_map.get(opus_current_val, opus_options_map.get(opus_default_val, 2))
+                        opus_slider_widget = customtkinter.CTkSlider(opus_slider_frame, from_=0, to=len(opus_options_list)-1, number_of_steps=len(opus_options_list)-1, command=_update_opus_slider_display)
+                        opus_slider_widget.set(opus_slider_pos)
+                        opus_slider_widget.grid(row=0, column=0, sticky="ew")
+                        tooltip_opus_text = tooltip_texts.get(opus_full_key, "")
+                        CTkToolTip(opus_label, message=tooltip_opus_text, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+                        CTkToolTip(opus_slider_frame, message=tooltip_opus_text, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
                         row += 1
                         continue
                     label_widget = customtkinter.CTkLabel(global_settings_frame, text=field.replace("_", " ").title())
