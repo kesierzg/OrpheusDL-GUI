@@ -4384,7 +4384,9 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                         msg = str(args[0]) if args else ''
                         m = re.search(r'(page\s+\d+/\d+)', msg, re.IGNORECASE)
                         if m:
-                            _update_loading_estimate_from_worker(0, platform_name, f"Fetching label data ({m.group(1)})")
+                            # Clean up the message for the GUI (remove '...', trailing dots/whitespace)
+                            display_msg = msg.strip().rstrip('.')
+                            _update_loading_estimate_from_worker(0, platform_name, display_msg)
                         if _original_mod_print:
                             _original_mod_print(*args, **kwargs)
                     if _original_mod_print:
@@ -4579,7 +4581,9 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                         msg = str(args[0]) if args else ''
                         m = re.search(r'(page\s+\d+/\d+)', msg, re.IGNORECASE)
                         if m:
-                            _update_loading_estimate_from_worker(0, platform_name, f"Fetching artist data ({m.group(1)})")
+                            # Clean up the message for the GUI
+                            display_msg = msg.strip().rstrip('.')
+                            _update_loading_estimate_from_worker(0, platform_name, display_msg)
                         if _original_mod_print_a:
                             _original_mod_print_a(*args, **kwargs)
                     if _original_mod_print_a:
