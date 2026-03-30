@@ -4957,10 +4957,8 @@ def _show_album_track_list_view(album_item_data, track_entries):
             for iid in all_iids:
                 _cover_load_requested.add(iid)
             load_cover_from_url(album_cover_url, size=COVER_SIZE, item_iid=flat[0]["tree_iid"], apply_to_iids=all_iids)
-        elif not is_album and album_cover_url and flat:
-            # Just request the first one to initialize (header/context), but don't apply to all rows
-            _cover_load_requested.add(flat[0]["tree_iid"])
-            load_cover_from_url(album_cover_url, size=COVER_SIZE, item_iid=flat[0]["tree_iid"])
+        # No special handling needed for non-album expansions; individual track covers will be 
+        # loaded by lazy_load_visible_covers() below using their respective track cover URLs.
         _update_preview_column_heading(False)  # ▶ for track list
         try:
             if 'tree' in globals() and tree and tree.winfo_exists():
