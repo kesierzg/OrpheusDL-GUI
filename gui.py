@@ -1322,7 +1322,11 @@ def _composite_platform_icon_on_cover(pil_cover, platform_name, cover_size=COVER
 
 def get_searchable_platforms(settings, installed_platform_keys, app_path):
     """Return list of platform names that can be searched: YouTube, Apple Music, Deezer, and others (optional credentials)."""
-    base = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
+    # Get disabled platforms from settings
+    disabled_p = (settings or {}).get("globals", {}).get("general", {}).get("disabled_search_platforms", [])
+    
+    # Filter base by Musixmatch/Genius (lyrics only) and the user's disabled list
+    base = [pk for pk in installed_platform_keys if pk not in ["Musixmatch", "Genius"] and pk.lower().replace(" ", "") not in disabled_p]
     platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify", "SoundCloud", "Beatport", "Beatsource", "TIDAL"]
     configured = []
     creds = (settings or {}).get("credentials", {})
@@ -6715,6 +6719,13 @@ def save_settings(show_confirmation: bool = True):
         if key_path_str in slider_handled_conversion_flag_keys:
             continue
 
+        if key_path_str == "general.disabled_search_platforms":
+            if "globals" not in updated_gui_settings: updated_gui_settings["globals"] = {}
+            if "general" not in updated_gui_settings["globals"]: updated_gui_settings["globals"]["general"] = {}
+            # Preserve the current list which was updated by the UI toggles
+            updated_gui_settings["globals"]["general"]["disabled_search_platforms"] = current_settings.get("globals", {}).get("general", {}).get("disabled_search_platforms", [])
+            continue
+
         if key_path_str == "advanced.codec_conversions":
             if isinstance(var, dict):
                 keys = key_path_str.split('.')
@@ -6819,7 +6830,7 @@ def save_settings(show_confirmation: bool = True):
          return False
     mapped_orpheus_updates = { "global": {"general": {},"formatting": {},"codecs": {},"covers": {},"playlist": {},"advanced": {},"module_defaults": {},"artist_downloading": {},"lyrics": {}}, "modules": {} }
     gui_globals = updated_gui_settings.get("globals", {})
-    general_map_gui_to_orpheus = { "output_path": "download_path", "quality": "download_quality", "search_limit": "search_limit", "concurrent_downloads": "concurrent_downloads", "play_sound_on_finish": "play_sound_on_finish", "min_file_size_kb": "min_file_size_kb" }
+    general_map_gui_to_orpheus = { "output_path": "download_path", "quality": "download_quality", "search_limit": "search_limit", "disabled_search_platforms": "disabled_search_platforms", "concurrent_downloads": "concurrent_downloads", "play_sound_on_finish": "play_sound_on_finish", "min_file_size_kb": "min_file_size_kb" }
     if "general" in gui_globals:
         gui_general_section = gui_globals["general"]
         if "general" not in mapped_orpheus_updates["global"]: mapped_orpheus_updates["global"]["general"] = {}
@@ -15678,6 +15689,7 @@ if __name__ == "__main__":
                     "output_path": os.path.join(_DATA_DIR if _DATA_DIR else _SCRIPT_DIR, "Downloads"),
                     "quality": "hifi",
                     "search_limit": 25,
+                    "disabled_search_platforms": [],
                     "concurrent_downloads": 5,
                     "play_sound_on_finish": True
                 },
@@ -16566,6 +16578,7 @@ if __name__ == "__main__":
             "general.output_path": "The main folder where all downloads will be saved.",
             "general.quality": "Select the desired audio quality preference.",
             "general.search_limit": "Maximum number of results to display in the Search tab.",
+            "general.disabled_search_platforms": "Platforms to include when searching with 'All' selected.",
             "general.concurrent_downloads": "Number of tracks to download simultaneously (1-10).\n\nRecommended values:\n• 1-3: Slower systems, limited bandwidth\n• 4-6: Most systems (balanced speed/stability)\n• 7-10: High-end systems, fast internet.",
             "general.play_sound_on_finish": "Play a notification sound when a download completes.",
             "artist_downloading.return_credited_albums": "Include albums where the artist is credited but not the main artist.",
@@ -16819,10 +16832,63 @@ Unnecessary Lossless-to-Lossless""",
                                     settings_vars["globals"][full_key][f"{source_codec}_target"] = target_var
                                     
                                     conversion_row += 1
-                        else:
-                            widget = customtkinter.CTkLabel(global_settings_frame, text="(Complex Setting)")
-                            widget.grid(row=row, column=1, sticky="w", padx=5, pady=5)
-                            settings_vars["globals"][full_key] = {}
+                    elif field == "disabled_search_platforms":
+                        # Platforms selection grid for Search "All"
+                        if label_widget:
+                            label_widget.configure(text="Search 'all' platforms")
+
+                        platform_frame = customtkinter.CTkFrame(global_settings_frame, fg_color="transparent")
+                        platform_frame.grid(row=row, column=1, columnspan=2, sticky="ew", padx=(5, 5), pady=5)
+                        
+                        # Use local map for module name translations
+                        _p_map = { 
+                            "Bugs": "bugs", "Nugs": "nugs", "SoundCloud": "soundcloud", "TIDAL": "tidal", "Qobuz": "qobuz", 
+                            "Deezer": "deezer", "Idagio": "idagio", "KKBOX": "kkbox", "Napster": "napster", "Beatport": "beatport", 
+                            "Beatsource": "beatsource", "Musixmatch": "musixmatch", "Spotify": "spotify", "Apple Music": "applemusic", 
+                            "YouTube": "youtube" 
+                        }
+                        
+                        def _on_platform_toggle(p_gui_name, is_enabled):
+                            """Directly updates the 'disabled_search_platforms' list in current_settings."""
+                            global current_settings
+                            p_orpheus = _p_map.get(p_gui_name, p_gui_name.lower().replace(" ", ""))
+                            
+                            # Ensure the structure exists
+                            if "globals" not in current_settings: current_settings["globals"] = {}
+                            if "general" not in current_settings["globals"]: current_settings["globals"]["general"] = {}
+                            
+                            d_list = current_settings["globals"]["general"].get("disabled_search_platforms", [])
+                            if not isinstance(d_list, list): d_list = []
+                            
+                            if is_enabled:
+                                if p_orpheus in d_list: d_list.remove(p_orpheus)
+                            else:
+                                if p_orpheus not in d_list: d_list.append(p_orpheus)
+                            
+                            current_settings["globals"]["general"]["disabled_search_platforms"] = d_list
+
+                        # Render a grid of checkboxes
+                        cols_in_grid = 5
+                        disabled_p_list = current_value if isinstance(current_value, list) else []
+                        
+                        # Populate with checkboxes for all installed modules (except lyrics-only providers)
+                        platforms_to_render = [pk for pk in installed_platform_keys if pk not in ["Musixmatch", "Genius"]]
+                        for i, p_name in enumerate(platforms_to_render):
+                            p_orp_id = _p_map.get(p_name, p_name.lower().replace(" ", ""))
+                            is_initially_checked = p_orp_id not in disabled_p_list
+                            
+                            cb_var = tkinter.BooleanVar(value=is_initially_checked)
+                            cb = customtkinter.CTkCheckBox(
+                                platform_frame, 
+                                text=p_name, 
+                                variable=cb_var, 
+                                command=lambda p=p_name, v=cb_var: _on_platform_toggle(p, v.get())
+                            )
+                            cb.grid(row=i // cols_in_grid, column=i % cols_in_grid, sticky="w", padx=5, pady=2)
+                        
+                        widget = platform_frame
+                        # Special field handled via live updates, but set to None for generic save skip
+                        settings_vars["globals"][full_key] = None
                     else:
                          var = tkinter.StringVar(value=str(current_value)); settings_vars["globals"][full_key] = var
                          if section_key == "general" and field == "output_path":
