@@ -1258,14 +1258,26 @@ def _platform_icon_path(platform_name):
     if not platform_name:
         return None
     
-    # Use resource_path for consistent resolution across dev and frozen (Win/Mac)
+    # Use resource_path for consistent resolution across dev and frozen (Win/Mac/Linux)
     base = resource_path("platforms")
+    if not os.path.isdir(base):
+        return None
     
-    for name in (platform_name, platform_name.replace(" ", ""), platform_name.lower().replace(" ", "")):
-        for ext in (".png", ".jpg", ".jpeg", ".webp"):
-            p = os.path.join(base, name + ext)
-            if os.path.isfile(p):
-                return p
+    # Normalize platform name for comparison (remove spaces, lowercase)
+    # We want to match "Apple Music" or "applemusic" to "AppleMusic.png"
+    target = platform_name.replace(" ", "").lower()
+    
+    try:
+        # Search for a file that matches platform_name case-insensitively
+        # This is the most robust way to handle any platform naming convention on Linux
+        for filename in os.listdir(base):
+            name_only, ext = os.path.splitext(filename)
+            if ext.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+                if name_only.lower() == target:
+                    return os.path.join(base, filename)
+    except Exception:
+        pass
+
     return None
 
 def _load_platform_icon_sync(platform_name):
@@ -10661,6 +10673,9 @@ def clear_treeview():
             except Exception:
                 pass
         if 'tree' in globals() and tree and tree.winfo_exists():
+            # Reset scroll position to top when clearing results (important for expansions/new searches)
+            try: tree.yview_moveto(0)
+            except: pass
             for item in tree.get_children(): tree.delete(item)
         if 'app' in globals() and app and app.winfo_exists() and 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists():
             app.after(0, lambda: _check_and_toggle_scrollbar(tree, scrollbar))
