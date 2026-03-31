@@ -4516,8 +4516,13 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                             else:
                                 cover_url = item_data.get('cover_url') or ''
                             year = ''
-                            if album_dict.get('publish_date') and len(str(album_dict.get('publish_date'))) >= 4:
-                                year = str(album_dict.get('publish_date'))[:4]
+                            for key in ('publish_date', 'release_date', 'display_date', 'created_at', 'releaseDate', 'streamStartDate'):
+                                val = album_dict.get(key)
+                                if val and isinstance(val, str) and len(val) >= 4:
+                                    year = val[:4]
+                                    break
+                            if not year and album_dict.get('release_year'):
+                                year = str(album_dict.get('release_year'))
                             # Skip releases with no track count (hide them from the list)
                             tc = album_dict.get('track_count') or album_dict.get('tracks_count')
                             if tc is None:
@@ -4837,7 +4842,11 @@ def _show_artist_albums_view(artist_item_data, album_entries, context_kind="Arti
         if 'tree' not in globals() or not tree or not tree.winfo_exists():
             return
         # Stack: each level stores saved_data to restore and the header title when we back to that level (RESULTS for search list)
-        _album_track_list_context = [{"saved_data": list(search_results_data), "title": "RESULTS"}]
+        _album_track_list_context = [{
+            "saved_data": list(search_results_data), 
+            "title": "RESULTS",
+            "focused_iid": tree.focus() if ('tree' in globals() and tree and tree.winfo_exists()) else None
+        }]
         name = artist_item_data.get('artist') or artist_item_data.get('title') or (context_kind if context_kind == "Label" else "Artist")
         artist_view_title = f"{context_kind}: {name}"
         platform_str = artist_item_data.get('platform', 'Unknown')
@@ -4878,6 +4887,19 @@ def _show_artist_albums_view(artist_item_data, album_entries, context_kind="Arti
         if 'app' in globals() and app and app.winfo_exists():
             app.after(100, lazy_load_visible_covers)
             app.after(50, lambda: _check_and_toggle_scrollbar(tree, scrollbar) if 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists() else None)
+            
+            # Automatically select and focus the first item so the "blue bar" is visible and keyboard nav works immediately
+            if album_entries:
+                def _select_first_artist_album():
+                    if 'tree' in globals() and tree and tree.winfo_exists():
+                        first_iid = album_entries[0]["tree_iid"]
+                        if tree.exists(first_iid):
+                            tree.selection_set(first_iid)
+                            tree.focus(first_iid)
+                            tree.see(first_iid)
+                            # Ensure tree itself has focus so arrow keys work (like Up/Down)
+                            tree.focus_set()
+                app.after(150, _select_first_artist_album)
     except Exception as e:
         if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
             print(f"[Artist] Error showing artist albums: {e}")
@@ -4899,7 +4921,8 @@ def _show_album_track_list_view(album_item_data, track_entries):
             _album_track_list_context = [_album_track_list_context] if _album_track_list_context else []
         _album_track_list_context.append({
             "saved_data": list(search_results_data),
-            "title": parent_title
+            "title": parent_title,
+            "focused_iid": tree.focus() if ('tree' in globals() and tree and tree.winfo_exists()) else None
         })
         item_type = (album_item_data.get('type') or '').lower()
         platform_key = (album_item_data.get('platform') or '').lower()
@@ -4989,6 +5012,18 @@ def _show_album_track_list_view(album_item_data, track_entries):
         if 'app' in globals() and app and app.winfo_exists():
             app.after(100, lazy_load_visible_covers)
             app.after(50, lambda: _check_and_toggle_scrollbar(tree, scrollbar) if 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists() else None)
+            
+            # Automatically select and focus the first item so the "blue bar" is visible and keyboard nav works immediately
+            if flat:
+                def _select_first():
+                    if 'tree' in globals() and tree and tree.winfo_exists():
+                        first_iid = flat[0]["tree_iid"]
+                        if tree.exists(first_iid):
+                            tree.selection_set(first_iid)
+                            tree.focus(first_iid)
+                            tree.see(first_iid)
+                            tree.focus_set()
+                app.after(150, _select_first)
     except Exception as e:
         if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
             print(f"[Album list] Error showing album track list: {e}")
@@ -5120,6 +5155,19 @@ def _back_to_search_results():
                 _back_to_search_button.pack_forget()
         if 'app' in globals() and app and app.winfo_exists() and 'tree' in globals() and tree and tree.winfo_exists() and 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists():
             app.after(50, lambda: _check_and_toggle_scrollbar(tree, scrollbar))
+            
+        # Restore selection and focus if available in the context
+        focused_iid = context.get("focused_iid")
+        if focused_iid:
+            def _restore_focus():
+                if 'tree' in globals() and tree and tree.winfo_exists():
+                    if tree.exists(focused_iid):
+                        tree.selection_set(focused_iid)
+                        tree.focus(focused_iid)
+                        tree.see(focused_iid)
+                        tree.focus_set()
+            if 'app' in globals() and app and app.winfo_exists():
+                app.after(150, _restore_focus)
     except Exception as e:
         if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
             print(f"[Back] Error restoring search results: {e}")
@@ -16409,6 +16457,54 @@ if __name__ == "__main__":
                 return
             _check_and_toggle_scrollbar(tree, scrollbar) if 'scrollbar' in globals() and scrollbar and scrollbar.winfo_exists() else None
         tree.bind("<<TreeviewSelect>>", on_tree_select); tree.bind("<Configure>", _on_tree_configure_refresh)
+        # Bind keyboard arrows for lazy loading on navigation
+        tree.bind("<KeyRelease-Up>", lambda e: on_tree_scroll())
+        tree.bind("<KeyRelease-Down>", lambda e: on_tree_scroll())
+
+        # Force selection and focus to jump with Page Up/Down, Home, and End keys
+        def _handle_page_nav(event):
+            all_items = []
+            def get_all(p=""):
+                for c in tree.get_children(p):
+                    all_items.append(c)
+                    if tree.item(c, "open"): # Only add children if node is open
+                        get_all(c)
+            get_all()
+            if not all_items: return "break"
+            
+            curr = tree.focus()
+            try:
+                curr_idx = all_items.index(curr) if curr and tree.exists(curr) else 0
+            except ValueError:
+                curr_idx = 0
+            
+            # Use dynamic page size based on widget height (approx 28px per row)
+            page_size = max(1, search_results_tree_frame.winfo_height() // 28) if 'search_results_tree_frame' in locals() else 10
+            
+            # Calculate new index
+            if event.keysym == "Home":
+                new_idx = 0
+            elif event.keysym == "End":
+                new_idx = len(all_items) - 1
+            elif event.keysym == "Prior": # Page Up
+                new_idx = max(0, curr_idx - page_size)
+            elif event.keysym == "Next":  # Page Down
+                new_idx = min(len(all_items) - 1, curr_idx + page_size)
+            else:
+                return
+            
+            target = all_items[new_idx]
+            tree.selection_set(target)
+            tree.focus(target)
+            tree.see(target)
+            _update_keyboard_focus(target)
+            on_tree_scroll()
+            return "break" # Block default scrolling to keep it synchronized with selection
+
+        tree.bind("<Prior>", _handle_page_nav)
+        tree.bind("<Next>", _handle_page_nav)
+        tree.bind("<Home>", _handle_page_nav)
+        tree.bind("<End>", _handle_page_nav)
         # Bind mousewheel for lazy loading on scroll
         tree.bind("<MouseWheel>", lambda e: on_tree_scroll())  # Windows
         tree.bind("<Button-4>", lambda e: on_tree_scroll())    # Linux scroll up
@@ -16432,6 +16528,7 @@ if __name__ == "__main__":
                     tree.selection_set(first_item)
                     tree.focus(first_item)
                     tree.see(first_item)
+                    on_tree_scroll()  # Trigger lazy loading
         tree.bind("<FocusIn>", _on_tree_focus_in, add="+")
         tree.bind("<Return>", on_tree_enter)
         
@@ -16467,6 +16564,7 @@ if __name__ == "__main__":
             if target:
                 tree.focus(target)
                 tree.see(target)
+                on_tree_scroll()  # Trigger lazy loading
                 _extend_selection(target)
                 _update_keyboard_focus(target)
             return "break"
@@ -16478,6 +16576,7 @@ if __name__ == "__main__":
             if target:
                 tree.focus(target)
                 tree.see(target)
+                on_tree_scroll()  # Trigger lazy loading
                 _update_keyboard_focus(target)
             return "break"
 
