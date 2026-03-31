@@ -564,6 +564,8 @@ AppPublisher={{#MyAppPublisher}}
 AppPublisherURL={{#MyAppURL}}
 DefaultDirName={{autopf}}\\{{#MyAppName}}
 DefaultGroupName={{#MyAppName}}
+UninstallDisplayIcon={{app}}\\icon.ico
+UninstallDisplayName={{#MyAppName}}
 
 OutputDir=..\\..\\dist
 OutputBaseFilename=OrpheusDL_GUI-Setup-{{#MyAppVersion}}
