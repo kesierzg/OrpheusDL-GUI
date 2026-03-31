@@ -148,6 +148,16 @@ def build_pyinstaller():
         str(PROJECT_ROOT / "gui.spec")
     ], cwd=PROJECT_ROOT)
 
+    # Ensure dist/config exists for Inno Setup
+    dist_config = DIST_DIR / "config"
+    if dist_config.exists():
+        shutil.rmtree(dist_config)
+    
+    src_config = PROJECT_ROOT / "config"
+    if src_config.exists():
+        shutil.copytree(src_config, dist_config)
+        print(f"Copied config to {dist_config}")
+
     print("PyInstaller build complete")
 
 
@@ -159,8 +169,8 @@ def build_windows_installer(modules=None):
 
     iss = INSTALLER_DIR / "windows" / "installer.iss"
 
-    if not iss.exists():
-        create_inno_setup_script(modules)
+    # Always update the Inno Setup script to reflect current configuration
+    create_inno_setup_script(modules)
 
     inno = None
 
@@ -546,18 +556,29 @@ def create_inno_setup_script(modules=None):
 
 [Setup]
 
-AppId={{{{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}}}}
-
+AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}}
+AppMutex=OrpheusDL-GUI-Mutex
 AppName={{#MyAppName}}
 AppVersion={{#MyAppVersion}}
+AppPublisher={{#MyAppPublisher}}
+AppPublisherURL={{#MyAppURL}}
 DefaultDirName={{autopf}}\\{{#MyAppName}}
 DefaultGroupName={{#MyAppName}}
 
 OutputDir=..\\..\\dist
 OutputBaseFilename=OrpheusDL_GUI-Setup-{{#MyAppVersion}}
+SetupIconFile=..\\..\\icon.ico
 
-Compression=lzma
+Compression=lzma2
 SolidCompression=yes
+
+WizardStyle=modern
+PrivilegesRequired=lowest
+
+AllowNoIcons=yes
+DisableProgramGroupPage=yes
+CloseApplications=force
+UpdateUninstallLogAppName=yes
 
 [Types]
 
@@ -567,23 +588,58 @@ Name: "custom"; Description: "Custom installation"; Flags: iscustom
 
 [Components]
 
-Name: "main"; Description: "OrpheusDL GUI"; Types: full compact custom; Flags: fixed
+Name: "main"; Description: "OrpheusDL-GUI Core (required)"; Types: full compact custom; Flags: fixed
 
+Name: "ffmpeg"; Description: "FFmpeg (Included - Recommended for conversions)"; Types: full custom; Flags: fixed
+Name: "deno"; Description: "Deno (Required for YouTube module)"; Types: full custom; Flags: fixed
+
+Name: "modules"; Description: "Music Platform Modules"; Types: full custom
 {module_components}
+
+[Tasks]
+
+Name: "desktopicon"; Description: "{{cm:CreateDesktopIcon}}"; GroupDescription: "{{cm:AdditionalIcons}}"
+Name: "quicklaunchicon"; Description: "{{cm:CreateQuickLaunchIcon}}"; GroupDescription: "{{cm:AdditionalIcons}}"; Flags: unchecked; OnlyBelowVersion: 6.1
 
 [Files]
 
-Source: "{{#SourcePath}}\\{{#MyAppExeName}}"; DestDir: "{{app}}"; Components: main
+Source: "{{#SourcePath}}\\{{#MyAppExeName}}"; DestDir: "{{app}}"; Components: main; Flags: ignoreversion
+
+Source: "{{#SourcePath}}\\config\\settings.json"; DestDir: "{{app}}\\config"; Components: main; Flags: ignoreversion onlyifdoesntexist uninsneveruninstall
+Source: "{{#SourcePath}}\\config\\cookies.txt"; DestDir: "{{app}}\\config"; Components: main; Flags: ignoreversion onlyifdoesntexist uninsneveruninstall skipifsourcedoesntexist
+Source: "{{#SourcePath}}\\config\\youtube-cookies.txt"; DestDir: "{{app}}\\config"; Components: main; Flags: ignoreversion onlyifdoesntexist uninsneveruninstall skipifsourcedoesntexist
+Source: "{{#SourcePath}}\\config\\*"; Excludes: "settings.json,cookies.txt,youtube-cookies.txt"; DestDir: "{{app}}\\config"; Components: main; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+
+Source: "{{#RepoDir}}\\orpheus\\*"; DestDir: "{{app}}\\orpheus"; Components: main; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "{{#RepoDir}}\\utils\\*"; DestDir: "{{app}}\\utils"; Components: main; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "{{#RepoDir}}\\orpheus.py"; DestDir: "{{app}}"; Components: main; Flags: ignoreversion skipifsourcedoesntexist
+
+Source: "..\\..\\icon.ico"; DestDir: "{{app}}"; Components: main; Flags: ignoreversion
+Source: "..\\..\\icon.png"; DestDir: "{{app}}"; Components: main; Flags: ignoreversion
+
+Source: "..\\..\\platforms\\*"; DestDir: "{{app}}\\platforms"; Components: main; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+
+Source: "..\\..\\ffmpeg.exe"; DestDir: "{{app}}"; Components: ffmpeg; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\\..\\ffprobe.exe"; DestDir: "{{app}}"; Components: ffmpeg; Flags: ignoreversion skipifsourcedoesntexist
+
+Source: "..\\..\\deno.exe"; DestDir: "{{app}}"; Components: deno; Flags: ignoreversion skipifsourcedoesntexist
 
 {module_files}
 
+Source: "..\\..\\modules\\__init__.py"; DestDir: "{{app}}\\modules"; Components: main; Flags: ignoreversion skipifsourcedoesntexist
+
 [Icons]
 
-Name: "{{group}}\\{{#MyAppName}}"; Filename: "{{app}}\\{{#MyAppExeName}}"
+Name: "{{group}}\\{{#MyAppName}}"; Filename: "{{app}}\\{{#MyAppExeName}}"; IconFilename: "{{app}}\\icon.ico"
+Name: "{{group}}\\{{cm:UninstallProgram,{{#MyAppName}}}}"; Filename: "{{uninstallexe}}"
+
+Name: "{{autodesktop}}\\{{#MyAppName}}"; Filename: "{{app}}\\{{#MyAppExeName}}"; IconFilename: "{{app}}\\icon.ico"; Tasks: desktopicon
+
+Name: "{{userappdata}}\\Microsoft\\Internet Explorer\\Quick Launch\\{{#MyAppName}}"; Filename: "{{app}}\\{{#MyAppExeName}}"; Tasks: quicklaunchicon
 
 [Run]
 
-Filename: "{{app}}\\{{#MyAppExeName}}"; Description: "Launch OrpheusDL GUI"; Flags: nowait postinstall
+Filename: "{{app}}\\{{#MyAppExeName}}"; Description: "{{cm:LaunchProgram,{{#StringChange(MyAppName, '&', '&&')}}}}"; Flags: nowait postinstall skipifsilent
 """
 
     path = windows_dir / "installer.iss"
