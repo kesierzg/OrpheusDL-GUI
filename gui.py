@@ -8860,12 +8860,9 @@ def set_ui_state_searching(is_searching):
                 else: 
                     search_button.configure(text="Search", command=start_search, state=state, fg_color=UI_ELEMENT_BG_COLOR)
             if 'search_download_button' in globals() and search_download_button and search_download_button.winfo_exists():
-                if is_searching:
-                    search_download_button.configure(text="Stop", command=stop_search, state="normal")
-                else: 
-                    # Note: search_download_button is normally disabled until a search result is selected.
-                    # We reset it to "Download" but keep it disabled or let selection logic handle it.
-                    search_download_button.configure(text="Download", state="disabled")
+                # Note: search_download_button is normally disabled until a search result is selected.
+                # During search, we keep it as "Download" and disabled.
+                search_download_button.configure(text="Download", state="disabled", command=download_selected)
             if 'clear_search_button' in globals() and clear_search_button and clear_search_button.winfo_exists(): clear_search_button.configure(state=state)
             if 'platform_combo' in globals() and platform_combo and platform_combo.winfo_exists(): platform_combo.configure(state=combo_state)
             if 'type_combo' in globals() and type_combo and type_combo.winfo_exists(): type_combo.configure(state=combo_state)
