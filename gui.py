@@ -1127,7 +1127,7 @@ def setup_logging(log_queue):
         logging.info("Logging configured to use GUI queue (debug mode enabled).")
     else:
         root_logger.setLevel(logging.CRITICAL)
-__version__ = "2.0.1"
+__version__ = "2.0.0"
 from update_checker import run_check_in_thread
 _mutex_handle = None
 if platform.system() == "Windows":
@@ -6453,6 +6453,8 @@ def load_settings():
                 if "search_limit" in orpheus_general: settings["globals"]["general"]["search_limit"] = orpheus_general["search_limit"]
                 if "concurrent_downloads" in orpheus_general: settings["globals"]["general"]["concurrent_downloads"] = orpheus_general["concurrent_downloads"]
                 if "play_sound_on_finish" in orpheus_general: settings["globals"]["general"]["play_sound_on_finish"] = orpheus_general["play_sound_on_finish"]
+                if "disabled_search_platforms" in orpheus_general: settings["globals"]["general"]["disabled_search_platforms"] = orpheus_general["disabled_search_platforms"]
+                if "min_file_size_kb" in orpheus_general: settings["globals"]["general"]["min_file_size_kb"] = orpheus_general["min_file_size_kb"]
             for section_key, section_data in orpheus_global_from_file.items():
                  if section_key != "general" and section_key in settings["globals"]:
                      if isinstance(section_data, dict) and isinstance(settings["globals"].get(section_key), dict):
@@ -8848,11 +8850,22 @@ def set_ui_state_downloading(is_downloading):
     except Exception as e: print(f"Error scheduling download UI state update: {e}")
 
 def set_ui_state_searching(is_searching):
-    global search_button, clear_search_button, platform_combo, type_combo, search_entry, search_progress_bar, app
+    global search_button, clear_search_button, platform_combo, type_combo, search_entry, search_progress_bar, search_download_button, app
     def _update_state():
         state = "disabled" if is_searching else "normal"; combo_state = "disabled" if is_searching else "readonly"
         try:
-            if 'search_button' in globals() and search_button and search_button.winfo_exists(): search_button.configure(state=state)
+            if 'search_button' in globals() and search_button and search_button.winfo_exists(): 
+                if is_searching:
+                    search_button.configure(text="Stop", command=stop_search, state="normal", fg_color=STOP_BUTTON_COLOR if 'STOP_BUTTON_COLOR' in globals() else UI_ELEMENT_BG_COLOR)
+                else: 
+                    search_button.configure(text="Search", command=start_search, state=state, fg_color=UI_ELEMENT_BG_COLOR)
+            if 'search_download_button' in globals() and search_download_button and search_download_button.winfo_exists():
+                if is_searching:
+                    search_download_button.configure(text="Stop", command=stop_search, state="normal")
+                else: 
+                    # Note: search_download_button is normally disabled until a search result is selected.
+                    # We reset it to "Download" but keep it disabled or let selection logic handle it.
+                    search_download_button.configure(text="Download", state="disabled")
             if 'clear_search_button' in globals() and clear_search_button and clear_search_button.winfo_exists(): clear_search_button.configure(state=state)
             if 'platform_combo' in globals() and platform_combo and platform_combo.winfo_exists(): platform_combo.configure(state=combo_state)
             if 'type_combo' in globals() and type_combo and type_combo.winfo_exists(): type_combo.configure(state=combo_state)
@@ -10599,6 +10612,16 @@ def stop_download():
     stop_event.set()
     output_queue.put("|GRAY|Download stop requested... Please wait.|RESET|\n")
 
+search_stop_requested = False
+
+def stop_search():
+    global search_stop_requested, search_button, output_queue
+    search_stop_requested = True
+    if 'search_button' in globals() and search_button and search_button.winfo_exists():
+        search_button.configure(text="Stopping...", state="disabled")
+    if 'output_queue' in globals() and output_queue:
+        output_queue.put("|GRAY|Search stop requested... Please wait.|RESET|\n")
+
 # Omit ID from displaycolumns so the theme never draws a zero-width slot (avoids right-edge artifact)
 _TREE_DISPLAYCOLUMNS = ("Preview", "#", "Title", "Artist", "Duration", "Year", "Additional", "Explicit")
 
@@ -11051,6 +11074,10 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
                     module_instance = orpheus.load_module(orpheus_platform)
             else:
                 module_instance = orpheus.load_module(orpheus_platform)
+            
+            global search_stop_requested
+            if search_stop_requested: return [], "Search stopped."
+            
             search_results = module_instance.search(query_type, search_query, limit=search_limit)
         except Exception as e:
             return [], f"Error during search ({platform_name}): {str(e)}"
@@ -11238,6 +11265,7 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
         if isinstance(extra_kwargs, dict) and extra_kwargs.get('label_slug'):
             formatted_result['label_slug'] = extra_kwargs['label_slug']
         formatted_results.append(formatted_result)
+        if search_stop_requested: break
     return formatted_results, None
 
 
@@ -11295,6 +11323,9 @@ def run_search_all_platforms_target(orpheus, platforms_list, search_type_str, qu
         _search_all_timeout_sec = 60  # per platform; avoids infinite hang if one platform blocks (e.g. Tidal auth)
         combined = []
         for platform_name in platforms_list:
+            if search_stop_requested: 
+                if output_queue: output_queue.put("|GRAY|Search stopped.|RESET|\n")
+                break
             out = []
             def _one_platform():
                 r, e = _run_single_platform_search(orpheus, platform_name, search_type_str, query, search_limit, output_queue)
@@ -11371,6 +11402,11 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
         search_limit = gui_settings.get("globals", {}).get("general", {}).get("search_limit", 25)
         try: search_limit = int(search_limit)
         except (ValueError, TypeError): search_limit = 25
+        
+        if search_stop_requested:
+            early_return = True
+            return
+            
         results, error_message = _run_single_platform_search(orpheus, platform_name, search_type_str, query, search_limit, output_queue)
         if results:
             error_message = None
@@ -11442,6 +11478,8 @@ def start_search():
         if search_process_active: show_centered_messagebox("Busy", "A search is already in progress!", dialog_type="warning"); return
 
         clear_search_ui()
+        global search_stop_requested
+        search_stop_requested = False
         search_process_active = True
         set_ui_state_searching(True)
         if platform_name == "All":

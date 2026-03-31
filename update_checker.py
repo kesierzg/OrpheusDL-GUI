@@ -42,9 +42,9 @@ def compare_versions(current_version_str, latest_version_str):
     Handles potential 'v' prefix in tags (e.g., v1.0.0).
     """
     try:
-        # Normalize tags by removing potential leading 'v'
-        current_version_str = current_version_str.lstrip('v')
-        latest_version_str = latest_version_str.lstrip('v')
+        # Normalize tags by removing potential leading 'v' or 'v.' prefix
+        current_version_str = current_version_str.lstrip('v').lstrip('.')
+        latest_version_str = latest_version_str.lstrip('v').lstrip('.')
 
         current_version = parse_version(current_version_str)
         latest_version = parse_version(latest_version_str)
@@ -54,7 +54,7 @@ def compare_versions(current_version_str, latest_version_str):
         print(f"[Update Check] Error comparing versions ('{current_version_str}' vs '{latest_version_str}'): {e}")
         return False # Treat comparison errors as 'no update found'
 
-def show_centered_messagebox(title, message, dialog_type="info", parent=None):
+def show_centered_messagebox(title, message, dialog_type="info", parent=None, url=None):
     """Creates and displays a centered CTkToplevel message box."""
     # This function relies on the 'parent' argument being passed correctly.
     if parent is None:
@@ -69,7 +69,7 @@ def show_centered_messagebox(title, message, dialog_type="info", parent=None):
 
         dialog = customtkinter.CTkToplevel(parent)
         dialog.title(title)
-        dialog.geometry("450x150")
+        dialog.geometry("450x180") # Restored original height for standard weight
         dialog.resizable(False, False)
         dialog.attributes("-topmost", True)
         dialog.transient(parent)
@@ -88,12 +88,28 @@ def show_centered_messagebox(title, message, dialog_type="info", parent=None):
 
         # Content
         message_label = customtkinter.CTkLabel(dialog, text=message, wraplength=400, justify="left")
-        message_label.pack(pady=(20, 10), padx=20, expand=True, fill="both")
+        message_label.pack(pady=(25, 0), padx=20, expand=True, fill="both")
 
-        ok_button = customtkinter.CTkButton(dialog, text="OK", command=dialog.destroy, width=100)
-        ok_button.pack(pady=(0, 20))
-        ok_button.focus_set()
-        dialog.bind("<Return>", lambda event: ok_button.invoke())
+        button_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
+        button_frame.pack(pady=(10, 25), expand=True, fill="both")
+
+        if url:
+            def open_release_page():
+                try:
+                    webbrowser.open(url, new=2)
+                except:
+                    pass
+                dialog.destroy()
+
+            download_button = customtkinter.CTkButton(button_frame, text="Download Update", command=open_release_page, width=160)
+            download_button.pack(pady=5)
+            download_button.focus_set()
+            dialog.bind("<Return>", lambda event: download_button.invoke())
+        else:
+            ok_button = customtkinter.CTkButton(button_frame, text="OK", command=dialog.destroy, width=100)
+            ok_button.pack(pady=5)
+            ok_button.focus_set()
+            dialog.bind("<Return>", lambda event: ok_button.invoke())
 
         # Make modal
         dialog.grab_set()
@@ -108,12 +124,12 @@ def show_update_dialog(new_version_tag, parent_window):
     """Displays a styled dialog box informing the user about the update."""
     title = "Update Available"
     message = (
-        f"A new version ({new_version_tag}) is available!\n\n"
-        f"Visit the Releases page on GitHub to download (About tab)."
+        f"A new version ({new_version_tag}) is available!\n"
+        f"Visit the Releases page on GitHub to download."
     )
     # Use the custom message box
     # Ensure parent_window is passed correctly
-    show_centered_messagebox(title, message, parent=parent_window)
+    show_centered_messagebox(title, message, parent=parent_window, url=RELEASES_PAGE_URL)
     # No return value needed, and no automatic browser opening for now
     # if tkinter.messagebox.askyesno(title, message, icon=tkinter.messagebox.INFO):
     #     try:
