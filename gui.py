@@ -13495,9 +13495,19 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     else:
                         _entry.bind("<FocusIn>", lambda e, w=_entry: handle_focus_in(w))
                         _entry.bind("<FocusOut>", lambda e, w=_entry: handle_focus_out(w))
-                    # Bind auto-save for Qobuz special fields
-                    for _k, _entry in [("username", qobuz_entry1), ("password", qobuz_entry2)]:
-                        _entry.bind("<KeyRelease>", lambda event, p=platform_name, k=_k, w=_entry: _auto_save_credential_change(p, k, w))
+                # Bind auto-save for Qobuz special fields
+                def _qobuz_entry1_save(event, p=platform_name, w=qobuz_entry1):
+                    # In Qobuz, Entry 1 is User ID if 'Use ID/Token' is on, else Email (username)
+                    key = "user_id" if var_use_id_token.get() else "username"
+                    _auto_save_credential_change(p, key, w)
+
+                def _qobuz_entry2_save(event, p=platform_name, w=qobuz_entry2):
+                    # In Qobuz, Entry 2 is Auth Token if 'Use ID/Token' is on, else Password
+                    key = "auth_token" if var_use_id_token.get() else "password"
+                    _auto_save_credential_change(p, key, w)
+
+                qobuz_entry1.bind("<KeyRelease>", _qobuz_entry1_save)
+                qobuz_entry2.bind("<KeyRelease>", _qobuz_entry2_save)
                 # Checkbox below help section (packed in Qobuz help block)
                 chk_container = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
                 chk_qobuz_id_token = customtkinter.CTkCheckBox(chk_container, text="Use ID/Token (instead of Email/Password)", variable=var_use_id_token)
@@ -13567,8 +13577,17 @@ def _create_credential_tab_content(platform_name, tab_frame):
                         _entry.bind("<FocusIn>", _deezer_entry1_focus_in)
                         _entry.bind("<FocusOut>", _deezer_entry1_focus_out)
                 # Bind auto-save for Deezer special fields
-                for _k, _entry in [("email", deezer_entry1), ("password", deezer_entry2)]:
-                    _entry.bind("<KeyRelease>", lambda event, p=platform_name, k=_k, w=_entry: _auto_save_credential_change(p, k, w))
+                def _deezer_entry1_save(event, p=platform_name, w=deezer_entry1):
+                    # In Deezer, Entry 1 is ARL if 'Use ARL' is on, else Email
+                    key = "arl" if var_use_arl.get() else "email"
+                    _auto_save_credential_change(p, key, w)
+
+                def _deezer_entry2_save(event, p=platform_name, w=deezer_entry2):
+                    # Password is always password in Deezer (if visible)
+                    _auto_save_credential_change(p, "password", w)
+
+                deezer_entry1.bind("<KeyRelease>", _deezer_entry1_save)
+                deezer_entry2.bind("<KeyRelease>", _deezer_entry2_save)
                 chk_deezer_arl = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
                 chk_use_arl = customtkinter.CTkCheckBox(chk_deezer_arl, text="Use ARL (instead of Email/Password)", variable=var_use_arl)
 
