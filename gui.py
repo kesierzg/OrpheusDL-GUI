@@ -11077,7 +11077,11 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             
             search_results = module_instance.search(query_type, search_query, limit=search_limit)
         except Exception as e:
-            return [], f"Error during search ({platform_name}): {str(e)}"
+            err_str = str(e)
+            err_lower = err_str.lower()
+            if "user authentication is required" in err_lower or '"code":401' in err_str.replace(" ", ""):
+                return [], f"Authentication Error ({platform_name}): The login token is invalid or has expired. Please check settings."
+            return [], f"Error during search ({platform_name}): {err_str}"
         formatted_results = []
         for result in search_results:
             raw_result = None
@@ -11204,7 +11208,11 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             module_instance = orpheus.load_module(orpheus_platform)
         search_results = module_instance.search(query_type, query, limit=search_limit)
     except Exception as e:
-        return [], f"Error during search ({platform_name}): {str(e)}"
+        err_str = str(e)
+        err_lower = err_str.lower()
+        if "user authentication is required" in err_lower or '"code":401' in err_str.replace(" ", ""):
+            return [], f"Authentication Error ({platform_name}): The login token is invalid or has expired. Please check settings."
+        return [], f"Error during search ({platform_name}): {err_str}"
     formatted_results = []
     for result in search_results:
         if search_type_str and search_type_str.lower() in ('album', 'playlist'):
@@ -11408,7 +11416,12 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
         if results:
             error_message = None
     except Exception as e:
-        error_message = f"Error during search: {str(e)}"
+        err_str = str(e)
+        err_lower = err_str.lower()
+        if "user authentication is required" in err_lower or '"code":401' in err_str.replace(" ", ""):
+            error_message = f"Authentication Error: The login token for {platform_name} is invalid or has expired. Please check settings."
+        else:
+            error_message = f"Error during search: {err_str}"
         results = []
     finally:
         # Restore original stdout/stderr
