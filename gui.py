@@ -6348,6 +6348,8 @@ def load_settings():
                         "playlist_format": "{name}",
                         "track_filename_format": "{artist} - {name}",
                         "single_full_path_format": "{artist} - {name}",
+                        "metadata_separator": ";",
+                        "split_metadata": True,
                         "enable_zfill": True,
                         "force_album_format": False,
                         "truncate_length": 40
@@ -12294,8 +12296,8 @@ def show_search_context_menu(event):
             ],
             'spotify': [
                 ("FLAC", "lossless"),
-                ("OGG 320", "hifi"),
-                ("OGG 160", "high")
+                ("OGG 320", "high"),
+                ("OGG 160", "low")
             ],
             'youtube': [
                 ("OPUS", "hifi"),
@@ -12483,7 +12485,7 @@ def show_search_context_menu(event):
             'applemusic': am_quals,
             'apple music': am_quals,
             'soundcloud': ['high'],
-            'spotify': ['hifi', 'high'],
+            'spotify': ['hifi', 'high', 'low'],
             'qobuz': ['hifi', 'lossless', 'high'] if has_hires else ['lossless', 'high'],
             'tidal': tidal_quals,
             'youtube': ['hifi', 'high', 'low'],
@@ -15826,7 +15828,7 @@ if __name__ == "__main__":
                     "play_sound_on_finish": True
                 },
                 "artist_downloading": { "return_credited_albums": True, "separate_tracks_skip_downloaded": True },
-                "formatting": { "album_format": "{artist}/{name}", "playlist_format": "{name}", "track_filename_format": "{artist} - {name}", "single_full_path_format": "{artist} - {name}", "enable_zfill": True, "force_album_format": False },
+                "formatting": { "album_format": "{artist}/{name}", "playlist_format": "{name}", "track_filename_format": "{artist} - {name}", "single_full_path_format": "{artist} - {name}", "metadata_separator": ";", "split_metadata": True, "enable_zfill": True, "force_album_format": False },
                 "codecs": {
                     "proprietary_codecs": False,
                     "spatial_codecs": True
@@ -16779,6 +16781,8 @@ if __name__ == "__main__":
  {track_number}, {total_tracks}, {disc_number}, {total_discs}
  {id}, {album_id}, {label}, {catalog_number}, {isrc}, {release_year}, {explicit}, {quality}""",
             "formatting.single_full_path_format": """Full path format (folder + filename) for single tracks not part of an album download.\nUses same variables as Track Filename Format.""",
+            "formatting.metadata_separator": "Character or string used to separate multiple values in metadata (e.g. artists, genres). Default is ;",
+            "formatting.split_metadata": "Save multiple values (e.g., multiple artists) as separate tags instead of joining them with the separator.",
             "formatting.enable_zfill": "Pads track/disc numbers with leading zeros (e.g., 01, 02).",
             "formatting.force_album_format": "Use the album_format structure even for single track downloads.",
             "codecs.proprietary_codecs": "Enable potentially proprietary codecs like MQA (if supported by module).",
