@@ -56,6 +56,7 @@ Name: "modules\beatport"; Description: "Beatport support"; Types: full custom
 Name: "modules\beatsource"; Description: "Beatsource support"; Types: full custom
 Name: "modules\deezer"; Description: "Deezer support"; Types: full custom
 Name: "modules\musixmatch"; Description: "Musixmatch support"; Types: full custom
+Name: "modules\lrclib"; Description: "LRCLIB support"; Types: full custom
 Name: "modules\qobuz"; Description: "Qobuz support"; Types: full custom
 Name: "modules\soundcloud"; Description: "SoundCloud support"; Types: full custom
 Name: "modules\spotify"; Description: "Spotify support"; Types: full custom
@@ -96,6 +97,7 @@ Source: "{#RepoDir}\modules\beatport\*"; DestDir: "{app}\modules\beatport"; Comp
 Source: "{#RepoDir}\modules\beatsource\*"; DestDir: "{app}\modules\beatsource"; Components: modules\beatsource; Flags: recursesubdirs
 Source: "{#RepoDir}\modules\deezer\*"; DestDir: "{app}\modules\deezer"; Components: modules\deezer; Flags: recursesubdirs
 Source: "{#RepoDir}\modules\musixmatch\*"; DestDir: "{app}\modules\musixmatch"; Components: modules\musixmatch; Flags: recursesubdirs
+Source: "{#RepoDir}\modules\lrclib\*"; DestDir: "{app}\modules\lrclib"; Components: modules\musixmatch; Flags: recursesubdirs
 Source: "{#RepoDir}\modules\qobuz\*"; DestDir: "{app}\modules\qobuz"; Components: modules\qobuz; Flags: recursesubdirs
 Source: "{#RepoDir}\modules\soundcloud\*"; DestDir: "{app}\modules\soundcloud"; Components: modules\soundcloud; Flags: recursesubdirs
 Source: "{#RepoDir}\modules\spotify\*"; DestDir: "{app}\modules\spotify"; Components: modules\spotify; Flags: recursesubdirs
