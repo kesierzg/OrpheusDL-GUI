@@ -5816,6 +5816,275 @@ def _ensure_deno_dir_in_path(deno_path):
     os.environ['PATH'] = deno_dir + path_sep + current
 
 
+def _show_spotify_cookies_instructions():
+    """Show a detailed instruction popup for Spotify cookies setup."""
+    global app
+    try:
+        if 'app' not in globals() or not app or not app.winfo_exists():
+            return
+    except Exception:
+        return
+
+    dialog = customtkinter.CTkToplevel(app)
+    dialog.title("Spotify Cookies Required")
+    dialog.geometry("600x600")
+    dialog.resizable(False, False)
+    dialog.attributes("-topmost", True)
+    dialog.transient(app)
+
+    # Center dialog
+    app.update_idletasks()
+    parent_width = app.winfo_width()
+    parent_height = app.winfo_height()
+    parent_x = app.winfo_x()
+    parent_y = app.winfo_y()
+    center_x = parent_x + (parent_width // 2) - (600 // 2)
+    center_y = parent_y + (parent_height // 2) - (600 // 2)
+    dialog.geometry(f"600x600+{center_x}+{center_y}")
+
+    main_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
+    main_frame.pack(fill="both", expand=True, padx=30, pady=30)
+    
+    # Define a helper for link hover effects
+    def on_link_enter(label):
+        label.configure(text_color=LINK_HOVER_COLOR)
+    
+    def on_link_leave(label, original_color=LINK_COLOR):
+        label.configure(text_color=original_color)
+
+    # 1. Main Title/Message
+    title_label = customtkinter.CTkLabel(
+        main_frame,
+        text="spotify-cookies.txt are needed to download in Lossless quality.",
+        font=("Segoe UI", 16, "bold"),
+        text_color=WHITE_TEXT_COLOR,
+        wraplength=540
+    )
+    title_label.pack(pady=(0, 20))
+
+    # 2. How to set up section
+    setup_frame = customtkinter.CTkFrame(main_frame, fg_color=SURFACE_COLOR, corner_radius=8)
+    setup_frame.pack(fill="both", expand=False, pady=(0, 30))
+    
+    setup_header_frame = customtkinter.CTkFrame(setup_frame, fg_color="transparent")
+    setup_header_frame.pack(fill="x", padx=20, pady=(15, 10))
+    
+    customtkinter.CTkLabel(setup_header_frame, text="💡", font=("", 20), text_color=WARNING_COLOR).pack(side="left", padx=(0, 10))
+    customtkinter.CTkLabel(setup_header_frame, text="How to set up", font=("Segoe UI", 16, "bold"), text_color=WHITE_TEXT_COLOR).pack(side="left")
+
+    # Steps
+    steps_frame = customtkinter.CTkFrame(setup_frame, fg_color="transparent")
+    steps_frame.pack(fill="both", expand=True, padx=25, pady=(0, 25))
+
+    # Step 1: Extension
+    step1_frame = customtkinter.CTkFrame(steps_frame, fg_color="transparent")
+    step1_frame.pack(fill="x", pady=2)
+    customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=30).pack(side="left")
+    customtkinter.CTkLabel(step1_frame, text="Install extension", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+    
+    step1_bullets = customtkinter.CTkFrame(steps_frame, fg_color="transparent")
+    step1_bullets.pack(fill="x", pady=(0, 10))
+    customtkinter.CTkLabel(step1_bullets, text="", width=30).pack(side="left")
+    customtkinter.CTkLabel(step1_bullets, text="• Chrome / Edge → ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+    
+    chrome_link = customtkinter.CTkLabel(step1_bullets, text="Get cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
+    chrome_link.pack(side="left")
+    chrome_link.bind("<Button-1>", lambda e: _open_url("https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?pli=1"))
+    chrome_link.bind("<Enter>", lambda e: on_link_enter(chrome_link))
+    chrome_link.bind("<Leave>", lambda e: on_link_leave(chrome_link))
+    
+    customtkinter.CTkLabel(step1_bullets, text=" or Firefox → ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+    
+    firefox_link = customtkinter.CTkLabel(step1_bullets, text="cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
+    firefox_link.pack(side="left")
+    firefox_link.bind("<Button-1>", lambda e: _open_url("https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/"))
+    firefox_link.bind("<Enter>", lambda e: on_link_enter(firefox_link))
+    firefox_link.bind("<Leave>", lambda e: on_link_leave(firefox_link))
+
+    # Step 2: Login
+    step2_frame = customtkinter.CTkFrame(steps_frame, fg_color="transparent")
+    step2_frame.pack(fill="x", pady=2)
+    customtkinter.CTkLabel(step2_frame, text="2.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=30).pack(side="left")
+    customtkinter.CTkLabel(step2_frame, text="Log in to ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+    
+    spotify_link = customtkinter.CTkLabel(step2_frame, text="Spotify", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
+    spotify_link.pack(side="left")
+    spotify_link.bind("<Button-1>", lambda e: _open_url("https://open.spotify.com"))
+    spotify_link.bind("<Enter>", lambda e: on_link_enter(spotify_link))
+    spotify_link.bind("<Leave>", lambda e: on_link_leave(spotify_link))
+    
+    customtkinter.CTkLabel(step2_frame, text=" (active subscription required)", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left")
+
+    # Step 3: Export
+    step3_frame = customtkinter.CTkFrame(steps_frame, fg_color="transparent")
+    step3_frame.pack(fill="x", pady=(10, 2))
+    customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=30).pack(side="left")
+    customtkinter.CTkLabel(step3_frame, text="Export & save as spotify-cookies.txt", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+    
+    # Config folder link line (Refined format)
+    def open_config_folder():
+        config_dir = os.path.dirname(CONFIG_FILE_PATH)
+        if not os.path.exists(config_dir):
+            os.makedirs(config_dir, exist_ok=True)
+        try:
+            if platform.system() == "Windows": os.startfile(config_dir)
+            elif platform.system() == "Darwin": subprocess.run(["open", config_dir])
+            else: subprocess.run(["xdg-open", config_dir])
+        except Exception: pass
+
+    config_line_frame = customtkinter.CTkFrame(steps_frame, fg_color="transparent")
+    config_line_frame.pack(fill="x", pady=(0, 0)) # Spacing from previous step
+    customtkinter.CTkLabel(config_line_frame, text="", width=30).pack(side="left") # Indent to match Step 3 text
+    
+    customtkinter.CTkLabel(config_line_frame, text="Save spotify-cookies.txt in the ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+    
+    config_folder_link = customtkinter.CTkLabel(
+        config_line_frame, 
+        text="config folder", 
+        font=("Segoe UI", 12, "underline"), 
+        text_color=LINK_COLOR, 
+        cursor=HAND_CURSOR_LINK
+    )
+    config_folder_link.pack(side="left")
+    config_folder_link.bind("<Button-1>", lambda e: open_config_folder())
+    config_folder_link.bind("<Enter>", lambda e: on_link_enter(config_folder_link))
+    config_folder_link.bind("<Leave>", lambda e: on_link_leave(config_folder_link, original_color=LINK_COLOR))
+    
+    customtkinter.CTkLabel(config_line_frame, text=" of this app.", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+
+    # 3. Security Warning Section
+    warning_frame = customtkinter.CTkFrame(main_frame, fg_color="transparent")
+    warning_frame.pack(fill="x", pady=(10, 0))
+    
+    warning_label = customtkinter.CTkLabel(
+        warning_frame,
+        text="WARNING! Your account might get suspended downloading ín Lossless quality.",
+        font=("Segoe UI", 12, "bold"),
+        text_color=ERROR_COLOR,
+        wraplength=540,
+        justify="center"
+    )
+    warning_label.pack(fill="x")
+
+    recommendation_label = customtkinter.CTkLabel(
+        warning_frame,
+        text="Recommendation: Only download those tracks that are simply not available on other platforms.",
+        font=("Segoe UI", 12),
+        text_color=WHITE_TEXT_COLOR,
+        wraplength=540,
+        justify="center"
+    )
+    recommendation_label.pack(fill="x", pady=(5, 10))
+
+    # 4. Suspension Info (Updated Text & Size)
+    suspension_info = (
+        "If your account gets suspended, you’ll receive an email to contact support.\n"
+        "By doing so, within 5 days, you should receive an email to update your Spotify password\n"
+        "(and regain access)."
+    )
+    suspension_label = customtkinter.CTkLabel(
+        main_frame,
+        text=suspension_info,
+        font=("Segoe UI", 12),
+        text_color=GRAY_TEXT_COLOR,
+        wraplength=540,
+        justify="center"
+    )
+    suspension_label.pack(fill="x", pady=(0, 30))
+
+    # 5. OK Button
+    ok_button = customtkinter.CTkButton(main_frame, text="OK", width=120, command=lambda: _destroy_dialog(dialog))
+    ok_button.pack(pady=(0, 10))
+    ok_button.focus_set()
+    dialog.bind("<Return>", lambda e: ok_button.invoke())
+
+
+    dialog.grab_set()
+    dialog.wait_window()
+
+
+def _show_spotify_dll_instructions():
+    """Shows specialized instructions for Spotify.dll missing with clickable path."""
+    global app
+    dialog = customtkinter.CTkToplevel(app)
+    dialog.title("Missing Spotify.dll")
+    dialog.geometry("560x220")
+    dialog.resizable(False, False)
+    dialog.attributes("-topmost", True)
+    dialog.transient(app)
+
+    # Center dialog
+    app.update_idletasks()
+    # Use parent info for centering
+    parent_width = app.winfo_width()
+    parent_height = app.winfo_height()
+    parent_x = app.winfo_x()
+    parent_y = app.winfo_y()
+    
+    center_x = parent_x + (parent_width // 2) - (560 // 2)
+    center_y = parent_y + (parent_height // 2) - (220 // 2)
+    dialog.geometry(f"560x220+{center_x}+{center_y}")
+    
+    main_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
+    main_frame.pack(fill="both", expand=True, padx=30, pady=25)
+
+    # Instruction (Centered)
+    customtkinter.CTkLabel(
+        main_frame, 
+        text="Spotify.dll is required for Lossless downloads.",
+        font=("Segoe UI", 13, "bold"),
+        text_color=WHITE_TEXT_COLOR,
+        wraplength=500,
+        justify="center"
+    ).pack(pady=(0, 15), fill="x")
+
+    # Link line (Centered group)
+    link_container = customtkinter.CTkFrame(main_frame, fg_color="transparent")
+    link_container.pack(fill="x")
+    
+    # Inner frame to keep the pieces Together but allow the whole line to be centered
+    link_inner = customtkinter.CTkFrame(link_container, fg_color="transparent")
+    link_inner.pack(anchor="center")
+    
+    customtkinter.CTkLabel(link_inner, text="Please download it and place it in the ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+    
+    def open_app_folder():
+        try:
+            if platform.system() == "Windows": os.startfile(application_path)
+            elif platform.system() == "Darwin": subprocess.run(["open", application_path])
+            else: subprocess.run(["xdg-open", application_path])
+        except Exception: pass
+
+    folder_link = customtkinter.CTkLabel(
+        link_inner, 
+        text="same folder", 
+        font=("Segoe UI", 12, "underline"), 
+        text_color=LINK_COLOR, 
+        cursor=HAND_CURSOR_LINK
+    )
+    folder_link.pack(side="left")
+    folder_link.bind("<Button-1>", lambda e: open_app_folder())
+    folder_link.bind("<Enter>", lambda e: folder_link.configure(text_color=LINK_HOVER_COLOR))
+    folder_link.bind("<Leave>", lambda e: folder_link.configure(text_color=LINK_COLOR))
+    
+    customtkinter.CTkLabel(link_inner, text=" as this app.", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+
+    # Buttons (Centered)
+    mega_url = "https://mega.nz/file/Zdx0FDha#yASfMcAFxqXM9O4yjgqy2-gTZ5qY8DhSb5xsYvlUhsA"
+    
+    download_btn = customtkinter.CTkButton(
+        main_frame, 
+        text="Download", 
+        width=100, 
+        height=30,
+        command=lambda: _open_url(mega_url)
+    )
+    download_btn.pack(pady=(25, 0))
+    
+    dialog.grab_set()
+    dialog.wait_window()
+
+
 def _show_deno_install_message():
     """Show a pop-up with Deno install instructions (macOS/Linux; Deno is not bundled). Shown when user tries to download from YouTube."""
     system = platform.system()
@@ -6496,7 +6765,7 @@ def load_settings():
                              deep_merge(settings["globals"][section_key], section_data)
         if "modules" in file_settings:
             settings["modules"] = copy.deepcopy(file_settings["modules"])
-            platform_map_from_orpheus = { "bugs": "Bugs", "nugs": "Nugs", "soundcloud": "SoundCloud", "tidal": "TIDAL", "qobuz": "Qobuz", "deezer": "Deezer", "idagio": "Idagio", "kkbox": "KKBOX", "napster": "Napster", "beatport": "Beatport", "beatsource": "Beatsource", "musixmatch": "Musixmatch", "spotify": "Spotify", "applemusic": "Apple Music", "youtube": "YouTube" }
+            platform_map_from_orpheus = { "bugs": "Bugs", "nugs": "Nugs", "soundcloud": "SoundCloud", "tidal": "TIDAL", "qobuz": "Qobuz", "deezer": "Deezer", "idagio": "Idagio", "lrclib": "LRCLIB", "napster": "Napster", "beatport": "Beatport", "beatsource": "Beatsource", "musixmatch": "Musixmatch", "spotify": "Spotify", "applemusic": "Apple Music", "youtube": "YouTube" }
             for orpheus_platform, creds_from_file in file_settings["modules"].items():
                 gui_platform = platform_map_from_orpheus.get(orpheus_platform)
                 if gui_platform and gui_platform in DEFAULT_SETTINGS["credentials"]:
@@ -6639,6 +6908,9 @@ def initialize_orpheus():
                 print(f"[Orpheus Init] Initializing Orpheus engine (CWD: {os.getcwd()})...")
             
             orpheus_instance = Orpheus()
+            
+            # Register GUI handlers for core/module interaction
+            orpheus_instance.register_gui_handler("show_missing_component_dialog", show_missing_component_dialog)
             
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print("[Orpheus Init] Orpheus engine initialized successfully.")
@@ -6916,7 +7188,7 @@ def save_settings(show_confirmation: bool = True):
                       if section_key == "advanced" and item_key == "conversion_flags":
                           continue
                       mapped_orpheus_updates["global"][section_key][item_key] = item_value
-    platform_map_to_orpheus = { "Bugs": "bugs", "Nugs": "nugs", "SoundCloud": "soundcloud", "TIDAL": "tidal", "Qobuz": "qobuz", "Deezer": "deezer", "Idagio": "idagio", "KKBOX": "kkbox", "Napster": "napster", "Beatport": "beatport", "Beatsource": "beatsource", "Musixmatch": "musixmatch", "Spotify": "spotify", "Apple Music": "applemusic", "YouTube": "youtube" }
+    platform_map_to_orpheus = { "Bugs": "bugs", "Nugs": "nugs", "SoundCloud": "soundcloud", "TIDAL": "tidal", "Qobuz": "qobuz", "Deezer": "deezer", "Idagio": "idagio", "lrclib": "LRCLIB", "Napster": "napster", "Beatport": "beatport", "Beatsource": "beatsource", "Musixmatch": "musixmatch", "Spotify": "spotify", "Apple Music": "applemusic", "YouTube": "youtube" }
     for gui_platform, creds in updated_gui_settings.get("credentials", {}).items():
         orpheus_platform = platform_map_to_orpheus.get(gui_platform)
         if orpheus_platform:
@@ -7470,6 +7742,81 @@ def show_centered_messagebox(title, message, dialog_type="info", parent=None):
     ok_button = customtkinter.CTkButton(dialog, text="OK", command=lambda: _destroy_dialog(dialog), width=100); ok_button.pack(pady=(0, 20)); ok_button.focus_set(); dialog.bind("<Return>", lambda event: ok_button.invoke())
     dialog.grab_set(); dialog.wait_window()
 
+
+def show_missing_component_dialog(title, message, download_url=None, parent=None):
+    """Creates and displays a centered CTkToplevel message box with an optional download button."""
+    global app
+    if parent is None:
+        parent = app if 'app' in globals() and app else None
+        if parent is None:
+             print("ERROR: Cannot show missing component dialog, main app window not available.")
+             return
+
+    dialog = customtkinter.CTkToplevel(parent)
+    dialog.title(title)
+    dialog.geometry("500x200")
+    dialog.resizable(False, False)
+    dialog.attributes("-topmost", True)
+    dialog.transient(parent)
+    dialog.update_idletasks()
+    
+    # Attempt to set icon (same as show_centered_messagebox)
+    try:
+        if platform.system() != "Darwin":
+            ico_path = resource_path("icon.ico")
+            if ico_path and os.path.exists(ico_path):
+                dialog.tk.call('wm', 'iconbitmap', dialog._w, str(os.path.abspath(ico_path)))
+    except Exception:
+        pass
+    
+    parent_width = parent.winfo_width(); parent_height = parent.winfo_height()
+    parent_x = parent.winfo_x(); parent_y = parent.winfo_y()
+    dialog_width = dialog.winfo_width(); dialog_height = dialog.winfo_height()
+    center_x = parent_x + (parent_width // 2) - (dialog_width // 2)
+    center_y = parent_y + (parent_height // 2) - (dialog_height // 2)
+    dialog.geometry(f"+{center_x}+{center_y}")
+
+    main_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
+    main_frame.pack(expand=True, fill="both", padx=20, pady=20)
+
+    message_label = customtkinter.CTkLabel(main_frame, text=message, wraplength=440, justify="left")
+    message_label.pack(pady=(0, 20), fill="x")
+
+    button_frame = customtkinter.CTkFrame(main_frame, fg_color="transparent")
+    button_frame.pack(fill="x")
+
+    if download_url:
+        download_button = customtkinter.CTkButton(
+            button_frame, 
+            text="Download", 
+            command=lambda: _open_url(download_url),
+            width=120,
+            fg_color="#1F6AA5",
+            hover_color="#144870"
+        )
+        download_button.pack(side="left", padx=(60, 10))
+        
+        ok_button = customtkinter.CTkButton(
+            button_frame, 
+            text="OK", 
+            command=lambda: _destroy_dialog(dialog), 
+            width=120
+        )
+        ok_button.pack(side="left", padx=(10, 0))
+    else:
+        ok_button = customtkinter.CTkButton(
+            button_frame, 
+            text="OK", 
+            command=lambda: _destroy_dialog(dialog), 
+            width=120
+        )
+        ok_button.pack(pady=(0, 0))
+
+    ok_button.focus_set()
+    dialog.bind("<Return>", lambda event: ok_button.invoke())
+    dialog.grab_set()
+    dialog.wait_window()
+
 def show_shortcuts_popup(parent=None):
     """Displays a popup with all keyboard shortcuts."""
     global app
@@ -7880,6 +8227,40 @@ def _create_menu():
     paste_button.disabled_image = paste_icon_disabled
     paste_button.pack(pady=(1, 6), padx=4, fill="x"); _bind_hover_effect(paste_button, normal_bg=button_color, normal_image=paste_icon)
 
+def _get_ctk_input_parent(widget):
+    """
+    Robustly identify the parent CTK input widget (Entry, Textbox, ComboBox)
+    from any internal component. Uses multiple checks for maximum reliability.
+    """
+    if not widget or not hasattr(widget, 'winfo_exists'): return None
+    try:
+        if not widget.winfo_exists(): return None
+    except tkinter.TclError: return None
+        
+    target_classes = ("CTkEntry", "CTkTextbox", "CTkComboBox")
+    temp = widget
+    max_levels = 10; current_level = 0
+    
+    while temp and current_level < max_levels:
+        try:
+            # 1. Check by class name string (robust against import variants)
+            classname = type(temp).__name__
+            if classname in target_classes: return temp
+                
+            # 2. Check by internal attributes (definitive for CTK input widgets)
+            if hasattr(temp, "_entry") or hasattr(temp, "_textbox"):
+                if classname.startswith("CTk"): return temp
+            
+            # 3. Traditional isinstance check
+            if isinstance(temp, (customtkinter.CTkEntry, customtkinter.CTkTextbox, customtkinter.CTkComboBox)):
+                return temp
+        except: pass
+            
+        try: temp = temp.master
+        except (AttributeError, tkinter.TclError, NameError): break
+        current_level += 1
+    return None
+
 def show_context_menu(event):
     global _context_menu, _target_widget, _hide_menu_binding_id, app
     _create_menu();
@@ -7889,13 +8270,13 @@ def show_context_menu(event):
     x_root, y_root = app.winfo_pointerxy()
     try: target_at_coords = app.winfo_containing(x_root, y_root);
     except Exception as e: print(f"Context menu: Error finding widget at coords: {e}"); return
-    if not target_at_coords: return
-    intended_ctk_widget = None; temp_widget = target_at_coords; max_levels = 10; current_level = 0
-    while temp_widget and temp_widget != app and current_level < max_levels:
-        if isinstance(temp_widget, customtkinter.CTkEntry): intended_ctk_widget = temp_widget; break
-        try: temp_widget = temp_widget.master
-        except AttributeError: break
-        current_level += 1
+    
+    # Determine the intended CTK widget by traversing up from the event widget or the widget at coords
+    # Use Strategy 1 (event widget) as primary, Strategy 2 (coords) as fallback
+    intended_ctk_widget = _get_ctk_input_parent(event.widget)
+    if not intended_ctk_widget:
+         intended_ctk_widget = _get_ctk_input_parent(target_at_coords)
+
     if not intended_ctk_widget: return
     _target_widget = intended_ctk_widget
     
@@ -7915,15 +8296,26 @@ def show_context_menu(event):
     except Exception as e: print(f"Context menu: Error checking clipboard - {e}")
     if isinstance(clipboard_content, str) and clipboard_content: clipboard_has_text = True
     try:
+        current_text = ""
+        if isinstance(_target_widget, customtkinter.CTkTextbox):
+            if _target_widget._textbox.tag_ranges("sel"): has_selection = True
+            current_text = _target_widget.get("1.0", "end-1c")
+        else:
+            # CTkEntry, CTkComboBox
+            try:
+                if _target_widget._entry.selection_present(): has_selection = True
+            except (tkinter.TclError, AttributeError): pass
+            current_text = _target_widget.get()
+            
+        can_copy = has_selection or bool(current_text)
+        state = 'disabled'
         try:
-            if _target_widget._entry.selection_present(): has_selection = True
-        except (tkinter.TclError, AttributeError): has_selection = False
-        can_copy = has_selection or bool(_target_widget.get())
-        state = _target_widget.cget("state") if hasattr(_target_widget, 'cget') else 'disabled'
+            if hasattr(_target_widget, 'cget') and callable(_target_widget.cget): state = _target_widget.cget("state")
+        except: pass
+        
         can_paste = state == "normal" and clipboard_has_text
         
         # Check if undo is possible
-        current_text = _target_widget.get()
         can_undo = state == "normal" and _target_widget in _undo_stacks and (
             len(_undo_stacks[_target_widget]) > 1 or 
             (len(_undo_stacks[_target_widget]) == 1 and _undo_stacks[_target_widget][0] != current_text)
@@ -8112,12 +8504,17 @@ def _handle_ctrl_c_copy(event):
 
 def copy_text():
     global _target_widget, app
-    if not isinstance(_target_widget, customtkinter.CTkEntry): hide_context_menu(); return
+    if not _get_ctk_input_parent(_target_widget): hide_context_menu(); return
     if 'app' not in globals() or not app: return
     text_to_copy = ""
     try:
-        try: text_to_copy = _target_widget._entry.selection_get()
-        except tkinter.TclError: text_to_copy = _target_widget.get()
+        if isinstance(_target_widget, customtkinter.CTkTextbox) or type(_target_widget).__name__ == "CTkTextbox":
+            try: text_to_copy = _target_widget._textbox.selection_get()
+            except tkinter.TclError: text_to_copy = _target_widget.get("1.0", "end-1c")
+        else:
+            try: text_to_copy = _target_widget._entry.selection_get()
+            except tkinter.TclError: text_to_copy = _target_widget.get()
+            
         if text_to_copy:
             # Try persistent system clipboard first
             if not _copy_to_system_clipboard(text_to_copy):
@@ -8129,7 +8526,7 @@ def copy_text():
 
 def paste_text():
     global _target_widget, app
-    if not isinstance(_target_widget, customtkinter.CTkEntry): hide_context_menu(); return
+    if not _get_ctk_input_parent(_target_widget): hide_context_menu(); return
     if 'app' not in globals() or not app: return
     try:
         state = 'disabled'
@@ -8141,11 +8538,20 @@ def paste_text():
         # Push current state to undo before pasting
         _push_undo(_target_widget)
         
-        clipboard_text = app.clipboard_get(); tk_widget = _target_widget._entry
-        try:
-            if tk_widget.selection_present(): tk_widget.delete(tkinter.SEL_FIRST, tkinter.SEL_LAST)
-        except tkinter.TclError: pass
-        tk_widget.insert(tkinter.INSERT, clipboard_text)
+        clipboard_text = app.clipboard_get()
+        
+        if isinstance(_target_widget, customtkinter.CTkTextbox) or type(_target_widget).__name__ == "CTkTextbox":
+            try:
+                if _target_widget._textbox.tag_ranges("sel"): _target_widget.delete("sel.first", "sel.last")
+            except tkinter.TclError: pass
+            _target_widget.insert("insert", clipboard_text)
+        else:
+            # CTkEntry, CTkComboBox - use the wrapper methods to ensure visual state (like placeholder) updates
+            try:
+                if _target_widget._entry.selection_present(): _target_widget.delete("sel.first", "sel.last")
+            except (tkinter.TclError, AttributeError): pass
+            _target_widget.insert("insert", clipboard_text)
+            
     except tkinter.TclError as e:
         if "CLIPBOARD selection doesn't exist" not in str(e): print(f"TclError during paste: {e}")
     except Exception as e: print(f"Error pasting text: {e}", exc_info=True)
@@ -9986,6 +10392,14 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         settings_global_for_defaults = fresh_global_settings if fresh_global_settings else DEFAULT_SETTINGS["globals"]
         module_defaults = settings_global_for_defaults.get("module_defaults", {})
         third_party_modules_dict = { ModuleModes.lyrics: module_defaults.get("lyrics") if module_defaults.get("lyrics") != "default" else None, ModuleModes.covers: module_defaults.get("covers") if module_defaults.get("covers") != "default" else None, ModuleModes.credits: module_defaults.get("credits") if module_defaults.get("credits") != "default" else None }
+        
+        # Ensure selected third-party modules are actually loaded into the orpheus session
+        for mode, moduleselected in third_party_modules_dict.items():
+            if moduleselected:
+                moduleselected_lower = moduleselected.lower()
+                if moduleselected_lower in orpheus.module_list:
+                    orpheus.load_module(moduleselected_lower)
+        
         downloader.third_party_modules = third_party_modules_dict
         if not module_name: raise ValueError(f"Could not determine module for URL host: {parsed_url.netloc}")
         
@@ -10427,7 +10841,7 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
         show_centered_messagebox("Input Error", f"Could not process input: {url_to_download}\nError: {parse_e}\nPlease enter a valid web URL or .txt file path.", dialog_type="error")
         return False
 
-    # Spotify: require username, client ID, and client secret before download
+    # Spotify: require credentials and potentially cookies for high quality
     if 'spotify.com' in url_to_download:
         spotify_creds = (current_settings.get("credentials") or {}).get("Spotify") or {}
         username = (spotify_creds.get("username") or "").strip()
@@ -10436,6 +10850,26 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
         if not username or not client_id or not client_secret:
             show_centered_messagebox("Download Error", "Spotify credentials are required for downloading. Please fill in your username, client ID and secret in the settings.", dialog_type="warning")
             return False
+            
+        # Check for cookies if quality is high
+        quality = current_settings.get("globals", {}).get("general", {}).get("quality", "hifi").lower()
+        if quality in ["atmos", "hifi", "lossless"]:
+            cookies_path = (spotify_creds.get("cookies_path") or "").strip() or os.path.join(application_path, "config", "spotify-cookies.txt")
+            if not os.path.isfile(cookies_path):
+                _show_spotify_cookies_instructions()
+                return False
+
+            # Check for Spotify.dll (required for high quality)
+            raw_dll_path = (spotify_creds.get("spotify_dll_path") or "./Spotify.dll").strip() or "./Spotify.dll"
+            # Convert ./ relative path to absolute using application_path
+            if raw_dll_path.startswith("./"):
+                dll_path = os.path.join(application_path, raw_dll_path[2:])
+            else:
+                dll_path = raw_dll_path
+
+            if not os.path.isfile(dll_path):
+                _show_spotify_dll_instructions()
+                return False
 
     # Beatport: require username and password before download
     if 'beatport.com' in url_to_download:
@@ -11992,7 +12426,7 @@ def _push_undo(widget):
     if widget not in _undo_stacks:
         _undo_stacks[widget] = []
     
-    current_text = widget.get()
+    current_text = widget.get("1.0", "end-1c") if (isinstance(widget, customtkinter.CTkTextbox) or type(widget).__name__ == "CTkTextbox") else widget.get()
     # Only push if different from last state
     if not _undo_stacks[widget] or _undo_stacks[widget][-1] != current_text:
         _undo_stacks[widget].append(current_text)
@@ -12003,20 +12437,23 @@ def _push_undo(widget):
 def _undo_text():
     """Undo text in the target widget."""
     global _target_widget
-    if not _target_widget or _target_widget not in _undo_stacks or not _undo_stacks[_target_widget]:
+    if not _target_widget or not _get_ctk_input_parent(_target_widget) or _target_widget not in _undo_stacks or not _undo_stacks[_target_widget]:
         hide_context_menu()
         return
     
-    # The top of the stack is the CURRENT state, so we pop it and take the next one
-    # If we only have one item, it might be the current state.
-    current_text = _target_widget.get()
+    current_text = _target_widget.get("1.0", "end-1c") if (isinstance(_target_widget, customtkinter.CTkTextbox) or type(_target_widget).__name__ == "CTkTextbox") else _target_widget.get()
     if _undo_stacks[_target_widget] and _undo_stacks[_target_widget][-1] == current_text:
         _undo_stacks[_target_widget].pop()
     
     if _undo_stacks[_target_widget]:
         previous_text = _undo_stacks[_target_widget].pop()
-        _target_widget.delete(0, tkinter.END)
-        _target_widget.insert(0, previous_text)
+        if isinstance(_target_widget, customtkinter.CTkTextbox) or type(_target_widget).__name__ == "CTkTextbox":
+            _target_widget.delete("1.0", "end")
+            _target_widget.insert("1.0", previous_text)
+        else:
+            # CTkEntry, CTkComboBox - use wrapper methods to ensure placeholder updates
+            _target_widget.delete("0", "end")
+            _target_widget.insert("0", previous_text)
     
     hide_context_menu()
 
@@ -13436,10 +13873,15 @@ def _create_credential_tab_content(platform_name, tab_frame):
             'download_mode': 'Download mode',
             'client_id': 'Client ID',
             'client_secret': 'Client Secret',
+            'cookies_path': 'Cookies file (Netscape format)',
+            'spotify_dll_path': 'Spotify.dll path (for FLAC)',
+            'embed_spotify_lyrics': 'Embed Spotify lyrics',
         }
         
         for i, (key, value) in enumerate(default_platform_fields.items()):
             if platform_name == "TIDAL" and key in ["prefer_ac4", "fix_mqa"]:
+                continue
+            if platform_name == "Spotify" and key in ["spotify_dll_path", "embed_spotify_lyrics"]:
                 continue
             if platform_name == "Qobuz" and key in ("password", "user_id", "auth_token", "use_id_token"):
                 continue
@@ -13448,11 +13890,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
             if i == 0:
                 # Adjust top padding for alignment: AppleMusic/YouTube are reference (15), others need +1px (16)
-                top_pad = 15 if platform_name in ["Apple Music", "YouTube"] else 16
+                top_pad = 15 if platform_name in ["Apple Music", "YouTube", "Spotify"] else 16
                 # Adjust bottom padding: AppleMusic needs -1px (4) to reduce gap to next row
                 bottom_pad = 4 if platform_name == "Apple Music" else 5
-                # YouTube Cookies Path needs more bottom pad (10) because we hide the warning label now
-                if platform_name == "YouTube" and i == 0: bottom_pad = 10
                 pady_config = (top_pad, bottom_pad)
             else:
                 pady_config = 5
@@ -13720,7 +14160,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     CTkToolTip(label, message="Enable this, if you are running an external decryption server\nto download Dolby Atmos / ALAC.", bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
 
 
-            elif platform_name == "YouTube" and key == "cookies_path":
+            elif (platform_name == "YouTube" or platform_name == "Spotify" or platform_name == "Apple Music") and key == "cookies_path":
                 # Fix alignment for tall row (due to warning label)
                 # Align to top (nw) to match the input field which is at the top of the container
                 # User requested 1px lower for label and input
@@ -13732,7 +14172,12 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
                 # Check for default cookies file if current value is empty
                 if not current_value:
-                    current_value = "./config/youtube-cookies.txt"
+                    if platform_name == "YouTube":
+                        current_value = "./config/youtube-cookies.txt"
+                    elif platform_name == "Spotify":
+                        current_value = "./config/spotify-cookies.txt"
+                    elif platform_name == "Apple Music":
+                        current_value = "./config/cookies.txt"
                 
                 var = tkinter.StringVar(value=str(current_value))
                 
@@ -13838,8 +14283,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 if _is_masked_field:
                     widget.configure(show="*")
                 
-                # For Apple Music and YouTube cookies_path, add Open button like Browse in Global settings
-                if (platform_name == "Apple Music" or platform_name == "YouTube") and key == "cookies_path":
+                # For YouTube and Spotify cookies_path, add Open button like Browse in Global settings
+                if (platform_name == "YouTube" or platform_name == "Spotify") and key == "cookies_path":
                     # Use padx=(10, 5) to align left with other fields (10) and spacing for button
                     widget.grid(row=i, column=1, sticky="ew", padx=(10, 5), pady=pady_config)
                     def open_cookies_folder():
@@ -13874,7 +14319,30 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     )
                     # Align right with Save button (same 5px right padding as save_controls_frame)
                     open_button.grid(row=i, column=2, sticky="e", padx=(5, 5), pady=pady_config)
-                elif platform_name == "Apple Music":
+                elif platform_name == "Spotify" and key == "spotify_dll_path":
+                    widget.grid(row=i, column=1, sticky="ew", padx=(10, 5), pady=pady_config)
+                    def browse_spotify_dll():
+                        initial_dir = os.path.dirname(var.get()) if var.get() and os.path.exists(os.path.dirname(var.get())) else get_script_directory()
+                        filepath = tkinter.filedialog.askopenfilename(
+                            initialdir=initial_dir,
+                            filetypes=[("DLL files", "*.dll"), ("All files", "*.*")],
+                            title="Select Spotify.dll"
+                        )
+                        if filepath:
+                            var.set(filepath)
+                    
+                    browse_button = customtkinter.CTkButton(
+                        grid_parent,
+                        text="Browse",
+                        width=100,
+                        height=30,
+                        command=browse_spotify_dll,
+                        fg_color=widget._fg_color,
+                        hover_color=LINK_COLOR,
+                        border_width=0
+                    )
+                    browse_button.grid(row=i, column=2, sticky="e", padx=(5, 5), pady=pady_config)
+                elif platform_name in ["Apple Music", "Spotify"]:
                     # Match cookies_path width by using same column and padding layout
                     widget.grid(row=i, column=1, sticky="ew", padx=(10, 5), pady=pady_config)
                 elif platform_name == "YouTube" and key == "download_pause_seconds":
@@ -13925,8 +14393,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color=SURFACE_COLOR, corner_radius=5)
             help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
+            help_frame.grid_columnconfigure(1, weight=1)
             
-            # --- Single Column: How to set up ---
+            # --- Column 1: How to set up ---
             left_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
             left_col.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
             
@@ -13985,8 +14454,18 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
             customtkinter.CTkLabel(step3_frame, text="In the dashboard, create an app (or use existing one)", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
+            
+            # --- Column 2: Continue ---
+            right_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            right_col.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+            
+            # Header matching left side for alignment
+            right_header = customtkinter.CTkFrame(right_col, fg_color="transparent")
+            right_header.pack(anchor="w", pady=(0, 15))
+            customtkinter.CTkLabel(right_header, text="", height=20, font=("Segoe UI", 20)).pack(side="left") # Spacer for icon alignment
+            
             # Step 4
-            step4_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            step4_frame = customtkinter.CTkFrame(right_col, fg_color="transparent")
             step4_frame.pack(anchor="w", pady=(0, 5))
             
             customtkinter.CTkLabel(step4_frame, text="4.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
@@ -14017,7 +14496,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             copy_button.bind("<Leave>", lambda e: copy_button.configure(text_color="gray"))
 
             # Step 5
-            step5_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            step5_frame = customtkinter.CTkFrame(right_col, fg_color="transparent")
             step5_frame.pack(anchor="w", pady=0)
             
             customtkinter.CTkLabel(step5_frame, text="5.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="s")
@@ -14029,8 +14508,26 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(step5_text_frame, text="Client ID", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left", anchor="s")
             customtkinter.CTkLabel(step5_text_frame, text=" + ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left", anchor="s")
             customtkinter.CTkLabel(step5_text_frame, text="Secret", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left", anchor="s")
-            customtkinter.CTkLabel(step5_text_frame, text=", paste them above — Save.", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left", anchor="s")
+            customtkinter.CTkLabel(step5_text_frame, text=", paste -- Save.", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left", anchor="s")
             
+            # Step 6
+            step6_frame = customtkinter.CTkFrame(right_col, fg_color="transparent")
+            step6_frame.pack(anchor="w", pady=(5, 0))
+            
+            customtkinter.CTkLabel(step6_frame, text="6.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
+            
+            step6_text_frame = customtkinter.CTkFrame(step6_frame, fg_color="transparent")
+            step6_text_frame.pack(side="left", anchor="w")
+            
+            customtkinter.CTkLabel(step6_text_frame, text="For FLAC (or lyrics), Export ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left", anchor="s")
+            customtkinter.CTkLabel(step6_text_frame, text="spotify-cookies.txt", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left", anchor="s")
+            
+            
+            step6_line2 = customtkinter.CTkFrame(right_col, fg_color="transparent")
+            step6_line2.pack(anchor="w", pady=0)
+            customtkinter.CTkLabel(step6_line2, text="", width=35).pack(side="left")
+            customtkinter.CTkLabel(step6_line2, text="Same method as described for Apple Music", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+
             _add_clear_session_icon(help_frame, "Spotify")
         
         # Add help text for Apple Music module
@@ -15870,7 +16367,7 @@ if __name__ == "__main__":
                 "Nugs": { "username": "", "password": "", "client_id": "", "dev_key": "" },
                 "Qobuz": { "app_id": "798273057", "app_secret": "abb21364945c0583309667d13ca3d93a", "quality_format": "{sample_rate}kHz {bit_depth}bit", "username": "", "password": "", "user_id": "", "auth_token": "", "use_id_token": "false" },
                 "SoundCloud": { "web_access_token": "" },
-                "Spotify": { "username": "", "download_pause_seconds": 30, "client_id": "", "client_secret": "" },
+                "Spotify": { "cookies_path": "", "username": "", "download_pause_seconds": 30, "client_id": "", "client_secret": "", "spotify_dll_path": "./Spotify.dll" },
                 "TIDAL": { "tv_atmos_token": "4N3n6Q1x95LL5K7p", "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=", "mobile_atmos_hires_token": "km8T1xS355y7dd3H", "mobile_hires_token": "6BDSRdpK9hqEBTgU", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True },
                 "YouTube": { "cookies_path": "./config/youtube-cookies.txt", "download_pause_seconds": 5, "download_mode": "sequential" }
             }
@@ -15915,6 +16412,7 @@ if __name__ == "__main__":
         _hide_menu_binding_id = None
         current_settings = {}
         settings_vars = {"globals": {}, "credentials": {}}
+        module_default_widgets = {} # Stores references to Lyrics/Covers/Credits dropdowns
         orpheus_instance = None
         _settings_just_created = False
         try:
@@ -17030,7 +17528,7 @@ Unnecessary Lossless-to-Lossless""",
                         # Use local map for module name translations
                         _p_map = { 
                             "Bugs": "bugs", "Nugs": "nugs", "SoundCloud": "soundcloud", "TIDAL": "tidal", "Qobuz": "qobuz", 
-                            "Deezer": "deezer", "Idagio": "idagio", "KKBOX": "kkbox", "Napster": "napster", "Beatport": "beatport", 
+                            "Deezer": "deezer", "Idagio": "idagio", "LRCLIB": "lrclib", "Napster": "napster", "Beatport": "beatport", 
                             "Beatsource": "beatsource", "Musixmatch": "musixmatch", "Spotify": "spotify", "Apple Music": "applemusic", 
                             "YouTube": "youtube" 
                         }
@@ -17318,6 +17816,14 @@ Unnecessary Lossless-to-Lossless""",
                                                                border_width=0, 
                                                                border_color=None)
                             browse_btn.grid(row=0, column=1, sticky="w", padx=(5, 0))
+                         elif section_key == "module_defaults":
+                             # Module Defaults: Use dropdowns instead of text entries
+                             options = ["default"]
+                             widget = customtkinter.CTkComboBox(global_settings_frame, variable=var, values=options, state="readonly", 
+                                                                 dropdown_fg_color=CONTAINER_COLOR)
+                             widget.grid(row=row, column=1, sticky="ew", padx=(5, 5), pady=5)
+                             module_default_widgets[field] = widget
+                             if not var.get(): var.set("default")
                          else:
                             widget = customtkinter.CTkEntry(global_settings_frame, textvariable=var)
                             widget.grid(row=row, column=1, sticky="ew", padx=(5, 5), pady=5)
@@ -17509,7 +18015,7 @@ Unnecessary Lossless-to-Lossless""",
             ("Deezer", "https://github.com/bascurtiz/OrpheusDL-deezer"),            
             ("Genius", "https://github.com/Dniel97/orpheusdl-genius"),
             ("Idagio", "https://github.com/Dniel97/orpheusdl-idagio"),
-            ("KKBOX", "https://github.com/uhwot/orpheusdl-kkbox"),
+            ("LRCLIB", "https://github.com/bascurtiz/orpheusdl-lrclib"),
             ("Musixmatch", "https://github.com/yarrm80s/orpheusdl-musixmatch"),
             ("Napster", "https://github.com/yarrm80s/orpheusdl-napster"),
             ("Nugs.net", "https://github.com/Dniel97/orpheusdl-nugs"),
@@ -18032,13 +18538,52 @@ Unnecessary Lossless-to-Lossless""",
             if init_success:
                 def enable_buttons():
                     print("[Async Init] Enabling buttons...")
-                    if 'download_button' in globals() and download_button and download_button.winfo_exists():
+                    if "download_button" in globals() and download_button and download_button.winfo_exists():
                         download_button.configure(state="normal")
-                    if 'search_button' in globals() and search_button and search_button.winfo_exists():
+                    if "search_button" in globals() and search_button and search_button.winfo_exists():
                         search_button.configure(state="normal")
                 
                 if app and app.winfo_exists():
                     app.after(0, enable_buttons)
+                    
+                    def refresh_dropdowns():
+                        print("[Async Init] Populating module default dropdowns...")
+                        try:
+                            mode_map = {
+                                "lyrics": ModuleModes.lyrics,
+                                "covers": ModuleModes.covers,
+                                "credits": ModuleModes.credits
+                            }
+                            
+                            for field_name, widget in module_default_widgets.items():
+                                target_mode = mode_map.get(field_name)
+                                if not target_mode: continue
+                                
+                                options = ["default"]
+                                if orpheus_instance:
+                                    for m_id, m_info in orpheus_instance.module_settings.items():
+                                        if target_mode in m_info.module_supported_modes:
+                                            options.append(m_info.service_name)
+                                
+                                options = ["default"] + sorted(list(set(options) - {"default"}))
+                                widget.configure(values=options)
+                                
+                                full_key_str = f"module_defaults.{field_name}"
+                                if full_key_str in settings_vars["globals"]:
+                                    var_ref = settings_vars["globals"][full_key_str]
+                                    current_val = var_ref.get()
+                                    found = False
+                                    for opt in options:
+                                        if opt.lower() == current_val.lower():
+                                            var_ref.set(opt)
+                                            found = True
+                                            break
+                                    if not found:
+                                        var_ref.set("default")
+                        except Exception as e_refresh:
+                            print(f"[Async Init] Error refreshing module dropdowns: {e_refresh}")
+
+                    app.after(100, refresh_dropdowns)
             else:
                 def show_init_error():
                     print("Disabling Download/Search buttons due to Orpheus initialization failure.")
