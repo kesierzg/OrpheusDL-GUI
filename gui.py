@@ -1129,7 +1129,7 @@ def setup_logging(log_queue):
         logging.info("Logging configured to use GUI queue (debug mode enabled).")
     else:
         root_logger.setLevel(logging.CRITICAL)
-__version__ = "2.0.2"
+__version__ = "2.0.3"
 from update_checker import run_check_in_thread
 _mutex_handle = None
 if platform.system() == "Windows":
@@ -6684,7 +6684,10 @@ def load_settings():
                     },
                     "qobuz": {
                         "app_id": "798273057",
-                        "app_secret": "abb21364945c0583309667d13ca3d93a"
+                        "app_secret": "05a4851e74ee47fda346f50cfdfc4f09"
+
+
+
                     },
                     "tidal": {
                         "tv_atmos_token": "4N3n6Q1x95LL5K7p",
@@ -11648,9 +11651,13 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
     except Exception as e:
         err_str = str(e)
         err_lower = err_str.lower()
+        if "GUEST_ACCESS_DENIED" in err_str:
+            return [], f"API Access Error ({platform_name}): Guest search is restricted or the App ID is invalid. Try logging in or checking your credentials."
         if "user authentication is required" in err_lower or '"code":401' in err_str.replace(" ", ""):
+            # If it's a 401 but NOT a guest access issue, it's likely a dead token.
             return [], f"Authentication Error ({platform_name}): The login token is invalid or has expired. Please check settings."
         return [], f"Error during search ({platform_name}): {err_str}"
+
     formatted_results = []
     for result in search_results:
         if search_type_str and search_type_str.lower() in ('album', 'playlist'):
@@ -15210,7 +15217,10 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 copy_btn.bind("<Leave>", lambda e: copy_btn.configure(text_color="gray"))
             
             create_value_row(right_col, "app_id", "798273057")
-            create_value_row(right_col, "app_secret", "abb21364945c0583309667d13ca3d93a")
+            create_value_row(right_col, "app_secret", "05a4851e74ee47fda346f50cfdfc4f09")
+
+
+
 
             # Right column for ID/Token: steps 4 and 5, same left alignment as app_id; style "local user", "ID", "Token" like SoundCloud oauth_token
             right_col_idtoken = customtkinter.CTkFrame(help_frame, fg_color="transparent")
@@ -16367,7 +16377,10 @@ if __name__ == "__main__":
                 "Musixmatch": { "token_limit": 10, "lyrics_format": "standard", "custom_time_decimals": False },
                 "Napster": { "api_key": "", "customer_secret": "", "requested_netloc": "", "username": "", "password": "" },
                 "Nugs": { "username": "", "password": "", "client_id": "", "dev_key": "" },
-                "Qobuz": { "app_id": "798273057", "app_secret": "abb21364945c0583309667d13ca3d93a", "quality_format": "{sample_rate}kHz {bit_depth}bit", "username": "", "password": "", "user_id": "", "auth_token": "", "use_id_token": "false" },
+                "Qobuz": { "app_id": "798273057", "app_secret": "05a4851e74ee47fda346f50cfdfc4f09", "quality_format": "{sample_rate}kHz {bit_depth}bit", "username": "", "password": "", "user_id": "", "auth_token": "", "use_id_token": "false" },
+
+
+
                 "SoundCloud": { "web_access_token": "" },
                 "Spotify": { "cookies_path": "", "username": "", "download_pause_seconds": 30, "client_id": "", "client_secret": "", "spotify_dll_path": "./Spotify.dll" },
                 "TIDAL": { "tv_atmos_token": "4N3n6Q1x95LL5K7p", "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=", "mobile_atmos_hires_token": "km8T1xS355y7dd3H", "mobile_hires_token": "6BDSRdpK9hqEBTgU", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True },
