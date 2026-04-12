@@ -505,6 +505,7 @@ SERVICE_COLORS = {
     "idagio": "#5C34FE",
     "bugs": "#FF3B28",
     "nugs": "#C83B30",
+    "lrclib": "#4338CA",
     "youtube": "#FF0000"
 }
 
@@ -522,6 +523,7 @@ SERVICE_DISPLAY_NAMES = {
     "idagio": "IDAGIO",
     "bugs": "Bugs!",
     "nugs": "Nugs.net",
+    "lrclib": "LRCLIB",
     "youtube": "YouTube"
 }
 
@@ -1247,7 +1249,7 @@ SPECIAL_MENU_BG = UI_ELEMENT_BG_COLOR
 HELP_CONTENT_WIDTH = 920
 
 # Platform icons on cover in column #0 (loaded from local "platforms" folder)
-PLATFORM_ICON_NAMES = ("Apple Music", "Beatport", "Beatsource", "Deezer", "Qobuz", "SoundCloud", "Spotify", "Tidal", "YouTube")
+PLATFORM_ICON_NAMES = ("Apple Music", "Beatport", "Beatsource", "Deezer", "LRCLIB", "Qobuz", "SoundCloud", "Spotify", "Tidal", "YouTube")
 PLATFORM_ICON_SIZE = 16  # Size of platform icon in the overlay (compact so it doesn’t dominate the row)
 _platform_icon_cache = {}  # platform_name -> PhotoImage (keep references)
 _platform_icon_cache_lock = threading.Lock()
@@ -15699,11 +15701,11 @@ def update_search_platform_dropdown():
         if not getattr(sys, 'frozen', False) and current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
             print("[Update Platforms] Refreshing Search tab platform dropdown...")
         
-        base_available_platforms = [pk for pk in installed_platform_keys if pk != "Musixmatch"]
+        base_available_platforms = [pk for pk in installed_platform_keys if pk not in ["Musixmatch", "LRCLIB"]]
         configured_platforms = []
 
         # Platforms where credentials are completely optional (work without any credentials)
-        platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify", "SoundCloud", "Beatport", "Beatsource"]
+        platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify", "SoundCloud", "Beatport", "Beatsource", "LRCLIB"]
 
         for platform_name_iter in base_available_platforms:
             # YouTube, Apple Music, Deezer (public API) always show - no credential check
@@ -16369,6 +16371,7 @@ if __name__ == "__main__":
                 "SoundCloud": { "web_access_token": "" },
                 "Spotify": { "cookies_path": "", "username": "", "download_pause_seconds": 30, "client_id": "", "client_secret": "", "spotify_dll_path": "./Spotify.dll" },
                 "TIDAL": { "tv_atmos_token": "4N3n6Q1x95LL5K7p", "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=", "mobile_atmos_hires_token": "km8T1xS355y7dd3H", "mobile_hires_token": "6BDSRdpK9hqEBTgU", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True },
+                "LRCLIB": {},
                 "YouTube": { "cookies_path": "./config/youtube-cookies.txt", "download_pause_seconds": 5, "download_mode": "sequential" }
             }
         }
@@ -16809,7 +16812,7 @@ if __name__ == "__main__":
         controls_frame.configure(height=62)
         controls_frame.grid_rowconfigure(0, minsize=62)
         customtkinter.CTkLabel(controls_frame, text="Platform").grid(row=0, column=0, padx=(5,1), sticky="nw")
-        search_tab_initial_platforms = ["All"] + [pk for pk in installed_platform_keys if pk != "Musixmatch"]
+        search_tab_initial_platforms = ["All"] + [pk for pk in installed_platform_keys if pk not in ["Musixmatch", "LRCLIB"]]
         platform_var = tkinter.StringVar(value="All" if "All" in search_tab_initial_platforms else (search_tab_initial_platforms[0] if search_tab_initial_platforms else "")); 
         # Using custom CTkImageComboBox to show platform icons in dropdown
         platform_combo = CTkImageComboBox(controls_frame, values=search_tab_initial_platforms, variable=platform_var, width=140, state="readonly", height=30, 
@@ -17557,7 +17560,7 @@ Unnecessary Lossless-to-Lossless""",
                         disabled_p_list = current_value if isinstance(current_value, list) else []
                         
                         # Populate with checkboxes for all installed modules (except lyrics-only providers)
-                        platforms_to_render = [pk for pk in installed_platform_keys if pk not in ["Musixmatch", "Genius"]]
+                        platforms_to_render = [pk for pk in installed_platform_keys if pk not in ["Musixmatch", "Genius", "LRCLIB"]]
                         for i, p_name in enumerate(platforms_to_render):
                             p_orp_id = _p_map.get(p_name, p_name.lower().replace(" ", ""))
                             is_initially_checked = p_orp_id not in disabled_p_list
@@ -17841,7 +17844,7 @@ Unnecessary Lossless-to-Lossless""",
                               CTkToolTip(label_widget, message=tooltip_text, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
 
                     row += 1
-        credential_keys_for_settings_tabs = [pk for pk in installed_platform_keys if pk != "Musixmatch"]        
+        credential_keys_for_settings_tabs = [pk for pk in installed_platform_keys if pk not in ["Musixmatch", "LRCLIB"]]        
         
         sorted_platform_keys_for_tabs = sorted(credential_keys_for_settings_tabs)
         for platform_key in sorted_platform_keys_for_tabs:
