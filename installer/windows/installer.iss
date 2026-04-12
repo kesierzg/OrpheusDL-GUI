@@ -97,7 +97,7 @@ Source: "{#RepoDir}\modules\beatport\*"; DestDir: "{app}\modules\beatport"; Comp
 Source: "{#RepoDir}\modules\beatsource\*"; DestDir: "{app}\modules\beatsource"; Components: modules\beatsource; Flags: recursesubdirs
 Source: "{#RepoDir}\modules\deezer\*"; DestDir: "{app}\modules\deezer"; Components: modules\deezer; Flags: recursesubdirs
 Source: "{#RepoDir}\modules\musixmatch\*"; DestDir: "{app}\modules\musixmatch"; Components: modules\musixmatch; Flags: recursesubdirs
-Source: "{#RepoDir}\modules\lrclib\*"; DestDir: "{app}\modules\lrclib"; Components: modules\musixmatch; Flags: recursesubdirs
+Source: "{#RepoDir}\modules\lrclib\*"; DestDir: "{app}\modules\lrclib"; Components: modules\lrclib; Flags: recursesubdirs
 Source: "{#RepoDir}\modules\qobuz\*"; DestDir: "{app}\modules\qobuz"; Components: modules\qobuz; Flags: recursesubdirs
 Source: "{#RepoDir}\modules\soundcloud\*"; DestDir: "{app}\modules\soundcloud"; Components: modules\soundcloud; Flags: recursesubdirs
 Source: "{#RepoDir}\modules\spotify\*"; DestDir: "{app}\modules\spotify"; Components: modules\spotify; Flags: recursesubdirs
