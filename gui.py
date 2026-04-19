@@ -89,6 +89,7 @@ import warnings
 # Suppress resource_tracker semaphore leak warning on macOS when using os._exit() for GUI shutdown
 warnings.filterwarnings("ignore", message="resource_tracker: There appear to be .* leaked semaphore.*")
 import platform
+import time
 import queue
 import re
 import requests
@@ -11784,33 +11785,50 @@ def run_search_all_platforms_target(orpheus, platforms_list, search_type_str, qu
         sys.stdout = queue_writer
         sys.stderr = dummy_stderr
     try:
-        search_limit = gui_settings.get("globals", {}).get("general", {}).get("search_limit", 25)
-        try:
-            search_limit = int(search_limit)
-        except (ValueError, TypeError):
-            search_limit = 25
-        _search_all_timeout_sec = 60  # per platform; avoids infinite hang if one platform blocks (e.g. Tidal auth)
+        # For 'All' searches, use a smart limit of 10 results per platform to speed up overall response
+        search_limit = 10
+        _search_all_timeout_sec = 60  # per platform; avoids infinite hang if one platform blocks
         combined = []
+        
+        threads = []
+        platform_results = {}
+        results_lock = threading.Lock()
+        
         for platform_name in platforms_list:
-            if search_stop_requested: 
+            def _one_platform_job(p_name):
+                try:
+                    r, e = _run_single_platform_search(orpheus, p_name, search_type_str, query, search_limit, output_queue)
+                    with results_lock:
+                        platform_results[p_name] = (r, e)
+                except Exception as ex:
+                    with results_lock:
+                        platform_results[p_name] = ([], str(ex))
+
+            t = threading.Thread(target=_one_platform_job, args=(platform_name,), daemon=True)
+            threads.append((platform_name, t))
+            t.start()
+            
+        # Wait for all threads to finish with a collective timeout
+        start_time = time.time()
+        for p_name, t in threads:
+            elapsed = time.time() - start_time
+            remaining = max(0, _search_all_timeout_sec - elapsed)
+            t.join(timeout=remaining)
+            if t.is_alive():
+                # Platform did not return in time - skip it
+                with results_lock:
+                    platform_results[p_name] = ([], f"{p_name} timed out (skipped)")
+            
+            if search_stop_requested:
                 if output_queue: output_queue.put("|GRAY|Search stopped.|RESET|\n")
                 break
-            out = []
-            def _one_platform():
-                r, e = _run_single_platform_search(orpheus, platform_name, search_type_str, query, search_limit, output_queue)
-                out.append((r, e))
-            t = threading.Thread(target=_one_platform, daemon=True)
-            t.start()
-            t.join(timeout=_search_all_timeout_sec)
-            if t.is_alive():
-                # Platform did not return in time (e.g. Tidal waiting for login) – skip it
-                results, err = [], f"{platform_name} timed out (skipped)"
-            else:
-                results, err = out[0] if out else ([], "No result")
+                
+        # Merge results from all platforms
+        for p_name, (results, err) in platform_results.items():
             if err and not results:
-                continue  # Skip platform on error, continue with others
+                continue  # Skip platform on error if no results found
             for r in results:
-                r['platform'] = platform_name
+                r['platform'] = p_name
                 combined.append(r)
         def _update_ui():
             global search_process_active
@@ -12760,7 +12778,8 @@ def show_search_context_menu(event):
                 ("AAC 96", "low")
             ],
             'spotify': [
-                ("FLAC", "lossless"),
+                ("24-bit FLAC", "hifi"),
+                ("16-bit FLAC", "lossless"),
                 ("OGG 320", "high"),
                 ("OGG 160", "low")
             ],
@@ -12950,7 +12969,8 @@ def show_search_context_menu(event):
         has_spotify_flac = os.path.exists("Spotify.dll") and os.path.exists(os.path.join("config", "spotify-cookies.txt"))
         spotify_quals = ['high', 'low']
         if has_spotify_flac:
-            spotify_quals.insert(0, 'lossless')
+            spotify_quals.insert(0, 'hifi')
+            spotify_quals.insert(1, 'lossless')
 
         platform_available_qualities = {
             'applemusic': am_quals,
