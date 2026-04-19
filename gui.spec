@@ -21,7 +21,13 @@ print(f"[PyInstaller] Collected ffmpeg submodules: {ffmpeg_hiddenimports}")
 up_datas, up_binaries, up_hiddenimports = collect_all('unplayplay')
 uni_datas, uni_binaries, uni_hiddenimports = collect_all('unicorn')
 cap_datas, cap_binaries, cap_hiddenimports = collect_all('capstone')
-print(f"[PyInstaller] Collected unplayplay, unicorn, and capstone assets")
+
+# Collect votify and its missing dependencies
+voti_datas, voti_binaries, voti_hiddenimports = collect_all('votify')
+dc_datas, dc_binaries, dc_hiddenimports = collect_all('dataclass-click')
+iq_datas, iq_binaries, iq_hiddenimports = collect_all('inquirerpy')
+
+print(f"[PyInstaller] Collected unplayplay, unicorn, capstone, and votify assets")
 
 # Collect additional data files based on what exists in the source directory
 additional_datas = [
@@ -96,8 +102,8 @@ elif platform.system() == 'Linux':
 a = Analysis(
     ['gui.py'],
     pathex=['.', 'vendor/librespot'],
-    binaries=additional_binaries + ffmpeg_binaries + up_binaries + uni_binaries + cap_binaries,
-    datas=additional_datas + ffmpeg_datas + up_datas + uni_datas + cap_datas,
+    binaries=additional_binaries + ffmpeg_binaries + up_binaries + uni_binaries + cap_binaries + voti_binaries + dc_binaries + iq_binaries,
+    datas=additional_datas + ffmpeg_datas + up_datas + uni_datas + cap_datas + voti_datas + dc_datas + iq_datas,
     hiddenimports=[
         'certifi',
         'colorama',
@@ -159,8 +165,14 @@ a = Analysis(
         'Crypto.Cipher',
         'Crypto.Cipher.AES',
         'Crypto.Util',
-        'Crypto.Util.Counter'
-    ] + ffmpeg_hiddenimports + up_hiddenimports + uni_hiddenimports + cap_hiddenimports + collect_submodules('unplayplay'),
+        'Crypto.Util.Counter',
+        'votify',                   # Missing dependency for Spotify Desktop API
+        'dataclass-click',          # Dependency for votify
+        'inquirerpy',                # Dependency for votify
+        'click',
+        'pfzy',                     # Dependency for inquirerpy
+        'prompt_toolkit'            # Dependency for inquirerpy
+    ] + ffmpeg_hiddenimports + up_hiddenimports + uni_hiddenimports + cap_hiddenimports + voti_hiddenimports + dc_hiddenimports + iq_hiddenimports + collect_submodules('unplayplay') + collect_submodules('votify'),
     excludes=['torch', 'cuda', 'pytorch', 'matplotlib', 'pandas', 'numpy'],
     hookspath=['.'],
     hooksconfig={},
