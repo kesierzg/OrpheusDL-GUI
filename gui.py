@@ -9424,14 +9424,16 @@ def _check_and_toggle_text_scrollbar(text_widget, scrollbar_widget):
             print(f"Error checking/toggling text scrollbar: {e}")
 
 class QueueWriter(io.TextIOBase):
-    def __init__(self, queue_instance, media_type=None):
+    def __init__(self, queue_instance, media_type=None, original_stream=None):
         self.queue = queue_instance
+        self.original_stream = original_stream
         self.buffer = ''
         self.media_type = media_type
         self.in_track_context = False
         self.completed_track_count = 0
         self.total_tracks = 0
         self.in_concurrent_download = False
+
         
         self.MESSAGES_TO_INDENT = [
             "Downloading encrypted stream...",
@@ -9459,7 +9461,17 @@ class QueueWriter(io.TextIOBase):
 
     def write(self, msg):
         global current_settings
+        
+        # Tee original output to LogCapture/sys.stdout FIRST
+        if self.original_stream:
+            try:
+                self.original_stream.write(msg)
+                self.original_stream.flush()
+            except:
+                pass
+
         # Search-mode optimization:
+
         # When QueueWriter is used for `All`/single-platform searches, we don't need verbose stdout.
         # Keeping the parsing/regex work minimal reduces CPU/GIL contention and improves GUI animation smoothness.
         if self.media_type is None:
@@ -9481,8 +9493,9 @@ class QueueWriter(io.TextIOBase):
                     self.queue.put(stripped + '\n')
                 return len(msg)
             except Exception:
-                # Never let logging/output handling break the search/download flow.
                 return len(msg)
+
+
         
         if '\r' in msg:
             parts = msg.split('\r')
@@ -9540,6 +9553,8 @@ class QueueWriter(io.TextIOBase):
                         completion_msg = stripped_line
                     self.queue.put(completion_msg.strip() + '\n')
                     continue
+
+
 
                 if ("=== ✅ Album completed ===" in stripped_line or 
                     "=== ✅ Playlist completed ===" in stripped_line or
@@ -10400,9 +10415,14 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
     yield_to_gui()
 
     try:
-        queue_writer = QueueWriter(output_queue, media_type=media_type)
+        # Pass sys.stdout as original_stream to QueueWriter so it "tees" output back to our LogCapture
+        queue_writer = QueueWriter(output_queue, media_type=media_type, original_stream=sys.stdout)
         sys.stdout = queue_writer
-        sys.stderr = dummy_stderr
+        
+        # IMPORTANT: Stop hijacking sys.stderr with DummyStderr! 
+        # This ensures threading.excepthook can catch and log crashes in the download thread.
+        # sys.stderr = dummy_stderr
+
         yield_to_gui()
         fresh_orpheus_settings = orpheus.settings if hasattr(orpheus, 'settings') else {}
         fresh_global_settings = fresh_orpheus_settings.get('global', {})
