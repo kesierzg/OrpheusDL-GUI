@@ -10419,9 +10419,15 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         queue_writer = QueueWriter(output_queue, media_type=media_type, original_stream=sys.stdout)
         sys.stdout = queue_writer
         
+        # Synchronize logging module with our redirected stdout/LogCapture
+        temp_log_handler = logging.StreamHandler(sys.stdout)
+        temp_log_handler.setFormatter(logging.Formatter('[L-INFO] %(message)s')) # Marker L-INFO to distinguish
+        logging.getLogger().addHandler(temp_log_handler)
+
         # IMPORTANT: Stop hijacking sys.stderr with DummyStderr! 
         # This ensures threading.excepthook can catch and log crashes in the download thread.
         # sys.stderr = dummy_stderr
+
 
         yield_to_gui()
         fresh_orpheus_settings = orpheus.settings if hasattr(orpheus, 'settings') else {}
@@ -10839,9 +10845,15 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                 safe_tb_str = str(tb_str_generic).encode('ascii', 'replace').decode('ascii')
                 print(f"\nUNEXPECTED ERROR during download thread.\nType: {safe_error_type}\nDetails: {safe_error_repr}\nTraceback:\n{safe_tb_str}")
     finally:
+        if 'temp_log_handler' in locals():
+            try:
+                logging.getLogger().removeHandler(temp_log_handler)
+            except:
+                pass
         yielding_active.clear()
         
         end_time = datetime.datetime.now(); total_duration = end_time - start_time; formatted_time = beauty_format_seconds(total_duration.total_seconds())
+
         time_taken_message = f"Total time taken: {formatted_time}\n"
         if _queue_log_handler_instance and _queue_log_handler_instance._specific_ffmpeg_hls_error_logged_this_download:
             download_exception_occurred = True
