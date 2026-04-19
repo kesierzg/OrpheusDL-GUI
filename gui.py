@@ -98,6 +98,8 @@ import sys
 import threading
 import tkinter
 import tkinter.filedialog
+import traceback
+
 import tkinter.messagebox
 import shutil
 from CTkToolTip import CTkToolTip
@@ -343,13 +345,29 @@ except Exception as e:
 
 # Log capture system for debugging initialization errors
 class LogCapture:
-    """Captures stdout/stderr for later display in GUI."""
-    def __init__(self, max_lines=500):
+    """Captures stdout/stderr for later display in GUI and persistence to file."""
+    def __init__(self, max_lines=500, log_file=None):
         self.log_lines = []
         self.max_lines = max_lines
+        self.log_file = log_file
         self._original_stdout = sys.stdout
         self._original_stderr = sys.stderr
         self._capturing = False
+        
+        if self.log_file:
+            try:
+                # Ensure directory exists
+                log_dir = os.path.dirname(os.path.abspath(self.log_file))
+                if log_dir and not os.path.exists(log_dir):
+                    os.makedirs(log_dir, exist_ok=True)
+                with open(self.log_file, "a", encoding="utf-8") as f:
+                    f.write(f"\n{'='*80}\n")
+                    f.write(f"SESSION START: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"Frozen: {getattr(sys, 'frozen', False)}\n")
+                    f.write(f"Executable: {sys.executable}\n")
+                    f.write(f"{'='*80}\n")
+            except:
+                pass
     
     def start_capture(self):
         """Start capturing stdout and stderr."""
@@ -370,11 +388,23 @@ class LogCapture:
         sys.stderr = self._original_stderr
     
     def write(self, text):
-        """Write to both capture buffer and original stream."""
-        if text.strip():  # Don't capture empty lines
-            self.log_lines.append(text.rstrip())
-            if len(self.log_lines) > self.max_lines:
-                self.log_lines.pop(0)
+        """Write to capture buffer, original stream, and file."""
+        if text:
+            # Add to internal list for GUI
+            if text.strip():
+                self.log_lines.append(text.rstrip())
+                if len(self.log_lines) > self.max_lines:
+                    self.log_lines.pop(0)
+            
+            # Persistent file logging
+            if self.log_file:
+                try:
+                    with open(self.log_file, "a", encoding="utf-8") as f:
+                        f.write(text)
+                        f.flush()
+                except:
+                    pass
+                    
         # Also write to original stdout so terminal still shows output
         if self._original_stdout:
             try:
@@ -398,9 +428,48 @@ class LogCapture:
         """Clear the log buffer."""
         self.log_lines.clear()
 
-# Global log capture instance
-_log_capture = LogCapture()
+# Global log capture instance with persistent file logging
+_LOG_FILE = "orpheus_debug.log"
+_log_capture = LogCapture(log_file=_LOG_FILE)
 _log_capture.start_capture()
+
+def setup_crash_reporting():
+    """Setup global exception hooks to capture fatal crashes."""
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+
+        error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        print(f"\n{'!'*20} FATAL ERROR {'!'*20}\n{error_msg}\n{'!'*52}")
+        
+        # Ensure log is flushed
+        _log_capture.flush()
+        
+        # Show message box on Windows for compiled apps
+        if platform.system() == "Windows":
+            try:
+                import ctypes
+                message = f"A fatal error occurred:\n\n{exc_value}\n\nAll details have been saved to {_LOG_FILE}.\n\nPlease report this error with the log file."
+                title = "OrpheusDL-GUI Fatal Error"
+                ctypes.windll.user32.MessageBoxW(0, message, title, 0x10) # 0x10 = MB_ICONERROR
+            except:
+                pass
+
+    sys.excepthook = handle_exception
+    
+    # Threading exception hook (Python 3.8+)
+    if hasattr(threading, 'excepthook'):
+        def handle_thread_exception(args):
+            error_msg = "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback))
+            print(f"\n{'!'*20} FATAL THREAD ERROR ({args.thread.name}) {'!'*10}\n{error_msg}\n{'!'*52}")
+            _log_capture.flush()
+            
+        threading.excepthook = handle_thread_exception
+
+# Initialize crash reporting immediately
+setup_crash_reporting()
+
 
 _SCRIPT_DIR = None
 _DATA_DIR = None
