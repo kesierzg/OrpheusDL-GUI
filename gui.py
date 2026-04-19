@@ -123,6 +123,7 @@ def _open_url(url):
             subprocess.run(['xdg-open', url], check=False)
     except Exception as e:
         print(f"[URL] Error opening {url}: {e}")
+
 import time
 import asyncio
 try:
@@ -1339,8 +1340,8 @@ def get_searchable_platforms(settings, installed_platform_keys, app_path):
     # Get disabled platforms from settings
     disabled_p = (settings or {}).get("globals", {}).get("general", {}).get("disabled_search_platforms", [])
     
-    # Filter base by Musixmatch/Genius (lyrics only) and the user's disabled list
-    base = [pk for pk in installed_platform_keys if pk not in ["Musixmatch", "Genius"] and pk.lower().replace(" ", "") not in disabled_p]
+    # Filter base by Musixmatch/Genius/LRCLIB (lyrics only) and the user's disabled list
+    base = [pk for pk in installed_platform_keys if pk not in ["Musixmatch", "Genius", "LRCLIB"] and pk.lower().replace(" ", "") not in disabled_p]
     platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify", "SoundCloud", "Beatport", "Beatsource", "TIDAL"]
     configured = []
     creds = (settings or {}).get("credentials", {})
@@ -5237,9 +5238,27 @@ def _try_lazy_load_preview(item_iid, item_data):
                 module_instance = orpheus_instance.load_module(current_platform)
                 
                 if current_platform == 'qobuz':
-                    # Qobuz: use get_sample_url method
+                    # Qobuz: use get_sample_url method (now optimized for native guest previews)
                     if hasattr(module_instance, 'session') and hasattr(module_instance.session, 'get_sample_url'):
-                        preview_url = module_instance.session.get_sample_url(track_id)
+                        try:
+                            preview_url = module_instance.session.get_sample_url(track_id)
+                        except:
+                            pass
+                    
+                    # Fallback to iTunes for Qobuz if native sample still fails
+                    if not preview_url:
+                        try:
+                            import requests
+                            from urllib.parse import quote_plus
+                            artist = item_data.get('artist', '')
+                            title = item_data.get('title', '')
+                            search_term = f"{artist} {title}".strip()
+                            itunes_url = f"https://itunes.apple.com/search?term={quote_plus(search_term)}&media=music&entity=song&limit=1"
+                            res = requests.get(itunes_url, timeout=3).json()
+                            if res.get('results') and res['results'][0].get('previewUrl'):
+                                preview_url = res['results'][0]['previewUrl']
+                        except:
+                            pass
                 
                 elif current_platform == 'soundcloud':
                     # SoundCloud: use get_preview_stream_url (pass track_authorization from album/playlist track if available)
@@ -5362,6 +5381,11 @@ def _on_preview_url_fetched(item_iid, item_data, preview_url):
                 print(f"[Preview] No preview available for this track ({platform_str})")
             else:
                 print(f"[Preview] No preview available for this track")
+            
+            # Highlight to user WHY it failed if it's Qobuz guest
+            if platform_str == 'qobuz' and not getattr(orpheus_instance, 'is_logged_in', lambda p: False)(platform_str):
+                 print(f"[Preview] Qobuz Guest: Native sample restricted, and iTunes fallback failed.")
+
             if 'tree' in globals() and tree and tree.winfo_exists():
                 try:
                     current_values = list(tree.item(item_iid, 'values'))
@@ -10912,16 +10936,7 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
             show_centered_messagebox("Download Error", "Deezer credentials are required for downloading. Please fill in either email and password, or arl in the settings.", dialog_type="warning")
             return False
 
-    # Qobuz: require email/password or id/token before download
-    if 'qobuz.com' in url_to_download:
-        qobuz_creds = (current_settings.get("credentials") or {}).get("Qobuz") or {}
-        username = (qobuz_creds.get("username") or "").strip()
-        password = (qobuz_creds.get("password") or "").strip()
-        user_id = (qobuz_creds.get("user_id") or "").strip()
-        auth_token = (qobuz_creds.get("auth_token") or "").strip()
-        if (not user_id or not auth_token) and (not username or not password):
-            show_centered_messagebox("Download Error", "Qobuz credentials are required for downloading. Please fill in either email and password, or id/token in the settings.", dialog_type="warning")
-            return False
+
 
     # macOS/Linux: Deno is not bundled; required for YouTube downloads. Show install pop-up if missing.
     if platform.system() in ("Darwin", "Linux") and ('youtube.com' in url_to_download or 'youtu.be' in url_to_download):
@@ -11521,6 +11536,8 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             err_str = str(e)
             err_lower = err_str.lower()
             if "user authentication is required" in err_lower or '"code":401' in err_str.replace(" ", ""):
+                if platform_name.lower() == 'qobuz':
+                    return [], f"API Access Error ({platform_name}): Guest search failed or is restricted. Try logging in or checking your App ID in settings."
                 return [], f"Authentication Error ({platform_name}): The login token is invalid or has expired. Please check settings."
             return [], f"Error during search ({platform_name}): {err_str}"
         formatted_results = []
@@ -11655,6 +11672,8 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             return [], f"API Access Error ({platform_name}): Guest search is restricted or the App ID is invalid. Try logging in or checking your credentials."
         if "user authentication is required" in err_lower or '"code":401' in err_str.replace(" ", ""):
             # If it's a 401 but NOT a guest access issue, it's likely a dead token.
+            if platform_name.lower() == 'qobuz':
+                 return [], f"API Access Error ({platform_name}): Guest search failed or is restricted. Try logging in or checking your App ID in settings."
             return [], f"Authentication Error ({platform_name}): The login token is invalid or has expired. Please check settings."
         return [], f"Error during search ({platform_name}): {err_str}"
 
@@ -12927,11 +12946,17 @@ def show_search_context_menu(event):
             elif best_mp3 > 0:
                 platform_button_configs['soundcloud'] = [("FLAC", "lossless"), (f"MP3 {best_mp3}", "high"), ("MP3 64", "low")]
 
+        # Check if Spotify FLAC dependencies are present
+        has_spotify_flac = os.path.exists("Spotify.dll") and os.path.exists(os.path.join("config", "spotify-cookies.txt"))
+        spotify_quals = ['high', 'low']
+        if has_spotify_flac:
+            spotify_quals.insert(0, 'lossless')
+
         platform_available_qualities = {
             'applemusic': am_quals,
             'apple music': am_quals,
             'soundcloud': ['high'],
-            'spotify': ['hifi', 'high', 'low'],
+            'spotify': spotify_quals,
             'qobuz': ['hifi', 'lossless', 'high'] if has_hires else ['lossless', 'high'],
             'tidal': tidal_quals,
             'youtube': ['hifi', 'high', 'low'],
@@ -13880,6 +13905,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         label_mapping = {
             'download_pause_seconds': 'Pause Between Downloads (seconds)',
             'download_mode': 'Download mode',
+            'user_id': 'User ID',
             'client_id': 'Client ID',
             'client_secret': 'Client Secret',
             'cookies_path': 'Cookies file (Netscape format)',
@@ -13892,7 +13918,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 continue
             if platform_name == "Spotify" and key in ["spotify_dll_path", "embed_spotify_lyrics"]:
                 continue
-            if platform_name == "Qobuz" and key in ("password", "user_id", "auth_token", "use_id_token"):
+            if platform_name == "Qobuz" and key == "use_id_token":
                 continue
             if platform_name == "Deezer" and key in ("password", "arl", "use_arl"):
                 continue
@@ -13912,85 +13938,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
             label_text = label_mapping.get(key, key.replace('_', ' ').title())
             
 
-            if platform_name == "Qobuz" and key == "username":
-                label_text = "Email"
 
             current_value = current_settings.get("credentials", {}).get(platform_name, {}).get(key, value)
 
-            # Qobuz: checkbox "Use ID/Token" + two rows (Email/ID, Password/Token) with same fields, labels swap by mode; persist use_id_token.
-            if platform_name == "Qobuz" and key == "username":
-                qobuz_creds = current_settings.get("credentials", {}).get(platform_name, {})
-                var_username = tkinter.StringVar(value=str(qobuz_creds.get("username", "") or ""))
-                var_password = tkinter.StringVar(value=str(qobuz_creds.get("password", "") or ""))
-                var_user_id = tkinter.StringVar(value=str(qobuz_creds.get("user_id", "") or ""))
-                var_auth_token = tkinter.StringVar(value=str(qobuz_creds.get("auth_token", "") or ""))
-                stored = qobuz_creds.get("use_id_token")
-                use_id_token = str(stored).lower() in ("true", "1") if stored not in (None, "") else bool((qobuz_creds.get("user_id") or "").strip() and (qobuz_creds.get("auth_token") or "").strip())
-                var_use_id_token = tkinter.BooleanVar(value=use_id_token)
-                if platform_name not in settings_vars['credentials']:
-                    settings_vars['credentials'][platform_name] = {}
-                settings_vars['credentials'][platform_name]["username"] = var_username
-                settings_vars['credentials'][platform_name]["password"] = var_password
-                settings_vars['credentials'][platform_name]["user_id"] = var_user_id
-                settings_vars['credentials'][platform_name]["auth_token"] = var_auth_token
-                settings_vars['credentials'][platform_name]["use_id_token"] = var_use_id_token
-
-                # Row 1: Email or ID
-                qobuz_label1 = customtkinter.CTkLabel(grid_parent, text="ID:" if use_id_token else "Email:")
-                qobuz_label1.grid(row=i, column=0, sticky="w", padx=10, pady=5)
-                qobuz_entry1 = customtkinter.CTkEntry(grid_parent)
-                qobuz_entry1.grid(row=i, column=1, sticky="ew", padx=10, pady=5)
-                qobuz_entry1.configure(textvariable=var_user_id if use_id_token else var_username)
-                # Row 2: Password or Token
-                qobuz_label2 = customtkinter.CTkLabel(grid_parent, text="Token:" if use_id_token else "Password:")
-                qobuz_label2.grid(row=i+1, column=0, sticky="w", padx=10, pady=5)
-                qobuz_entry2 = customtkinter.CTkEntry(grid_parent, show="*")
-                qobuz_entry2.grid(row=i+1, column=1, sticky="ew", padx=10, pady=5)
-                qobuz_entry2.configure(textvariable=var_auth_token if use_id_token else var_password)
-                for _entry in (qobuz_entry1, qobuz_entry2):
-                    _entry.bind("<Button-3>", show_context_menu)
-                    _entry.bind("<Button-2>", show_context_menu)
-                    _entry.bind("<Control-Button-1>", show_context_menu)
-                    _entry.bind("<Control-c>", _handle_ctrl_c_copy)
-                    _entry.bind("<Control-C>", _handle_ctrl_c_copy)
-                    if _entry is qobuz_entry2:
-                        _entry.bind("<FocusIn>", lambda e, w=_entry: _masked_entry_focus_in(w))
-                        _entry.bind("<FocusOut>", lambda e, w=_entry: _masked_entry_focus_out(w))
-                    else:
-                        _entry.bind("<FocusIn>", lambda e, w=_entry: handle_focus_in(w))
-                        _entry.bind("<FocusOut>", lambda e, w=_entry: handle_focus_out(w))
-                # Bind auto-save for Qobuz special fields
-                def _qobuz_entry1_save(event, p=platform_name, w=qobuz_entry1):
-                    # In Qobuz, Entry 1 is User ID if 'Use ID/Token' is on, else Email (username)
-                    key = "user_id" if var_use_id_token.get() else "username"
-                    _auto_save_credential_change(p, key, w)
-
-                def _qobuz_entry2_save(event, p=platform_name, w=qobuz_entry2):
-                    # In Qobuz, Entry 2 is Auth Token if 'Use ID/Token' is on, else Password
-                    key = "auth_token" if var_use_id_token.get() else "password"
-                    _auto_save_credential_change(p, key, w)
-
-                qobuz_entry1.bind("<KeyRelease>", _qobuz_entry1_save)
-                qobuz_entry2.bind("<KeyRelease>", _qobuz_entry2_save)
-                # Checkbox below help section (packed in Qobuz help block)
-                chk_container = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
-                chk_qobuz_id_token = customtkinter.CTkCheckBox(chk_container, text="Use ID/Token (instead of Email/Password)", variable=var_use_id_token)
-
-                def _qobuz_toggle_id_token():
-                    use_id = var_use_id_token.get()
-                    qobuz_label1.configure(text="ID:" if use_id else "Email:")
-                    qobuz_label2.configure(text="Token:" if use_id else "Password:")
-                    qobuz_entry2.configure(show="" if use_id else "*")
-                    qobuz_entry1.configure(textvariable=var_user_id if use_id else var_username)
-                    qobuz_entry2.configure(textvariable=var_auth_token if use_id else var_password)
-                    if hasattr(tab_frame, "qobuz_help_update"):
-                        tab_frame.qobuz_help_update(use_id)
-
-                chk_qobuz_id_token.pack(side="left")
-                chk_qobuz_id_token.configure(command=_qobuz_toggle_id_token)
-                tab_frame.qobuz_chk_frame = chk_container
-                grid_parent.grid_columnconfigure(1, weight=1)
-                continue
 
             # Deezer: checkbox "Use ARL" + Email/Password vs ARL. Hide Password only when Use ARL checked; persist use_arl.
             if platform_name == "Deezer" and key == "email":
@@ -14288,7 +14238,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 var = tkinter.StringVar(value=str(current_value))
                 widget = customtkinter.CTkEntry(grid_parent)
                 widget.configure(textvariable=var)
-                _is_masked_field = key == "password" or (key == "client_secret" and platform_name == "Spotify") or (key == "web_access_token" and platform_name == "SoundCloud")
+                _is_masked_field = key in ("password", "auth_token") or (key == "client_secret" and platform_name == "Spotify") or (key == "web_access_token" and platform_name == "SoundCloud")
                 if _is_masked_field:
                     widget.configure(show="*")
                 
@@ -15115,11 +15065,13 @@ def _create_credential_tab_content(platform_name, tab_frame):
             help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1, uniform="help_cols")
             help_frame.grid_columnconfigure(1, weight=1, uniform="help_cols")
-            if hasattr(tab_frame, "qobuz_chk_frame"):
-                tab_frame.qobuz_chk_frame.pack(fill="x", anchor="w", padx=10, pady=(5, 5))
 
-            qobuz_use_id = settings_vars.get("credentials", {}).get("Qobuz", {}).get("use_id_token")
-            qobuz_use_id = qobuz_use_id.get() if hasattr(qobuz_use_id, "get") else False
+            # See demo button (Top Right)
+            qobuz_see_demo_btn = customtkinter.CTkButton(
+                help_frame, text="See demo", width=80, height=26, font=("Segoe UI", 11),
+                fg_color=BUTTON_COLOR, hover_color=LINK_COLOR,
+                command=lambda: _open_url("https://youtu.be/sCuiyq-Sgo4")
+            )
 
             # --- Left Column: "How to set up" header + instructions ---
             left_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
@@ -15130,66 +15082,31 @@ def _create_credential_tab_content(platform_name, tab_frame):
             icon_label.pack(side="left", padx=(5, 10))
             title_label = customtkinter.CTkLabel(left_header, text="How to set up", font=("Segoe UI", 16, "bold"), text_color=WHITE_TEXT_COLOR)
             title_label.pack(side="left")
-            # See demo: same size/position as Spotify/YouTube (place on help_frame top-right when ID/Token)
-            qobuz_see_demo_btn = customtkinter.CTkButton(
-                help_frame,
-                text="See demo",
-                width=80,
-                height=26,
-                font=("Segoe UI", 11),
-                fg_color=BUTTON_COLOR,
-                hover_color=LINK_COLOR,
-                command=lambda: _open_url("https://youtu.be/sCuiyq-Sgo4")
-            )
-            if not qobuz_use_id:
-                qobuz_see_demo_btn.place_forget()
 
-            # --- Email/Password instructions ---
-            left_col_email = customtkinter.CTkFrame(left_col, fg_color="transparent")
-            left_col_email.pack(anchor="w", pady=0)
-            step1_frame = customtkinter.CTkFrame(left_col_email, fg_color="transparent")
-            step1_frame.pack(anchor="w", pady=0)
+            # Browser OAuth instructions (Primary)
+            step1_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            step1_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-            step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
-            step1_text_frame.pack(side="left")
-            customtkinter.CTkLabel(step1_text_frame, text="Fill in the email & password created, when signed up to " + (" " if platform.system() == "Darwin" else ""), font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR, justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
-            qobuz_link = customtkinter.CTkLabel(step1_text_frame, text="Qobuz", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
-            qobuz_link.pack(side="left", padx=(2, 0) if platform.system() == "Darwin" else (0, 0))
+            customtkinter.CTkLabel(step1_frame, text="Just enter URL to download or use search function", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR, justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
+
+            step2_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            step2_frame.pack(anchor="w", pady=(0, 5))
+            customtkinter.CTkLabel(step2_frame, text="2.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
+            step2_text_frame = customtkinter.CTkFrame(step2_frame, fg_color="transparent")
+            step2_text_frame.pack(side="left")
+            customtkinter.CTkLabel(step2_text_frame, text="In the browser window that opens, fill in the email & password", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR, justify="left", wraplength=HELP_CONTENT_WIDTH).pack(anchor="w")
+            step2_line2 = customtkinter.CTkFrame(step2_text_frame, fg_color="transparent")
+            step2_line2.pack(anchor="w")
+            customtkinter.CTkLabel(step2_line2, text="created, when signed up to ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            qobuz_link = customtkinter.CTkLabel(step2_line2, text="Qobuz", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
+            qobuz_link.pack(side="left")
             qobuz_link.bind("<Button-1>", lambda e: _open_url("https://www.qobuz.com"))
             qobuz_link.bind("<Enter>", lambda e: qobuz_link.configure(text_color=LINK_HOVER_COLOR))
             qobuz_link.bind("<Leave>", lambda e: qobuz_link.configure(text_color=LINK_COLOR))
-            note_frame = customtkinter.CTkFrame(left_col_email, fg_color="transparent")
-            note_frame.pack(anchor="w", pady=(0, 5))
-            customtkinter.CTkLabel(note_frame, text="", width=35).pack(side="left")
-            customtkinter.CTkLabel(note_frame, text="(active subscription required)", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left")
-            customtkinter.CTkLabel(note_frame, text=" — Save.", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
 
-            # --- ID/Token instructions: left = steps 1–3, right = steps 4–5 (no Recommended Values header) ---
-            left_col_idtoken = customtkinter.CTkFrame(left_col, fg_color="transparent")
-            def _qobuz_step(parent, num, text):
-                f = customtkinter.CTkFrame(parent, fg_color="transparent")
-                f.pack(anchor="w", pady=(0, 5))
-                customtkinter.CTkLabel(f, text=f"{num}.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-                customtkinter.CTkLabel(f, text=text, font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR, justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
-                return f
-            step1_id_frame = customtkinter.CTkFrame(left_col_idtoken, fg_color="transparent")
-            step1_id_frame.pack(anchor="w", pady=(0, 5))
-            customtkinter.CTkLabel(step1_id_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step1_id_frame, text="Log in to Qobuz (", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-            qobuz_play_link = customtkinter.CTkLabel(step1_id_frame, text="https://play.qobuz.com", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
-            qobuz_play_link.pack(side="left")
-            qobuz_play_link.bind("<Button-1>", lambda e: _open_url("https://play.qobuz.com"))
-            qobuz_play_link.bind("<Enter>", lambda e: qobuz_play_link.configure(text_color=LINK_HOVER_COLOR))
-            qobuz_play_link.bind("<Leave>", lambda e: qobuz_play_link.configure(text_color=LINK_COLOR))
-            customtkinter.CTkLabel(step1_id_frame, text=")", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-            _qobuz_step(left_col_idtoken, 2, "Open Developer Tools in your browser")
-            # Step 3: one-liner (no wrap)
-            step3_id_frame = customtkinter.CTkFrame(left_col_idtoken, fg_color="transparent")
-            step3_id_frame.pack(anchor="w", pady=(0, 5))
-            customtkinter.CTkLabel(step3_id_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step3_id_frame, text="Go to Application/Storage → Local storage → play.qobuz.com", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR, justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
 
-            # --- Right Column: "Recommended Values" header (same height as "How to set up") + app_id / app_secret ---
+
+            # --- Right Column: "Recommended Values" header + app_id / app_secret ---
             right_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
             right_col.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
             right_header = customtkinter.CTkFrame(right_col, fg_color="transparent")
@@ -15202,16 +15119,13 @@ def _create_credential_tab_content(platform_name, tab_frame):
             def create_value_row(parent, label, value):
                 row = customtkinter.CTkFrame(parent, fg_color="transparent")
                 row.pack(anchor="w", pady=(0, 5))
-                
                 customtkinter.CTkLabel(row, text=f"{label}: ", font=("Segoe UI", 11), text_color=GRAY_TEXT_COLOR).pack(side="left")
                 customtkinter.CTkLabel(row, text=value, font=("Segoe UI", 11), text_color=LINK_COLOR).pack(side="left", padx=(0, 5))
-                
                 copy_btn = customtkinter.CTkButton(
                     row, text="⧉", width=24, height=24, font=("Segoe UI", 14),
                     fg_color=CONTAINER_COLOR, hover_color=UI_ELEMENT_BG_COLOR, text_color="gray", corner_radius=3
                 )
                 copy_btn.configure(command=lambda b=copy_btn, v=value: _copy_qobuz_value(v, b))
-                
                 copy_btn.pack(side="left")
                 copy_btn.bind("<Enter>", lambda e: copy_btn.configure(text_color=WHITE_TEXT_COLOR))
                 copy_btn.bind("<Leave>", lambda e: copy_btn.configure(text_color="gray"))
@@ -15219,57 +15133,21 @@ def _create_credential_tab_content(platform_name, tab_frame):
             create_value_row(right_col, "app_id", "798273057")
             create_value_row(right_col, "app_secret", "05a4851e74ee47fda346f50cfdfc4f09")
 
+            # Manual ID/Token instructions (Alternative) - Moved to Right Column
+            step_or_frame = customtkinter.CTkFrame(right_col, fg_color="transparent")
+            step_or_frame.pack(anchor="w", pady=(10, 5))
+            customtkinter.CTkLabel(step_or_frame, text="Or", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR).pack(side="left", anchor="n", padx=(0, 15))
+            customtkinter.CTkLabel(step_or_frame, text="Open DevTools on play.qobuz.com → Application → Local storage", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR, justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
 
+            step_and_frame = customtkinter.CTkFrame(right_col, fg_color="transparent")
+            step_and_frame.pack(anchor="w", pady=(0, 5))
+            customtkinter.CTkLabel(step_and_frame, text="&", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR).pack(side="left", anchor="n", padx=(0, 15))
+            customtkinter.CTkLabel(step_and_frame, text="Copy ID + Token from 'local user' and paste above", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR, justify="left", wraplength=HELP_CONTENT_WIDTH).pack(side="left")
 
-
-            # Right column for ID/Token: steps 4 and 5, same left alignment as app_id; style "local user", "ID", "Token" like SoundCloud oauth_token
-            right_col_idtoken = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            _qobuz_spacer = customtkinter.CTkLabel(right_col_idtoken, text="", height=0)
-            _qobuz_spacer.pack(anchor="w", pady=(28, 0))
-            step4_right = customtkinter.CTkFrame(right_col_idtoken, fg_color="transparent")
-            step4_right.pack(anchor="w", pady=(0, 5))
-            customtkinter.CTkLabel(step4_right, text="4.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step4_right, text="Seek for ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-            customtkinter.CTkLabel(step4_right, text="local user", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left")
-            step5_right = customtkinter.CTkFrame(right_col_idtoken, fg_color="transparent")
-            step5_right.pack(anchor="w", pady=(0, 5))
-            customtkinter.CTkLabel(step5_right, text="5.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step5_right, text="Copy ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-            customtkinter.CTkLabel(step5_right, text="ID", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left")
-            customtkinter.CTkLabel(step5_right, text=" + ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-            customtkinter.CTkLabel(step5_right, text="Token", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left")
-            customtkinter.CTkLabel(step5_right, text=" & paste above — Save.", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-
-            def _qobuz_help_update(use_id):
-                if use_id:
-                    left_col_email.pack_forget()
-                    left_col_idtoken.pack(anchor="w", pady=0)
-                    right_col.grid_remove()
-                    right_col_idtoken.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
-                    # Same position as YouTube: top-right of help_frame, then lift so it's not covered
-                    qobuz_see_demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
-                    qobuz_see_demo_btn.lift()
-                else:
-                    left_col_idtoken.pack_forget()
-                    left_col_email.pack(anchor="w", pady=0)
-                    right_col_idtoken.grid_remove()
-                    right_col.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
-                    qobuz_see_demo_btn.place_forget()
-            tab_frame.qobuz_help_update = _qobuz_help_update
-            if qobuz_use_id:
-                left_col_email.pack_forget()
-                left_col_idtoken.pack(anchor="w", pady=0)
-                right_col.grid_remove()
-                right_col_idtoken.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
-                qobuz_see_demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
-                qobuz_see_demo_btn.lift()
-            else:
-                left_col_idtoken.pack_forget()
-                left_col_email.pack(anchor="w", pady=0)
-                right_col_idtoken.grid_remove()
-                right_col.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
-                qobuz_see_demo_btn.place_forget()
             _add_clear_session_icon(help_frame, "Qobuz")
+            qobuz_see_demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
+            qobuz_see_demo_btn.lift()
+
 
         
         # Add help text for SoundCloud module
@@ -15684,13 +15562,13 @@ def _handle_settings_tab_change():
     if 'settings_bottom_frame' in globals() and settings_bottom_frame and settings_bottom_frame.winfo_exists():
         parent = settings_bottom_frame.master  # settings_tab
         if selected_tab_name in ("Deezer", "Qobuz"):
-            pady_top = (0, 5)
-            parent.grid_rowconfigure(1, weight=0, minsize=35)  # tighter row so no visible gap above Save
+            pady_top = (7, 5)
+            parent.grid_rowconfigure(1, weight=0, minsize=40)  # balanced gap above Save
         elif selected_tab_name == "Global":
-            pady_top = (5, 5)
+            pady_top = (7, 5)
             parent.grid_rowconfigure(1, weight=0, minsize=40)
         else:
-            pady_top = (9, 5)
+            pady_top = (7, 5)
             parent.grid_rowconfigure(1, weight=0, minsize=40)
         settings_bottom_frame.grid_configure(pady=pady_top)
 
@@ -15729,24 +15607,14 @@ def update_search_platform_dropdown():
                 continue
 
             current_platform_creds = current_settings.get("credentials", {}).get(platform_name_iter, {})
-            # Qobuz: valid if (username and password) OR (user_id and auth_token)
-            if platform_name_iter == "Qobuz":
-                has_email_pass = bool(str(current_platform_creds.get("username", "") or "").strip() and str(current_platform_creds.get("password", "") or "").strip())
-                has_id_token = bool(str(current_platform_creds.get("user_id", "") or "").strip() and str(current_platform_creds.get("auth_token", "") or "").strip())
-                is_fully_filled = has_email_pass or has_id_token
-            elif platform_name_iter == "Deezer":
-                has_email_pass = bool(str(current_platform_creds.get("email", "") or "").strip() and str(current_platform_creds.get("password", "") or "").strip())
-                has_arl = bool(str(current_platform_creds.get("arl", "") or "").strip())
-                is_fully_filled = has_email_pass or has_arl
-            else:
-                is_fully_filled = True
-                for field_key in default_platform_fields.keys():
-                    field_value = current_platform_creds.get(field_key, "")
-                    if isinstance(default_platform_fields[field_key], bool):
-                        pass
-                    elif not str(field_value).strip():
-                        is_fully_filled = False
-                        break
+            is_fully_filled = True
+            for field_key in default_platform_fields.keys():
+                field_value = current_platform_creds.get(field_key, "")
+                if isinstance(default_platform_fields[field_key], bool):
+                    pass
+                elif not str(field_value).strip():
+                    is_fully_filled = False
+                    break
 
             # TIDAL: always show in dropdown so user can select and log in; session check only
             # applies to "Search All" (get_searchable_platforms) so All doesn't hang on TIDAL.
@@ -16377,7 +16245,7 @@ if __name__ == "__main__":
                 "Musixmatch": { "token_limit": 10, "lyrics_format": "standard", "custom_time_decimals": False },
                 "Napster": { "api_key": "", "customer_secret": "", "requested_netloc": "", "username": "", "password": "" },
                 "Nugs": { "username": "", "password": "", "client_id": "", "dev_key": "" },
-                "Qobuz": { "app_id": "798273057", "app_secret": "05a4851e74ee47fda346f50cfdfc4f09", "quality_format": "{sample_rate}kHz {bit_depth}bit", "username": "", "password": "", "user_id": "", "auth_token": "", "use_id_token": "false" },
+                "Qobuz": { "app_id": "798273057", "app_secret": "05a4851e74ee47fda346f50cfdfc4f09", "quality_format": "{sample_rate}kHz {bit_depth}bit", "user_id": "", "auth_token": "" },
 
 
 
