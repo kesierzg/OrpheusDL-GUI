@@ -16,6 +16,13 @@ MODULES_SRC = os.path.join(SPEC_DIR, 'modules')
 ffmpeg_datas, ffmpeg_binaries, ffmpeg_hiddenimports = collect_all('ffmpeg')
 print(f"[PyInstaller] Collected ffmpeg submodules: {ffmpeg_hiddenimports}")
 
+# Collect unplayplay and its complex dependencies (unicorn, capstone)
+# These are required for the Spotify Desktop API (lossless/flac downloads)
+up_datas, up_binaries, up_hiddenimports = collect_all('unplayplay')
+uni_datas, uni_binaries, uni_hiddenimports = collect_all('unicorn')
+cap_datas, cap_binaries, cap_hiddenimports = collect_all('capstone')
+print(f"[PyInstaller] Collected unplayplay, unicorn, and capstone assets")
+
 # Collect additional data files based on what exists in the source directory
 additional_datas = [
     ('icon.ico', '.'),
@@ -89,8 +96,8 @@ elif platform.system() == 'Linux':
 a = Analysis(
     ['gui.py'],
     pathex=['.', 'vendor/librespot'],
-    binaries=additional_binaries + ffmpeg_binaries,
-    datas=additional_datas + ffmpeg_datas,
+    binaries=additional_binaries + ffmpeg_binaries + up_binaries + uni_binaries + cap_binaries,
+    datas=additional_datas + ffmpeg_datas + up_datas + uni_datas + cap_datas,
     hiddenimports=[
         'certifi',
         'colorama',
@@ -140,8 +147,19 @@ a = Analysis(
         'httpx',
         'async_lru',
         'pywinstyles',
-        'packaging'
-    ] + ffmpeg_hiddenimports,
+        'packaging',
+        'unplayplay',               # Spotify Desktop API
+        'unicorn',                  # Dependency for unplayplay
+        'capstone',                 # Dependency for unplayplay
+        'pefile',                   # Dependency for unplayplay
+        'pydantic',                 # Dependency for unplayplay
+        'pybase62',                 # Spotify ID conversion
+        'Crypto',                   # Generic Crypto (pycryptodome) mapping for unplayplay/votify
+        'Crypto.Cipher',
+        'Crypto.Cipher.AES',
+        'Crypto.Util',
+        'Crypto.Util.Counter'
+    ] + ffmpeg_hiddenimports + up_hiddenimports + uni_hiddenimports + cap_hiddenimports,
     excludes=['torch', 'cuda', 'pytorch', 'matplotlib', 'pandas', 'numpy'],
     hookspath=['.'],
     hooksconfig={},
