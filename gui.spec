@@ -34,7 +34,9 @@ additional_datas = [
     ('icon.ico', '.'),
     ('icon.icns', '.'),
     ('icon.png', '.'),
+    ('Spotify.dll', '.'),
     ('update_checker.py', '.'),
+
 ]
 
 # Include platforms folder (platform icons)
