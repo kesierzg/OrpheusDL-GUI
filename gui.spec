@@ -136,7 +136,7 @@ a = Analysis(
         'librespot.audio.decoders',
         'librespot.core',
         'librespot.metadata',
-        'websocket_client',  # Dependency for vendored librespot
+        'websocket',  # Dependency for vendored librespot (module name is 'websocket')
         'pyogg',  # Dependency for vendored librespot
         'zeroconf',  # Dependency for vendored librespot
         'pkce',
@@ -153,13 +153,14 @@ a = Analysis(
         'capstone',                 # Dependency for unplayplay
         'pefile',                   # Dependency for unplayplay
         'pydantic',                 # Dependency for unplayplay
-        'pybase62',                 # Spotify ID conversion
+        'base62',                   # Spotify ID conversion (module name is 'base62')
+        'google.protobuf',          # Required for Spotify proto files
         'Crypto',                   # Generic Crypto (pycryptodome) mapping for unplayplay/votify
         'Crypto.Cipher',
         'Crypto.Cipher.AES',
         'Crypto.Util',
         'Crypto.Util.Counter'
-    ] + ffmpeg_hiddenimports + up_hiddenimports + uni_hiddenimports + cap_hiddenimports,
+    ] + ffmpeg_hiddenimports + up_hiddenimports + uni_hiddenimports + cap_hiddenimports + collect_submodules('unplayplay'),
     excludes=['torch', 'cuda', 'pytorch', 'matplotlib', 'pandas', 'numpy'],
     hookspath=['.'],
     hooksconfig={},
