@@ -48,6 +48,21 @@ if getattr(_sys, 'frozen', False) and _sys.platform == 'darwin':
 import os
 import sys
 
+# ============================================================================
+# Spotify Decryption Worker Mode (Bypass GUI)
+# ============================================================================
+if "--spotify-decrypt-worker" in sys.argv:
+    try:
+        from modules.spotify.decrypt_worker import run_worker
+        # Find index of flag and pass following arguments
+        idx = sys.argv.index("--spotify-decrypt-worker")
+        run_worker(sys.argv[idx+1:])
+    except Exception as e:
+        import json
+        print(json.dumps({"error": str(e)}))
+    sys.exit(0)
+# ============================================================================
+
 from utils.sleep import keep_awake, allow_sleep
 
 # Add script/application directory to sys.path for imports
