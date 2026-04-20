@@ -34,8 +34,8 @@ additional_datas = [
     ('icon.ico', '.'),
     ('icon.icns', '.'),
     ('icon.png', '.'),
-    ('Spotify.dll', '.'),
     ('update_checker.py', '.'),
+    ('modules/spotify/decrypt_worker.py', 'modules/spotify'),
 
 ]
 
