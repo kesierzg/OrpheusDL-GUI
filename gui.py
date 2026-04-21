@@ -8879,6 +8879,8 @@ def log_to_textbox(msg, error=False):
             return
         if any(filter_text in msg for filter_text in [
             "Librespot:Session - Failed reading packet!",
+            "Failed reading packet! Failed to receive packet",
+            "Failed reading packet!",
             "Librespot authentication failed during session creation: BadCredentials",
             "Failed to create Librespot session from existing OAuth credentials",
             "Attempting token refresh...",
@@ -9179,7 +9181,7 @@ def update_log_area():
                     log_to_textbox(msg)
                     log_to_textbox("\n")
                     continue
-                if '[CRITICAL]' in msg_strip and 'Librespot:Session' in msg_strip and 'Failed reading packet!' in msg_strip:
+                if 'Failed reading packet!' in msg_strip:
                     continue
                 if ('Could not get track info for' in msg_strip or 'Could not get album info for' in msg_strip
                         or 'Could not get playlist info for' in msg_strip or 'Could not get artist info for' in msg_strip):
