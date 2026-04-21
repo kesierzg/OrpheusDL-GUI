@@ -35,6 +35,8 @@ additional_datas = [
     ('icon.icns', '.'),
     ('icon.png', '.'),
     ('update_checker.py', '.'),
+    ('key_emu_prod.py', '.'),
+    ('runtime_prod.py', '.'),
     ('modules/spotify/decrypt_worker.py', 'modules/spotify'),
 
 ]
@@ -255,7 +257,39 @@ else:
         argv_emulation=False,
         target_arch=None,
         codesign_identity=None,
-        entitlements_file=None,
         icon='icon.ico',
         # this will default to onefile, or add `onefile=True` explicitly
     )
+
+# ==============================================================================
+# POST-BUILD HOOK: Automatically disable CFG on Windows for Unicorn Emulator Fix
+# ==============================================================================
+if platform.system() == 'Windows':
+    try:
+        import pefile
+        # DISTPATH is provided by PyInstaller during spec evaluation
+        target_exe = os.path.join(os.path.abspath(DISTPATH), 'OrpheusDL_GUI.exe')
+        
+        if os.path.exists(target_exe):
+            print(f"[Post-Build] Inspecting {target_exe} for CFG flags...")
+            pe = pefile.PE(target_exe)
+            
+            IMAGE_DLLCHARACTERISTICS_GUARD_CF = 0x4000
+            
+            if pe.OPTIONAL_HEADER.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_GUARD_CF:
+                print("[Post-Build] CFG is enabled. Patching to ensure Spotify decrypter stability...")
+                pe.OPTIONAL_HEADER.DllCharacteristics &= ~IMAGE_DLLCHARACTERISTICS_GUARD_CF
+                
+                # Write to temp and replace to prevent Windows locks
+                temp_path = target_exe + ".patched"
+                pe.write(temp_path)
+                pe.close()
+                os.replace(temp_path, target_exe)
+                print("[Post-Build] Successfully disabled CFG on the output executable!")
+            else:
+                pe.close()
+                print("[Post-Build] CFG is already disabled. No patch needed.")
+    except Exception as e:
+        print(f"[Post-Build] Warning: Could not auto-patch CFG - {e}")
+# ==============================================================================
+

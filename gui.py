@@ -48,22 +48,6 @@ if getattr(_sys, 'frozen', False) and _sys.platform == 'darwin':
 import os
 import sys
 
-# ============================================================================
-# Spotify Decryption Worker Mode (Bypass GUI)
-# ============================================================================
-if "--spotify-decrypt-worker" in sys.argv:
-    try:
-        from modules.spotify.decrypt_worker import run_worker
-        # Find index of flag and pass following arguments
-        idx = sys.argv.index("--spotify-decrypt-worker")
-        run_worker(sys.argv[idx+1:])
-    except Exception as e:
-        import json
-        print(json.dumps({"error": str(e)}))
-    sys.exit(0)
-# ============================================================================
-
-from utils.sleep import keep_awake, allow_sleep
 
 # Add script/application directory to sys.path for imports
 if getattr(sys, 'frozen', False):
@@ -76,9 +60,20 @@ else:
 if application_path not in sys.path:
     sys.path.insert(0, application_path)
 
-modules_path = os.path.join(application_path, 'modules')
-if os.path.isdir(modules_path) and modules_path not in sys.path:
-    sys.path.insert(0, modules_path)
+# ============================================================================
+# Spotify Decryption Worker Mode (Bypass Core)
+# ============================================================================
+if "--spotify-decrypt-worker" in sys.argv:
+    try:
+        from modules.spotify.decrypt_worker import run_worker
+        # Find index of flag and pass following arguments
+        idx = sys.argv.index("--spotify-decrypt-worker")
+        run_worker(sys.argv[idx+1:])
+    except Exception as e:
+        import json
+        print(json.dumps({"error": str(e)}))
+    sys.exit(0)
+# ============================================================================
 
 gamdl_parent_path = os.path.join(application_path, 'modules', 'applemusic', 'gamdl')
 if os.path.isdir(gamdl_parent_path) and gamdl_parent_path not in sys.path:
@@ -10437,6 +10432,15 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         # Synchronize logging module with our redirected stdout/LogCapture
         temp_log_handler = logging.StreamHandler(sys.stdout)
         temp_log_handler.setFormatter(logging.Formatter('[L-INFO] %(message)s')) # Marker L-INFO to distinguish
+        
+        class IgnoreLibrespotDisconnectFilter(logging.Filter):
+            def filter(self, record):
+                msg = record.getMessage()
+                if msg and "WinError 10054" in msg and "Failed reading packet" in msg:
+                    return False
+                return True
+                
+        temp_log_handler.addFilter(IgnoreLibrespotDisconnectFilter())
         logging.getLogger().addHandler(temp_log_handler)
 
         # IMPORTANT: Stop hijacking sys.stderr with DummyStderr! 
