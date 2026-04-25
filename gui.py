@@ -7522,7 +7522,7 @@ def run_login_in_thread(orpheus, platform_name, gui_settings):
 
 def _clear_platform_session(platform_name):
     """Clear stored session for platforms that use loginstorage.bin or config/spotify. Use when switching accounts or after expired subscription.
-    Next search/download will trigger fresh login with credentials from Settings."""
+    Next search/download will use current Settings (paths, cookies, etc.)."""
     from utils.utils import set_temporary_setting
     # Use data directory (e.g. ~/Library/Application Support/OrpheusDL GUI on macOS) not application_path
     data_dir = get_data_directory() or application_path
@@ -7534,11 +7534,11 @@ def _clear_platform_session(platform_name):
                     return
                 try:
                     shutil.rmtree(spotify_dir)
-                    show_centered_messagebox("Session Cleared", "Spotify stored session folder has been removed.\n\nNext search or download will log in with your credentials from above.", dialog_type="info")
+                    show_centered_messagebox("Session Cleared", "Spotify stored session data has been removed (legacy cache under config/spotify).", dialog_type="info")
                 except OSError as e:
                     show_centered_messagebox("Error", f"Could not remove Spotify folder: {e}", dialog_type="error")
             else:
-                show_centered_messagebox("No Session", "No stored Spotify credentials found. You can search or download to log in.", dialog_type="info")
+                show_centered_messagebox("No Session", "No stored Spotify session folder found. Desktop downloads use spotify-cookies.txt and Spotify.dll in Settings.", dialog_type="info")
             return
         if platform_name == "YouTube":
             cookies_path = (current_settings.get("credentials") or {}).get("YouTube", {}).get("cookies_path", "") or "./config/youtube-cookies.txt"
@@ -10569,6 +10569,15 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                     cleaned_mp3_flags = {"qscale:a": fresh_global_settings["advanced"]["conversion_flags"]["mp3"]["qscale:a"]}
                     downloader_settings["advanced"]["conversion_flags"]["mp3"] = cleaned_mp3_flags
 
+        # Prefer GUI session quality: `orpheus.settings` can lag after save (Orpheus rewrites
+        # settings.json in update_module_storage() but does not replace self.settings). Search
+        # context menu sets quality + save_settings then download — current_settings is authoritative.
+        if gui_settings and isinstance(gui_settings, dict):
+            _gen = (gui_settings.get("globals") or {}).get("general") or {}
+            _gui_q = _gen.get("quality") or _gen.get("download_quality")
+            if isinstance(_gui_q, str) and _gui_q.strip():
+                downloader_settings.setdefault("general", {})["download_quality"] = _gui_q.strip().lower()
+
         # Move module detection earlier to handle quality fallbacks
         parsed_url = urlparse(url); components = parsed_url.path.split('/'); module_name = None
         for netloc_pattern, mod_name in orpheus.module_netloc_constants.items():
@@ -11060,35 +11069,21 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
         show_centered_messagebox("Input Error", f"Could not process input: {url_to_download}\nError: {parse_e}\nPlease enter a valid web URL or .txt file path.", dialog_type="error")
         return False
 
-    # Spotify: require credentials and potentially cookies for high quality
+    # Spotify: desktop audio path requires spotify-cookies (sp_dc) + Spotify.dll (all qualities)
     if 'spotify.com' in url_to_download:
         spotify_creds = (current_settings.get("credentials") or {}).get("Spotify") or {}
-        username = (spotify_creds.get("username") or "").strip()
-        client_id = (spotify_creds.get("client_id") or "").strip()
-        client_secret = (spotify_creds.get("client_secret") or "").strip()
-        if not username or not client_id or not client_secret:
-            show_centered_messagebox("Download Error", "Spotify credentials are required for downloading. Please fill in your username, client ID and secret in the settings.", dialog_type="warning")
+        cookies_path = (spotify_creds.get("cookies_path") or "").strip() or os.path.join(application_path, "config", "spotify-cookies.txt")
+        if not os.path.isfile(cookies_path):
+            _show_spotify_cookies_instructions()
             return False
-            
-        # Check for cookies if quality is high
-        quality = current_settings.get("globals", {}).get("general", {}).get("quality", "hifi").lower()
-        if quality in ["atmos", "hifi", "lossless"]:
-            cookies_path = (spotify_creds.get("cookies_path") or "").strip() or os.path.join(application_path, "config", "spotify-cookies.txt")
-            if not os.path.isfile(cookies_path):
-                _show_spotify_cookies_instructions()
-                return False
-
-            # Check for Spotify.dll (required for high quality)
-            raw_dll_path = (spotify_creds.get("spotify_dll_path") or "./Spotify.dll").strip() or "./Spotify.dll"
-            # Convert ./ relative path to absolute using application_path
-            if raw_dll_path.startswith("./"):
-                dll_path = os.path.join(application_path, raw_dll_path[2:])
-            else:
-                dll_path = raw_dll_path
-
-            if not os.path.isfile(dll_path):
-                _show_spotify_dll_instructions()
-                return False
+        raw_dll_path = (spotify_creds.get("spotify_dll_path") or "./Spotify.dll").strip() or "./Spotify.dll"
+        if raw_dll_path.startswith("./"):
+            dll_path = os.path.join(application_path, raw_dll_path[2:])
+        else:
+            dll_path = raw_dll_path
+        if not os.path.isfile(dll_path):
+            _show_spotify_dll_instructions()
+            return False
 
     # Beatport: require username and password before download
     if 'beatport.com' in url_to_download:
@@ -13011,7 +13006,6 @@ def show_search_context_menu(event):
                 ("24-bit FLAC", "hifi"),
                 ("16-bit FLAC", "lossless"),
                 ("OGG 320", "high"),
-                ("OGG 160", "low")
             ],
             'youtube': [
                 ("OPUS", "hifi"),
@@ -13197,7 +13191,7 @@ def show_search_context_menu(event):
 
         # Check if Spotify FLAC dependencies are present
         has_spotify_flac = os.path.exists("Spotify.dll") and os.path.exists(os.path.join("config", "spotify-cookies.txt"))
-        spotify_quals = ['high', 'low']
+        spotify_quals = ['high']
         if has_spotify_flac:
             spotify_quals.insert(0, 'hifi')
             spotify_quals.insert(1, 'lossless')
@@ -14581,30 +14575,12 @@ def _create_credential_tab_content(platform_name, tab_frame):
             # if isinstance(var, (tkinter.StringVar, tkinter.BooleanVar)):
             #     var.trace_add('write', _auto_save_credential_change)
         
-        # Add help text for Spotify module
+        # Add help text for Spotify module (mirrors Apple Music: extension → log in → export; See demo is added below via SEE_DEMO_URLS)
         if platform_name == "Spotify":
-            # Helper function to copy URL to clipboard with feedback (persistent)
-            def _copy_url_to_clipboard(url, button):
-                try:
-                    # Use persistent clipboard so it survives app close
-                    if not _copy_to_system_clipboard(url):
-                        # Fall back to Tkinter clipboard
-                        app.clipboard_clear()
-                        app.clipboard_append(url)
-                        app.update()
-                    # Show "Copied" feedback
-                    original_text = button.cget("text")
-                    button.configure(text="✓")
-                    button.after(1500, lambda: button.configure(text=original_text))
-                except Exception as e:
-                    print(f"Error copying to clipboard: {e}")
-            
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color=SURFACE_COLOR, corner_radius=5)
             help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
-            help_frame.grid_columnconfigure(0, weight=0)
-            help_frame.grid_columnconfigure(1, weight=0)
+            help_frame.grid_columnconfigure(0, weight=1)
             
-            # --- Column 1: How to set up ---
             left_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
             left_col.grid(row=0, column=0, sticky="nsew", padx=20, pady=(20, 12))
             
@@ -14613,130 +14589,101 @@ def _create_credential_tab_content(platform_name, tab_frame):
             left_header.pack(anchor="w", pady=(0, 15))
             
             icon_label = customtkinter.CTkLabel(
-                left_header, 
-                text="💡", 
-                font=("Segoe UI", 20), 
+                left_header,
+                text="💡",
+                font=("Segoe UI", 20),
                 text_color=WARNING_COLOR
             )
             icon_label.pack(side="left", padx=(5, 10))
             
             title_label = customtkinter.CTkLabel(
-                left_header, 
-                text="How to set up", 
-                font=("Segoe UI", 16, "bold"), 
+                left_header,
+                text="How to set up",
+                font=("Segoe UI", 16, "bold"),
                 text_color=WHITE_TEXT_COLOR
             )
             title_label.pack(side="left")
             
-            # Instructions
             # Step 1
             step1_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
-            step1_frame.pack(anchor="w", pady=(0, 5))
+            step1_frame.pack(anchor="w", pady=0)
             
             customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
+            customtkinter.CTkLabel(step1_frame, text="Install extension", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
-            step1_text_frame = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
-            step1_text_frame.pack(side="left")
+            step1_bullets_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            step1_bullets_frame.pack(anchor="w", pady=(0, 5))
+            customtkinter.CTkLabel(step1_bullets_frame, text="", width=35).pack(side="left")
             
-            customtkinter.CTkLabel(step1_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            customtkinter.CTkLabel(step1_bullets_frame, text="• Chrome / Edge → ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
-            dashboard_link = customtkinter.CTkLabel(step1_text_frame, text="Spotify Dashboard", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
-            dashboard_link.pack(side="left")
-            dashboard_link.bind("<Button-1>", lambda e: _open_url("https://developer.spotify.com/dashboard"))
-            dashboard_link.bind("<Enter>", lambda e: dashboard_link.configure(text_color=LINK_HOVER_COLOR))
-            dashboard_link.bind("<Leave>", lambda e: dashboard_link.configure(text_color=LINK_COLOR))
+            sp_chrome_link = customtkinter.CTkLabel(
+                step1_bullets_frame, text="Get cookies.txt", font=("Segoe UI", 12, "underline"),
+                text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK
+            )
+            sp_chrome_link.pack(side="left")
+            sp_chrome_link.bind(
+                "<Button-1>",
+                lambda e: _open_url("https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?pli=1")
+            )
+            sp_chrome_link.bind("<Enter>", lambda e: sp_chrome_link.configure(text_color=LINK_HOVER_COLOR))
+            sp_chrome_link.bind("<Leave>", lambda e: sp_chrome_link.configure(text_color=LINK_COLOR))
             
-            customtkinter.CTkLabel(step1_text_frame, text=" ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-            customtkinter.CTkLabel(step1_text_frame, text="(active Premium subscription required)", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            customtkinter.CTkLabel(step1_bullets_frame, text=" or Firefox → ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            
+            sp_firefox_link = customtkinter.CTkLabel(
+                step1_bullets_frame, text="cookies.txt", font=("Segoe UI", 12, "underline"),
+                text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK
+            )
+            sp_firefox_link.pack(side="left")
+            sp_firefox_link.bind(
+                "<Button-1>", lambda e: _open_url("https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/")
+            )
+            sp_firefox_link.bind("<Enter>", lambda e: sp_firefox_link.configure(text_color=LINK_HOVER_COLOR))
+            sp_firefox_link.bind("<Leave>", lambda e: sp_firefox_link.configure(text_color=LINK_COLOR))
             
             # Step 2
             step2_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
-            step2_frame.pack(anchor="w", pady=(0, 5))
+            step2_frame.pack(anchor="w", pady=0)
             
             customtkinter.CTkLabel(step2_frame, text="2.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step2_frame, text="Take over username & fill in above", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            
+            step2_text_frame = customtkinter.CTkFrame(step2_frame, fg_color="transparent")
+            step2_text_frame.pack(side="left")
+            
+            customtkinter.CTkLabel(step2_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            
+            sp_login_link = customtkinter.CTkLabel(
+                step2_text_frame, text="Spotify", font=("Segoe UI", 12, "underline"),
+                text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK
+            )
+            sp_login_link.pack(side="left")
+            sp_login_link.bind("<Button-1>", lambda e: _open_url("https://www.spotify.com"))
+            sp_login_link.bind("<Enter>", lambda e: sp_login_link.configure(text_color=LINK_HOVER_COLOR))
+            sp_login_link.bind("<Leave>", lambda e: sp_login_link.configure(text_color=LINK_COLOR))
+            
+            customtkinter.CTkLabel(step2_text_frame, text=" ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            customtkinter.CTkLabel(
+                step2_text_frame, text="(active subscription required)", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR
+            ).pack(side="left")
             
             # Step 3
             step3_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
-            step3_frame.pack(anchor="w", pady=(0, 5))
+            step3_frame.pack(anchor="w", pady=(5, 0))
             
             customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step3_frame, text="In the dashboard, create an app (or use existing one)", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            customtkinter.CTkLabel(
+                step3_frame, text="Export & save as spotify-cookies.txt", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR
+            ).pack(side="left")
             
+            step3_path_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            step3_path_frame.pack(anchor="w", pady=(0, 5))
+            customtkinter.CTkLabel(step3_path_frame, text="", width=35).pack(side="left")
+            customtkinter.CTkLabel(step3_path_frame, text="Path: ", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            customtkinter.CTkLabel(
+                step3_path_frame, text="./config/spotify-cookies.txt", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR
+            ).pack(side="left")
             
-            # --- Column 2: Continue ---
-            right_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            right_col.grid(row=0, column=1, sticky="nw", padx=(24, 20), pady=(20, 12))
-            
-            # Header matching left side for alignment
-            right_header = customtkinter.CTkFrame(right_col, fg_color="transparent")
-            right_header.pack(anchor="w", pady=(0, 15))
-            customtkinter.CTkLabel(right_header, text="", height=20, font=("Segoe UI", 20)).pack(side="left") # Spacer for icon alignment
-            
-            # Step 4
-            step4_frame = customtkinter.CTkFrame(right_col, fg_color="transparent")
-            step4_frame.pack(anchor="w", pady=(0, 5))
-            
-            customtkinter.CTkLabel(step4_frame, text="4.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-            
-            step4_text_frame = customtkinter.CTkFrame(step4_frame, fg_color="transparent")
-            step4_text_frame.pack(side="left")
-            
-            customtkinter.CTkLabel(step4_text_frame, text="Add Redirect URI ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-            
-            copy_url = "http://127.0.0.1:4381/login"
-            url_label = customtkinter.CTkLabel(step4_text_frame, text=copy_url, font=("Segoe UI", 11), text_color=LINK_COLOR)
-            url_label.pack(side="left", padx=(0, 4))
-            
-            copy_button = customtkinter.CTkButton(
-                step4_text_frame,
-                text="⧉",
-                width=24,
-                height=24,
-                font=("Segoe UI", 14),
-                fg_color=CONTAINER_COLOR,
-                hover_color=UI_ELEMENT_BG_COLOR,
-                text_color="gray",
-                corner_radius=3,
-                command=lambda: _copy_url_to_clipboard(copy_url, copy_button)
-            )
-            copy_button.pack(side="left")
-            copy_button.bind("<Enter>", lambda e: copy_button.configure(text_color=WHITE_TEXT_COLOR))
-            copy_button.bind("<Leave>", lambda e: copy_button.configure(text_color="gray"))
-
-            # Step 5
-            step5_frame = customtkinter.CTkFrame(right_col, fg_color="transparent")
-            step5_frame.pack(anchor="w", pady=0)
-            
-            customtkinter.CTkLabel(step5_frame, text="5.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="s")
-            
-            step5_text_frame = customtkinter.CTkFrame(step5_frame, fg_color="transparent")
-            step5_text_frame.pack(side="left", anchor="w")
-            # Use anchor="s" so labels share the same baseline (avoids vertical drift)
-            customtkinter.CTkLabel(step5_text_frame, text="Save → Copy ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left", anchor="s")
-            customtkinter.CTkLabel(step5_text_frame, text="Client ID", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left", anchor="s")
-            customtkinter.CTkLabel(step5_text_frame, text=" + ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left", anchor="s")
-            customtkinter.CTkLabel(step5_text_frame, text="Secret", font=("Segoe UI", 12), text_color=LINK_COLOR).pack(side="left", anchor="s")
-            customtkinter.CTkLabel(step5_text_frame, text=", paste \u2014 Save.", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left", anchor="s")
-            
-            # Step 6
-            step6_frame = customtkinter.CTkFrame(right_col, fg_color="transparent")
-            step6_frame.pack(anchor="w", pady=(5, 0))
-            
-            customtkinter.CTkLabel(step6_frame, text="6.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-            
-            step6_text_frame = customtkinter.CTkFrame(step6_frame, fg_color="transparent")
-            step6_text_frame.pack(side="left", anchor="w")
-            
-            customtkinter.CTkLabel(step6_text_frame, text="For Lossless (or lyrics), Export ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left", anchor="s")
-            customtkinter.CTkLabel(step6_text_frame, text="spotify-cookies.txt", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left", anchor="s")
-            
-            
-            step6_line2 = customtkinter.CTkFrame(right_col, fg_color="transparent")
-            step6_line2.pack(anchor="w", pady=0)
-            customtkinter.CTkLabel(step6_line2, text="", width=35).pack(side="left")
-            customtkinter.CTkLabel(step6_line2, text="(Same method as described for Apple Music)", font=("Segoe UI", 11), text_color=GRAY_TEXT_COLOR).pack(side="left")
-
             _add_clear_session_icon(help_frame, "Spotify")
         
         # Add help text for Apple Music module
@@ -16373,7 +16320,7 @@ if __name__ == "__main__":
 
 
                 "SoundCloud": { "web_access_token": "" },
-                "Spotify": { "cookies_path": "", "username": "", "download_pause_seconds": 30, "client_id": "", "client_secret": "", "spotify_dll_path": "./Spotify.dll" },
+                "Spotify": { "cookies_path": "", "download_pause_seconds": 30, "spotify_dll_path": "./Spotify.dll" },
                 "TIDAL": { "tv_atmos_token": "4N3n6Q1x95LL5K7p", "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=", "mobile_atmos_hires_token": "km8T1xS355y7dd3H", "mobile_hires_token": "6BDSRdpK9hqEBTgU", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True },
                 "LRCLIB": {},
                 "YouTube": { "cookies_path": "./config/youtube-cookies.txt", "download_pause_seconds": 5, "download_mode": "sequential" }
