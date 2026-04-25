@@ -41,6 +41,30 @@ additional_datas = [
 
 ]
 
+# Spotify.dll 1.2.88.472 PlayPlay: SEH metadata from cycyrild/another-unplayplay (key_emu_prod.py)
+# — required for lossless/FLAC when using that client. ~18 MB (mostly runtimefunction.json).
+# If missing, copy from https://github.com/cycyrild/another-unplayplay (src/unplayplay/generated/)
+_ANOTHER_UP = os.path.join(SPEC_DIR, 'vendor', 'another_unplayplay')
+_n_bundled = 0
+if os.path.isdir(_ANOTHER_UP):
+    for _n in ('throwinfo.json', 'runtimefunction.json'):
+        _json_path = os.path.join(_ANOTHER_UP, _n)
+        if os.path.isfile(_json_path):
+            additional_datas.append((_json_path, 'vendor/another_unplayplay'))
+            _n_bundled += 1
+    if _n_bundled:
+        print(f"[PyInstaller] vendor/another_unplayplay: bundled {_n_bundled} SEH JSON file(s) (Spotify 1.2.88 PlayPlay)")
+else:
+    print("[PyInstaller] WARNING: vendor/another_unplayplay/ missing — Spotify 1.2.88 lossless keygen may not work in the frozen app")
+
+# Spotify lossless (PlayPlay): desktop_api resolves default DLL path to project root inside _MEIPASS when frozen
+_spotify_dll = os.path.join(SPEC_DIR, "Spotify.dll")
+if os.path.isfile(_spotify_dll):
+    additional_datas.append((_spotify_dll, "."))
+    print("[PyInstaller] Bundling Spotify.dll for frozen Desktop API / unplayplay key extraction")
+else:
+    print("[PyInstaller] WARNING: Spotify.dll not found at repo root — copy it before build for lossless, or supply via installer next to the exe + settings path")
+
 # Include platforms folder (platform icons)
 PLATFORMS_DIR = os.path.join(SPEC_DIR, 'platforms')
 if os.path.isdir(PLATFORMS_DIR):
@@ -105,7 +129,7 @@ elif platform.system() == 'Linux':
 
 a = Analysis(
     ['gui.py'],
-    pathex=['.', 'vendor/librespot'],
+    pathex=['.'],
     binaries=additional_binaries + ffmpeg_binaries + up_binaries + uni_binaries + cap_binaries + voti_binaries + dc_binaries + iq_binaries,
     datas=additional_datas + ffmpeg_datas + up_datas + uni_datas + cap_datas + voti_datas + dc_datas + iq_datas,
     hiddenimports=[
@@ -141,14 +165,6 @@ a = Analysis(
         'uuid',
         'wave',
         'webbrowser',
-        'librespot',
-        'librespot.audio',
-        'librespot.audio.decoders',
-        'librespot.core',
-        'librespot.metadata',
-        'websocket',  # Dependency for vendored librespot (module name is 'websocket')
-        'pyogg',  # Dependency for vendored librespot
-        'zeroconf',  # Dependency for vendored librespot
         'pkce',
         'pywidevine',
         'yt_dlp',
