@@ -6240,9 +6240,21 @@ def _show_spotify_pre_download_warning() -> bool:
             pass
         _destroy_dialog(dialog)
 
+    try:
+        _dpi = float(dialog.winfo_fpixels("1i"))
+    except (TypeError, ValueError, tkinter.TclError):
+        _dpi = 96.0
+    _dpi_scale = _dpi / 96.0
+    _is_high_dpi = _dpi_scale > 1.10  # 100% ~1.0, 125% ~1.25
     _wrap = 580
     main_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
-    main_frame.pack(fill="x", expand=False, padx=28, pady=(16, 2), anchor="n")
+    main_frame.pack(
+        fill="x",
+        expand=False,
+        padx=28,
+        pady=(34, 8) if _is_high_dpi else (36, 18),
+        anchor="n"
+    )
 
     customtkinter.CTkLabel(
         main_frame,
@@ -6279,14 +6291,14 @@ def _show_spotify_pre_download_warning() -> bool:
     ok_button = customtkinter.CTkButton(
         main_frame, text="OK", width=120, font=("Segoe UI", 12, "bold"), command=cleanup_proceed
     )
-    ok_button.pack(pady=(12, 3))
+    ok_button.pack(pady=(44, 4) if _is_high_dpi else (50, 6))
     ok_button.focus_set()
     dialog.bind("<Return>", lambda e: cleanup_proceed())
 
     countdown_label = customtkinter.CTkLabel(
-        main_frame, text="", font=("Segoe UI", 12), text_color=WHITE_TEXT_COLOR
+        main_frame, text="10", font=("Segoe UI", 12), text_color=WHITE_TEXT_COLOR
     )
-    countdown_label.pack(pady=(0, 0))
+    countdown_label.pack(pady=(4, 6) if _is_high_dpi else (6, 14))
 
     count = [10]
 
@@ -6302,11 +6314,18 @@ def _show_spotify_pre_download_warning() -> bool:
 
     dialog.update_idletasks()
     _w = 620
+    # Keep full requested height at 100% to avoid clipping countdown text.
+    # Only trim on larger DPI scales where Tk tends to leave extra bottom space.
+    if _dpi_scale <= 1.10:
+        _height_trim = 0
+    else:
+        _height_trim = int((_dpi_scale - 1.10) * 220) + 24
+        _height_trim = max(24, min(_height_trim, 44))
     try:
-        _h = int(dialog.winfo_reqheight()) - 10
+        _h = int(dialog.winfo_reqheight()) - _height_trim
     except (TypeError, ValueError, tkinter.TclError):
         _h = 220
-    _h = max(_h, 170)
+    _h = max(_h, 140)
     _h = min(_h, 700)
     _center_dialog_on_app(dialog, _w, _h)
 
