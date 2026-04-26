@@ -5932,6 +5932,45 @@ def _ensure_deno_dir_in_path(deno_path):
     os.environ['PATH'] = deno_dir + path_sep + current
 
 
+def _center_dialog_on_app(dialog, dialog_width, dialog_height):
+    """Center a dialog on the main app window with DPI-aware positioning."""
+    global app
+    try:
+        if 'app' not in globals() or not app or not app.winfo_exists():
+            dialog.geometry(f"{int(dialog_width)}x{int(dialog_height)}")
+            return
+
+        app.update_idletasks()
+        scaling = 1.0
+        try:
+            scaling = float(app._get_window_scaling())
+        except Exception:
+            pass
+
+        p_x = app.winfo_rootx()
+        p_y = app.winfo_rooty()
+        p_w = app.winfo_width()
+        p_h = app.winfo_height()
+        p_mid_x = p_x + p_w // 2
+        p_mid_y = p_y + p_h // 2
+
+        if platform.system() == "Windows":
+            center_x = int(p_mid_x - ((dialog_width * scaling) / 2))
+            center_y = int(p_mid_y - ((dialog_height * scaling) / 2))
+        else:
+            l_mid_x = p_mid_x / scaling
+            l_mid_y = p_mid_y / scaling
+            center_x = int(l_mid_x - (dialog_width / 2))
+            center_y = int(l_mid_y - (dialog_height / 2))
+
+        dialog.geometry(f"{int(dialog_width)}x{int(dialog_height)}+{center_x}+{center_y}")
+    except Exception:
+        try:
+            dialog.geometry(f"{int(dialog_width)}x{int(dialog_height)}")
+        except Exception:
+            pass
+
+
 def _show_spotify_cookies_instructions():
     """Show a detailed instruction popup for Spotify cookies setup."""
     global app
@@ -5941,22 +5980,18 @@ def _show_spotify_cookies_instructions():
     except Exception:
         return
 
+    dialog_width = 600
+    dialog_height = 600
+
     dialog = customtkinter.CTkToplevel(app)
     dialog.title("Spotify Cookies Required")
-    dialog.geometry("600x600")
+    dialog.geometry(f"{dialog_width}x{dialog_height}")
     dialog.resizable(False, False)
     dialog.attributes("-topmost", True)
     dialog.transient(app)
 
-    # Center dialog
-    app.update_idletasks()
-    parent_width = app.winfo_width()
-    parent_height = app.winfo_height()
-    parent_x = app.winfo_x()
-    parent_y = app.winfo_y()
-    center_x = parent_x + (parent_width // 2) - (600 // 2)
-    center_y = parent_y + (parent_height // 2) - (600 // 2)
-    dialog.geometry(f"600x600+{center_x}+{center_y}")
+    # Center dialog (DPI-aware)
+    _center_dialog_on_app(dialog, dialog_width, dialog_height)
 
     main_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
     main_frame.pack(fill="both", expand=True, padx=30, pady=30)
@@ -6246,14 +6281,7 @@ def _show_spotify_pre_download_warning() -> bool:
         _h = 300
     _h = max(_h, 220)
     _h = min(_h, 900)
-    app.update_idletasks()
-    parent_x = app.winfo_x()
-    parent_y = app.winfo_y()
-    parent_w = app.winfo_width()
-    parent_h = app.winfo_height()
-    cx = parent_x + (parent_w // 2) - (_w // 2)
-    cy = parent_y + (parent_h // 2) - (_h // 2)
-    dialog.geometry(f"{_w}x{_h}+{cx}+{cy}")
+    _center_dialog_on_app(dialog, _w, _h)
 
     state['after_id'] = dialog.after(0, tick_countdown)
     dialog.protocol("WM_DELETE_WINDOW", cleanup_cancel)
@@ -6266,24 +6294,18 @@ def _show_spotify_pre_download_warning() -> bool:
 def _show_spotify_dll_instructions():
     """Shows specialized instructions for Spotify.dll missing with clickable path."""
     global app
+    dialog_width = 560
+    dialog_height = 220
+
     dialog = customtkinter.CTkToplevel(app)
     dialog.title("Missing Spotify.dll")
-    dialog.geometry("560x220")
+    dialog.geometry(f"{dialog_width}x{dialog_height}")
     dialog.resizable(False, False)
     dialog.attributes("-topmost", True)
     dialog.transient(app)
 
-    # Center dialog
-    app.update_idletasks()
-    # Use parent info for centering
-    parent_width = app.winfo_width()
-    parent_height = app.winfo_height()
-    parent_x = app.winfo_x()
-    parent_y = app.winfo_y()
-    
-    center_x = parent_x + (parent_width // 2) - (560 // 2)
-    center_y = parent_y + (parent_height // 2) - (220 // 2)
-    dialog.geometry(f"560x220+{center_x}+{center_y}")
+    # Center dialog (DPI-aware)
+    _center_dialog_on_app(dialog, dialog_width, dialog_height)
     
     main_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
     main_frame.pack(fill="both", expand=True, padx=30, pady=25)
@@ -6330,7 +6352,7 @@ def _show_spotify_dll_instructions():
     customtkinter.CTkLabel(link_inner, text=" as this app.", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
 
     # Buttons (Centered)
-    mega_url = "https://mega.nz/file/QRY2DZLJ#a0CV2aHanfEA7PmYfNOPXvSFz2vvXv4Yg_W9i28L4bU"
+    mega_url = "https://mega.nz/file/1dxDRapL#OqYhyOC6xBsLyh4sOLdlRLRQhYvhwXx7mj4X5cmTP4A"
     
     download_btn = customtkinter.CTkButton(
         main_frame, 
