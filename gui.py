@@ -6291,7 +6291,7 @@ def _show_spotify_pre_download_warning() -> bool:
     ok_button = customtkinter.CTkButton(
         main_frame, text="OK", width=120, font=("Segoe UI", 12, "bold"), command=cleanup_proceed
     )
-    ok_button.pack(pady=(44, 4) if _is_high_dpi else (50, 6))
+    ok_button.pack(pady=(18, 4) if _is_high_dpi else (23, 6))
     ok_button.focus_set()
     dialog.bind("<Return>", lambda e: cleanup_proceed())
 
