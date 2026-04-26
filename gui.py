@@ -6213,9 +6213,9 @@ def _show_spotify_pre_download_warning() -> bool:
             pass
         _destroy_dialog(dialog)
 
-    _wrap = 600
+    _wrap = 580
     main_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
-    main_frame.pack(fill="x", expand=False, padx=32, pady=(22, 12), anchor="n")
+    main_frame.pack(fill="x", expand=False, padx=28, pady=(18, 8), anchor="n")
 
     customtkinter.CTkLabel(
         main_frame,
@@ -6233,7 +6233,7 @@ def _show_spotify_pre_download_warning() -> bool:
         text_color=WHITE_TEXT_COLOR,
         wraplength=_wrap,
         justify="center"
-    ).pack(fill="x", pady=(0, 8))
+    ).pack(fill="x", pady=(0, 6))
 
     suspension_info = (
         "If your account gets suspended, you’ll receive an email to contact support.\n"
@@ -6252,21 +6252,21 @@ def _show_spotify_pre_download_warning() -> bool:
     ok_button = customtkinter.CTkButton(
         main_frame, text="OK", width=120, font=("Segoe UI", 12, "bold"), command=cleanup_proceed
     )
-    ok_button.pack(pady=(24, 10))
+    ok_button.pack(pady=(16, 6))
     ok_button.focus_set()
     dialog.bind("<Return>", lambda e: cleanup_proceed())
 
     countdown_label = customtkinter.CTkLabel(
         main_frame, text="", font=("Segoe UI", 12), text_color=WHITE_TEXT_COLOR
     )
-    countdown_label.pack(pady=(0, 4))
+    countdown_label.pack(pady=(0, 2))
 
     count = [10]
 
     def tick_countdown():
         if state['finished'] or not dialog.winfo_exists():
             return
-        countdown_label.configure(text=f"{count[0]}...")
+        countdown_label.configure(text=f"{count[0]}")
         if count[0] == 1:
             state['after_id'] = dialog.after(1000, cleanup_proceed)
         else:
@@ -6274,13 +6274,13 @@ def _show_spotify_pre_download_warning() -> bool:
             state['after_id'] = dialog.after(1000, tick_countdown)
 
     dialog.update_idletasks()
-    _w = 640
+    _w = 620
     try:
-        _h = int(dialog.winfo_reqheight()) + 2
+        _h = int(dialog.winfo_reqheight())
     except (TypeError, ValueError, tkinter.TclError):
-        _h = 300
-    _h = max(_h, 220)
-    _h = min(_h, 900)
+        _h = 250
+    _h = max(_h, 190)
+    _h = min(_h, 700)
     _center_dialog_on_app(dialog, _w, _h)
 
     state['after_id'] = dialog.after(0, tick_countdown)
@@ -7695,16 +7695,23 @@ def _clear_platform_session(platform_name):
     try:
         if platform_name == "Spotify":
             spotify_dir = os.path.join(data_dir, 'config', 'spotify')
-            if os.path.isdir(spotify_dir):
+            spotify_credentials = os.path.join(data_dir, 'config', 'credentials.json')
+            has_legacy_dir = os.path.isdir(spotify_dir)
+            has_new_files = os.path.isfile(spotify_credentials)
+            if has_legacy_dir or has_new_files:
                 if not show_centered_confirm("Confirm", "Are you sure you want to remove the Spotify session folder? This will delete all stored credentials."):
                     return
                 try:
-                    shutil.rmtree(spotify_dir)
-                    show_centered_messagebox("Session Cleared", "Spotify stored session data has been removed (legacy cache under config/spotify).", dialog_type="info")
+                    if has_legacy_dir:
+                        shutil.rmtree(spotify_dir)
+                    for spotify_file in (spotify_credentials,):
+                        if os.path.isfile(spotify_file):
+                            os.remove(spotify_file)
+                    show_centered_messagebox("Session Cleared", "Spotify stored session data has been removed.", dialog_type="info")
                 except OSError as e:
-                    show_centered_messagebox("Error", f"Could not remove Spotify folder: {e}", dialog_type="error")
+                    show_centered_messagebox("Error", f"Could not remove Spotify session data: {e}", dialog_type="error")
             else:
-                show_centered_messagebox("No Session", "No stored Spotify session folder found. Desktop downloads use spotify-cookies.txt and Spotify.dll in Settings.", dialog_type="info")
+                show_centered_messagebox("No Session", "No stored Spotify session data found. Desktop downloads use spotify-cookies.txt and Spotify.dll in Settings.", dialog_type="info")
             return
         if platform_name == "YouTube":
             cookies_path = (current_settings.get("credentials") or {}).get("YouTube", {}).get("cookies_path", "") or "./config/youtube-cookies.txt"
