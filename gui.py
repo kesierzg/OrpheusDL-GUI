@@ -5971,7 +5971,7 @@ def _show_spotify_cookies_instructions():
     # 1. Main Title/Message
     title_label = customtkinter.CTkLabel(
         main_frame,
-        text="spotify-cookies.txt are needed to download in Lossless quality.",
+        text="spotify-cookies.txt are needed to download.",
         font=("Segoe UI", 16, "bold"),
         text_color=WHITE_TEXT_COLOR,
         wraplength=540
@@ -6035,9 +6035,12 @@ def _show_spotify_cookies_instructions():
     step3_frame = customtkinter.CTkFrame(steps_frame, fg_color="transparent")
     step3_frame.pack(fill="x", pady=(10, 2))
     customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=30).pack(side="left")
-    customtkinter.CTkLabel(step3_frame, text="Export & save as spotify-cookies.txt", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left")
+    customtkinter.CTkLabel(step3_frame, text="Export & save as ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+    customtkinter.CTkLabel(
+        step3_frame, text="spotify-cookies.txt", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR
+    ).pack(side="left")
     
-    # Config folder link line (Refined format)
+    # Config folder link line
     def open_config_folder():
         config_dir = os.path.dirname(CONFIG_FILE_PATH)
         if not os.path.exists(config_dir):
@@ -6052,12 +6055,12 @@ def _show_spotify_cookies_instructions():
     config_line_frame.pack(fill="x", pady=(0, 0)) # Spacing from previous step
     customtkinter.CTkLabel(config_line_frame, text="", width=30).pack(side="left") # Indent to match Step 3 text
     
-    customtkinter.CTkLabel(config_line_frame, text="Save spotify-cookies.txt in the ", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left")
+    customtkinter.CTkLabel(config_line_frame, text="Save it in the ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
     
     config_folder_link = customtkinter.CTkLabel(
         config_line_frame, 
         text="config folder", 
-        font=("Segoe UI", 12, "underline", "italic"), 
+        font=("Segoe UI", 12, "underline"), 
         text_color=LINK_COLOR, 
         cursor=HAND_CURSOR_LINK
     )
@@ -6066,7 +6069,7 @@ def _show_spotify_cookies_instructions():
     config_folder_link.bind("<Enter>", lambda e: on_link_enter(config_folder_link))
     config_folder_link.bind("<Leave>", lambda e: on_link_leave(config_folder_link, original_color=LINK_COLOR))
     
-    customtkinter.CTkLabel(config_line_frame, text=" of this app.", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left")
+    customtkinter.CTkLabel(config_line_frame, text=" of this app.", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
 
     # 3. Security Warning Section
     warning_frame = customtkinter.CTkFrame(main_frame, fg_color="transparent")
@@ -6074,7 +6077,7 @@ def _show_spotify_cookies_instructions():
     
     warning_label = customtkinter.CTkLabel(
         warning_frame,
-        text="WARNING! Your account might get suspended downloading ín Lossless quality.",
+        text="WARNING! Your account might get suspended downloading from Spotify.",
         font=("Segoe UI", 12, "bold"),
         text_color=ERROR_COLOR,
         wraplength=540,
@@ -6117,6 +6120,147 @@ def _show_spotify_cookies_instructions():
 
     dialog.grab_set()
     dialog.wait_window()
+
+
+def _show_spotify_pre_download_warning() -> bool:
+    """
+    Shown when spotify-cookies.txt is present and a Spotify download is about to start.
+    User can press OK to proceed immediately, or wait for 10...9...8... auto-continue.
+    Returns True to start the download, False if the user closes the window without OK.
+    """
+    global app
+    try:
+        if 'app' not in globals() or not app or not app.winfo_exists():
+            return True
+    except Exception:
+        return True
+
+    result = [False]
+    state = {'after_id': None, 'finished': False}
+
+    dialog = customtkinter.CTkToplevel(app)
+    dialog.title("Warning")
+    # Size/position set after content is built so height matches text (no empty band at bottom)
+    dialog.resizable(False, False)
+    dialog.attributes("-topmost", True)
+    dialog.transient(app)
+
+    def _cancel_after():
+        aid = state.get('after_id')
+        if aid is not None:
+            try:
+                dialog.after_cancel(aid)
+            except Exception:
+                pass
+            state['after_id'] = None
+
+    def cleanup_proceed():
+        if state['finished']:
+            return
+        state['finished'] = True
+        _cancel_after()
+        result[0] = True
+        try:
+            dialog.grab_release()
+        except Exception:
+            pass
+        _destroy_dialog(dialog)
+
+    def cleanup_cancel():
+        if state['finished']:
+            return
+        state['finished'] = True
+        _cancel_after()
+        result[0] = False
+        try:
+            dialog.grab_release()
+        except Exception:
+            pass
+        _destroy_dialog(dialog)
+
+    _wrap = 600
+    main_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
+    main_frame.pack(fill="x", expand=False, padx=32, pady=(22, 12), anchor="n")
+
+    customtkinter.CTkLabel(
+        main_frame,
+        text="WARNING! Your account might get suspended downloading from Spotify.",
+        font=("Segoe UI", 13, "bold"),
+        text_color=ERROR_COLOR,
+        wraplength=_wrap,
+        justify="center"
+    ).pack(fill="x", pady=(0, 8))
+
+    customtkinter.CTkLabel(
+        main_frame,
+        text="Recommendation: Only download those tracks that are simply not available on other platforms.",
+        font=("Segoe UI", 12),
+        text_color=WHITE_TEXT_COLOR,
+        wraplength=_wrap,
+        justify="center"
+    ).pack(fill="x", pady=(0, 8))
+
+    suspension_info = (
+        "If your account gets suspended, you’ll receive an email to contact support.\n"
+        "By doing so, within 5 days, you should receive an email to update your Spotify password\n"
+        "(and regain access)."
+    )
+    customtkinter.CTkLabel(
+        main_frame,
+        text=suspension_info,
+        font=("Segoe UI", 12),
+        text_color=GRAY_TEXT_COLOR,
+        wraplength=_wrap,
+        justify="center"
+    ).pack(fill="x", pady=(0, 0))
+
+    ok_button = customtkinter.CTkButton(
+        main_frame, text="OK", width=120, font=("Segoe UI", 12, "bold"), command=cleanup_proceed
+    )
+    ok_button.pack(pady=(24, 10))
+    ok_button.focus_set()
+    dialog.bind("<Return>", lambda e: cleanup_proceed())
+
+    countdown_label = customtkinter.CTkLabel(
+        main_frame, text="", font=("Segoe UI", 12), text_color=WHITE_TEXT_COLOR
+    )
+    countdown_label.pack(pady=(0, 4))
+
+    count = [10]
+
+    def tick_countdown():
+        if state['finished'] or not dialog.winfo_exists():
+            return
+        countdown_label.configure(text=f"{count[0]}...")
+        if count[0] == 1:
+            state['after_id'] = dialog.after(1000, cleanup_proceed)
+        else:
+            count[0] -= 1
+            state['after_id'] = dialog.after(1000, tick_countdown)
+
+    dialog.update_idletasks()
+    _w = 640
+    try:
+        _h = int(dialog.winfo_reqheight()) + 2
+    except (TypeError, ValueError, tkinter.TclError):
+        _h = 300
+    _h = max(_h, 220)
+    _h = min(_h, 900)
+    app.update_idletasks()
+    parent_x = app.winfo_x()
+    parent_y = app.winfo_y()
+    parent_w = app.winfo_width()
+    parent_h = app.winfo_height()
+    cx = parent_x + (parent_w // 2) - (_w // 2)
+    cy = parent_y + (parent_h // 2) - (_h // 2)
+    dialog.geometry(f"{_w}x{_h}+{cx}+{cy}")
+
+    state['after_id'] = dialog.after(0, tick_countdown)
+    dialog.protocol("WM_DELETE_WINDOW", cleanup_cancel)
+
+    dialog.grab_set()
+    dialog.wait_window()
+    return result[0]
 
 
 def _show_spotify_dll_instructions():
@@ -11084,6 +11228,8 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
         if not os.path.isfile(dll_path):
             _show_spotify_dll_instructions()
             return False
+        if not _show_spotify_pre_download_warning():
+            return False
 
     # Beatport: require username and password before download
     if 'beatport.com' in url_to_download:
@@ -13189,12 +13335,8 @@ def show_search_context_menu(event):
             elif best_mp3 > 0:
                 platform_button_configs['soundcloud'] = [("FLAC", "lossless"), (f"MP3 {best_mp3}", "high"), ("MP3 64", "low")]
 
-        # Check if Spotify FLAC dependencies are present
-        has_spotify_flac = os.path.exists("Spotify.dll") and os.path.exists(os.path.join("config", "spotify-cookies.txt"))
-        spotify_quals = ['high']
-        if has_spotify_flac:
-            spotify_quals.insert(0, 'hifi')
-            spotify_quals.insert(1, 'lossless')
+        # Spotify: always list 24-bit FLAC, 16-bit FLAC, and OGG 320 (download still validates cookies + DLL)
+        spotify_quals = ['hifi', 'lossless', 'high']
 
         platform_available_qualities = {
             'applemusic': am_quals,
@@ -14672,14 +14814,15 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step3_frame.pack(anchor="w", pady=(5, 0))
             
             customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
+            customtkinter.CTkLabel(step3_frame, text="Export & save as ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             customtkinter.CTkLabel(
-                step3_frame, text="Export & save as spotify-cookies.txt", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR
+                step3_frame, text="spotify-cookies.txt", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR
             ).pack(side="left")
             
             step3_path_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step3_path_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step3_path_frame, text="", width=35).pack(side="left")
-            customtkinter.CTkLabel(step3_path_frame, text="Path: ", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            customtkinter.CTkLabel(step3_path_frame, text="Path: ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             customtkinter.CTkLabel(
                 step3_path_frame, text="./config/spotify-cookies.txt", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR
             ).pack(side="left")
@@ -14785,13 +14928,14 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step3_frame.pack(anchor="w", pady=(5, 0))
             
             customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step3_frame, text="Export & save as cookies.txt", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            customtkinter.CTkLabel(step3_frame, text="Export & save as ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            customtkinter.CTkLabel(step3_frame, text="cookies.txt", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
             # Step 3 Path
             step3_path_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
             step3_path_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step3_path_frame, text="", width=35).pack(side="left") # Indent
-            customtkinter.CTkLabel(step3_path_frame, text="Path: ", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            customtkinter.CTkLabel(step3_path_frame, text="Path: ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             customtkinter.CTkLabel(step3_path_frame, text="./config/cookies.txt", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
             # --- Right Column: How to set up wrapper ---
@@ -15035,13 +15179,14 @@ def _create_credential_tab_content(platform_name, tab_frame):
             step5_frame.pack(anchor="w", pady=0)
             
             customtkinter.CTkLabel(step5_frame, text="5.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step5_frame, text="Export & save as youtube-cookies.txt", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            customtkinter.CTkLabel(step5_frame, text="Export & save as ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            customtkinter.CTkLabel(step5_frame, text="youtube-cookies.txt", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left")
             
             # Step 5 Path
             step5_path_frame = customtkinter.CTkFrame(right_col, fg_color="transparent")
             step5_path_frame.pack(anchor="w", pady=(0, 5))
             customtkinter.CTkLabel(step5_path_frame, text="", width=35).pack(side="left") # Indent
-            customtkinter.CTkLabel(step5_path_frame, text="Path: ", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            customtkinter.CTkLabel(step5_path_frame, text="Path: ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             customtkinter.CTkLabel(step5_path_frame, text="./config/youtube-cookies.txt", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR).pack(side="left")
 
             # Step 6: Close window
