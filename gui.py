@@ -6290,7 +6290,7 @@ def _show_spotify_pre_download_warning() -> bool:
         fill="x",
         expand=False,
         padx=28,
-        pady=(34, 8) if _is_high_dpi else (36, 18),
+        pady=(22, 4) if _is_high_dpi else (24, 8),
         anchor="n"
     )
 
@@ -6329,14 +6329,14 @@ def _show_spotify_pre_download_warning() -> bool:
     ok_button = customtkinter.CTkButton(
         main_frame, text="OK", width=120, font=("Segoe UI", 12, "bold"), command=cleanup_proceed
     )
-    ok_button.pack(pady=(18, 4) if _is_high_dpi else (23, 6))
+    ok_button.pack(pady=(22, 3) if _is_high_dpi else (24, 4))
     ok_button.focus_set()
     dialog.bind("<Return>", lambda e: cleanup_proceed())
 
     countdown_label = customtkinter.CTkLabel(
-        main_frame, text="10", font=("Segoe UI", 12), text_color=WHITE_TEXT_COLOR
+        main_frame, text="10", font=("Segoe UI", 11), text_color=GRAY_TEXT_COLOR
     )
-    countdown_label.pack(pady=(4, 6) if _is_high_dpi else (6, 14))
+    countdown_label.pack(pady=(2, 2) if _is_high_dpi else (3, 6))
 
     count = [10]
 
