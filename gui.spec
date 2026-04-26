@@ -57,13 +57,15 @@ if os.path.isdir(_ANOTHER_UP):
 else:
     print("[PyInstaller] WARNING: vendor/another_unplayplay/ missing — Spotify 1.2.88 lossless keygen may not work in the frozen app")
 
-# Spotify lossless (PlayPlay): desktop_api resolves default DLL path to project root inside _MEIPASS when frozen
-_spotify_dll = os.path.join(SPEC_DIR, "Spotify.dll")
-if os.path.isfile(_spotify_dll):
-    additional_datas.append((_spotify_dll, "."))
-    print("[PyInstaller] Bundling Spotify.dll for frozen Desktop API / unplayplay key extraction")
-else:
-    print("[PyInstaller] WARNING: Spotify.dll not found at repo root — copy it before build for lossless, or supply via installer next to the exe + settings path")
+# Keep Windows as single source of truth via installer/build_installer.py.
+# macOS/Linux installers do not copy Spotify.dll externally, so bundle it in frozen app there.
+if platform.system() != 'Windows':
+    _spotify_dll = os.path.join(SPEC_DIR, "Spotify.dll")
+    if os.path.isfile(_spotify_dll):
+        additional_datas.append((_spotify_dll, "."))
+        print("[PyInstaller] Bundling Spotify.dll for non-Windows frozen builds (macOS/Linux)")
+    else:
+        print("[PyInstaller] WARNING: Spotify.dll not found at repo root — non-Windows lossless may fail without it")
 
 # Include platforms folder (platform icons)
 PLATFORMS_DIR = os.path.join(SPEC_DIR, 'platforms')
