@@ -448,10 +448,39 @@ class LogCapture:
         """Clear the log buffer."""
         self.log_lines.clear()
 
-# Global log capture instance with persistent file logging
+# Global log capture instance (file logging toggled by debug mode)
 _LOG_FILE = "orpheus_debug.log"
-_log_capture = LogCapture(log_file=_LOG_FILE)
+_log_capture = LogCapture(log_file=None)
 _log_capture.start_capture()
+
+def _set_capture_file_logging(enabled):
+    """Enable/disable persistent startup log file writes at runtime."""
+    global _log_capture
+    if enabled:
+        if _log_capture.log_file != _LOG_FILE:
+            _log_capture.log_file = _LOG_FILE
+            try:
+                with open(_LOG_FILE, "a", encoding="utf-8") as f:
+                    f.write(f"\n{'='*80}\n")
+                    f.write(f"SESSION START: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"Frozen: {getattr(sys, 'frozen', False)}\n")
+                    f.write(f"Executable: {sys.executable}\n")
+                    f.write(f"{'='*80}\n")
+            except:
+                pass
+    else:
+        _log_capture.log_file = None
+
+def _cleanup_debug_log_files(debug_enabled):
+    """Remove stale debug log files when debug mode is disabled."""
+    if debug_enabled:
+        return
+    for log_path in (_LOG_FILE, "worker_debug.log"):
+        try:
+            if os.path.isfile(log_path):
+                os.remove(log_path)
+        except:
+            pass
 
 def setup_crash_reporting():
     """Setup global exception hooks to capture fatal crashes."""
@@ -470,7 +499,12 @@ def setup_crash_reporting():
         if platform.system() == "Windows":
             try:
                 import ctypes
-                message = f"A fatal error occurred:\n\n{exc_value}\n\nAll details have been saved to {_LOG_FILE}.\n\nPlease report this error with the log file."
+                log_hint = (
+                    f"All details have been saved to {_LOG_FILE}."
+                    if _log_capture.log_file
+                    else "Enable debug mode to persist crash details to a log file."
+                )
+                message = f"A fatal error occurred:\n\n{exc_value}\n\n{log_hint}\n\nPlease report this error."
                 title = "OrpheusDL-GUI Fatal Error"
                 ctypes.windll.user32.MessageBoxW(0, message, title, 0x10) # 0x10 = MB_ICONERROR
             except:
@@ -1215,10 +1249,14 @@ def setup_logging(log_queue):
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(message)s', datefmt='%H:%M:%S')
     _queue_log_handler_instance.setFormatter(formatter)
     root_logger.addHandler(_queue_log_handler_instance)
-    if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
+    debug_enabled = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False)
+    _cleanup_debug_log_files(debug_enabled)
+    if debug_enabled:
+        _set_capture_file_logging(True)
         root_logger.setLevel(logging.INFO)
         logging.info("Logging configured to use GUI queue (debug mode enabled).")
     else:
+        _set_capture_file_logging(False)
         root_logger.setLevel(logging.CRITICAL)
 __version__ = "2.0.3"
 from update_checker import run_check_in_thread
