@@ -5791,6 +5791,33 @@ def resource_path(relative_path):
             
     return path
 
+
+def _resolve_relative_user_or_resource_path(raw_path):
+    """Resolve a configured path against writable data dir first, then bundled resources."""
+    normalized_raw = (raw_path or "").strip()
+    if not normalized_raw:
+        return ""
+
+    # Absolute paths are always respected as-is.
+    if os.path.isabs(normalized_raw):
+        return os.path.normpath(normalized_raw)
+
+    relative_part = normalized_raw
+    if relative_part.startswith("./") or relative_part.startswith(".\\"):
+        relative_part = relative_part[2:]
+
+    data_dir = get_data_directory() or application_path
+    data_path = os.path.normpath(os.path.join(data_dir, relative_part))
+    if os.path.exists(data_path):
+        return data_path
+
+    bundled_path = os.path.normpath(resource_path(relative_part))
+    if os.path.exists(bundled_path):
+        return bundled_path
+
+    # Keep previous behavior as final fallback when file is not present yet.
+    return data_path
+
 _ffmpeg_cache = None
 
 def find_system_ffmpeg():
@@ -6332,9 +6359,13 @@ def _show_spotify_dll_instructions():
     
     def open_app_folder():
         try:
-            if platform.system() == "Windows": os.startfile(application_path)
-            elif platform.system() == "Darwin": subprocess.run(["open", application_path])
-            else: subprocess.run(["xdg-open", application_path])
+            target_dir = get_data_directory() or application_path
+            if platform.system() == "Windows":
+                os.startfile(target_dir)
+            elif platform.system() == "Darwin":
+                subprocess.run(["open", target_dir])
+            else:
+                subprocess.run(["xdg-open", target_dir])
         except Exception: pass
 
     folder_link = customtkinter.CTkLabel(
@@ -6349,7 +6380,7 @@ def _show_spotify_dll_instructions():
     folder_link.bind("<Enter>", lambda e: folder_link.configure(text_color=LINK_HOVER_COLOR))
     folder_link.bind("<Leave>", lambda e: folder_link.configure(text_color=LINK_COLOR))
     
-    customtkinter.CTkLabel(link_inner, text=" as this app.", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+    customtkinter.CTkLabel(link_inner, text=" used by this app.", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
 
     # Buttons (Centered)
     mega_url = "https://mega.nz/file/1dxDRapL#OqYhyOC6xBsLyh4sOLdlRLRQhYvhwXx7mj4X5cmTP4A"
@@ -6362,6 +6393,16 @@ def _show_spotify_dll_instructions():
         command=lambda: _open_url(mega_url)
     )
     download_btn.pack(pady=(25, 0))
+
+    default_target = get_data_directory() or application_path
+    customtkinter.CTkLabel(
+        main_frame,
+        text=f"Default: {default_target}",
+        font=("Segoe UI", 10),
+        text_color=GRAY_TEXT_COLOR,
+        wraplength=500,
+        justify="center"
+    ).pack(pady=(10, 0), fill="x")
     
     dialog.grab_set()
     dialog.wait_window()
@@ -11245,15 +11286,13 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
     # Spotify: desktop audio path requires spotify-cookies (sp_dc) + Spotify.dll (all qualities)
     if 'spotify.com' in url_to_download:
         spotify_creds = (current_settings.get("credentials") or {}).get("Spotify") or {}
-        cookies_path = (spotify_creds.get("cookies_path") or "").strip() or os.path.join(application_path, "config", "spotify-cookies.txt")
+        cookies_path = (spotify_creds.get("cookies_path") or "").strip() or "./config/spotify-cookies.txt"
+        cookies_path = _resolve_relative_user_or_resource_path(cookies_path)
         if not os.path.isfile(cookies_path):
             _show_spotify_cookies_instructions()
             return False
         raw_dll_path = (spotify_creds.get("spotify_dll_path") or "./Spotify.dll").strip() or "./Spotify.dll"
-        if raw_dll_path.startswith("./"):
-            dll_path = os.path.join(application_path, raw_dll_path[2:])
-        else:
-            dll_path = raw_dll_path
+        dll_path = _resolve_relative_user_or_resource_path(raw_dll_path)
         if not os.path.isfile(dll_path):
             _show_spotify_dll_instructions()
             return False
