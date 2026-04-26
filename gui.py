@@ -6215,7 +6215,7 @@ def _show_spotify_pre_download_warning() -> bool:
 
     _wrap = 580
     main_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
-    main_frame.pack(fill="x", expand=False, padx=28, pady=(18, 8), anchor="n")
+    main_frame.pack(fill="x", expand=False, padx=28, pady=(16, 2), anchor="n")
 
     customtkinter.CTkLabel(
         main_frame,
@@ -6224,7 +6224,7 @@ def _show_spotify_pre_download_warning() -> bool:
         text_color=ERROR_COLOR,
         wraplength=_wrap,
         justify="center"
-    ).pack(fill="x", pady=(0, 8))
+    ).pack(fill="x", pady=(0, 6))
 
     customtkinter.CTkLabel(
         main_frame,
@@ -6252,14 +6252,14 @@ def _show_spotify_pre_download_warning() -> bool:
     ok_button = customtkinter.CTkButton(
         main_frame, text="OK", width=120, font=("Segoe UI", 12, "bold"), command=cleanup_proceed
     )
-    ok_button.pack(pady=(16, 6))
+    ok_button.pack(pady=(12, 3))
     ok_button.focus_set()
     dialog.bind("<Return>", lambda e: cleanup_proceed())
 
     countdown_label = customtkinter.CTkLabel(
         main_frame, text="", font=("Segoe UI", 12), text_color=WHITE_TEXT_COLOR
     )
-    countdown_label.pack(pady=(0, 2))
+    countdown_label.pack(pady=(0, 0))
 
     count = [10]
 
@@ -6276,10 +6276,10 @@ def _show_spotify_pre_download_warning() -> bool:
     dialog.update_idletasks()
     _w = 620
     try:
-        _h = int(dialog.winfo_reqheight())
+        _h = int(dialog.winfo_reqheight()) - 10
     except (TypeError, ValueError, tkinter.TclError):
-        _h = 250
-    _h = max(_h, 190)
+        _h = 220
+    _h = max(_h, 170)
     _h = min(_h, 700)
     _center_dialog_on_app(dialog, _w, _h)
 
