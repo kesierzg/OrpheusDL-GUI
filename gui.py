@@ -1156,7 +1156,20 @@ class QueueLogHandler(logging.Handler):
         is_debug_mode = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False)
 
         if is_debug_mode:
-            log_entry = f"[{record.levelname}] {self.format(record)}\n"
+            formatted_msg = self.format(record)
+            lowered = formatted_msg.lower()
+            # Compact classifier so download failures are easy to scan in long debug logs.
+            if "desktop ogg decrypt validation failed" in lowered:
+                formatted_msg = f"{formatted_msg} | Reason: spotify_decrypt_validation_ogg"
+            elif "desktop flac decrypt validation failed" in lowered or "not a valid flac file" in lowered:
+                formatted_msg = f"{formatted_msg} | Reason: spotify_decrypt_validation_flac"
+            elif "spotify authentication error during track download" in lowered or "unauthorized" in lowered:
+                formatted_msg = f"{formatted_msg} | Reason: spotify_auth"
+            elif "rate limit" in lowered or "429" in lowered:
+                formatted_msg = f"{formatted_msg} | Reason: spotify_rate_limit"
+            elif "track/episode is unavailable on spotify" in lowered or "requested audio stream is not available" in lowered:
+                formatted_msg = f"{formatted_msg} | Reason: spotify_unavailable"
+            log_entry = f"[{record.levelname}] {formatted_msg}\n"
             self.log_queue.put(log_entry)
             return
         return
@@ -1250,6 +1263,13 @@ def setup_logging(log_queue):
     _queue_log_handler_instance.setFormatter(formatter)
     root_logger.addHandler(_queue_log_handler_instance)
     debug_enabled = current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False)
+    # Keep request libraries quiet in normal mode so actionable app logs stand out.
+    if debug_enabled:
+        logging.getLogger("httpx").setLevel(logging.INFO)
+        logging.getLogger("httpcore").setLevel(logging.INFO)
+    else:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
     _cleanup_debug_log_files(debug_enabled)
     if debug_enabled:
         _set_capture_file_logging(True)
