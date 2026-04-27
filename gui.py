@@ -1197,7 +1197,7 @@ class QueueLogHandler(logging.Handler):
         if is_beatsource_404_warning:
             return
         
-        if "Librespot:AudioKeyManager" in record.name and "Audio key error" in msg_content:
+        if "Spotify:AudioKeyManager" in record.name and "Audio key error" in msg_content:
             return            
         if "modules.spotify" in record.name and "Rate limit suspected" in msg_content:
             return            
@@ -1207,7 +1207,7 @@ class QueueLogHandler(logging.Handler):
             return        
         if record.name == 'modules.spotify.spotify_api' and \
            record.levelname == 'ERROR' and \
-           msg_content.startswith("GLOBAL_PATCH_DEBUG: Unexpected generic exception during Librespot session creation: [Errno 61] Connection refused"):
+           msg_content.startswith("GLOBAL_PATCH_DEBUG: Unexpected generic exception during Spotify session creation: [Errno 61] Connection refused"):
             return
         cleaned_msg = self.format(record) 
         cleaned_msg = re.sub(r' - \w+ - ', ' - ', cleaned_msg)
@@ -4326,7 +4326,7 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                 for idx, track in enumerate(tracks, start=1):
                     # Check if we need to fetch full track info.
                     # 1. If track is just an ID (str/int)
-                    # 2. If track is a placeholder object (name="Loading...") from Librespot fallback
+                    # 2. If track is a placeholder object (name="Loading...") from legacy fallback
                     track_id_to_fetch = None
                     if isinstance(track, (str, int)):
                         track_id_to_fetch = str(track)
@@ -9216,11 +9216,11 @@ def log_to_textbox(msg, error=False):
         if 'log_textbox' not in globals() or not log_textbox or not log_textbox.winfo_exists(): 
             return
         if any(filter_text in msg for filter_text in [
-            "Librespot:Session - Failed reading packet!",
+            "Spotify:Session - Failed reading packet!",
             "Failed reading packet! Failed to receive packet",
             "Failed reading packet!",
-            "Librespot authentication failed during session creation: BadCredentials",
-            "Failed to create Librespot session from existing OAuth credentials",
+            "Spotify authentication failed during session creation: BadCredentials",
+            "Failed to create Spotify session from existing OAuth credentials",
             "Attempting token refresh...",
             "Token refresh failed",
             "Attempting login via",
@@ -10773,14 +10773,14 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         temp_log_handler = logging.StreamHandler(sys.stdout)
         temp_log_handler.setFormatter(logging.Formatter('[L-INFO] %(message)s')) # Marker L-INFO to distinguish
         
-        class IgnoreLibrespotDisconnectFilter(logging.Filter):
+        class IgnoreSpotifyDisconnectFilter(logging.Filter):
             def filter(self, record):
                 msg = record.getMessage()
                 if msg and "WinError 10054" in msg and "Failed reading packet" in msg:
                     return False
                 return True
                 
-        temp_log_handler.addFilter(IgnoreLibrespotDisconnectFilter())
+        temp_log_handler.addFilter(IgnoreSpotifyDisconnectFilter())
         logging.getLogger().addHandler(temp_log_handler)
 
         # IMPORTANT: Stop hijacking sys.stderr with DummyStderr! 
