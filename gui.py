@@ -13277,6 +13277,7 @@ def show_search_context_menu(event):
                 ("24-bit FLAC", "hifi"),
                 ("16-bit FLAC", "lossless"),
                 ("OGG 320", "high"),
+                ("OGG 160", "low"),
             ],
             'youtube': [
                 ("OPUS", "hifi"),
@@ -13460,8 +13461,9 @@ def show_search_context_menu(event):
             elif best_mp3 > 0:
                 platform_button_configs['soundcloud'] = [("FLAC", "lossless"), (f"MP3 {best_mp3}", "high"), ("MP3 64", "low")]
 
-        # Spotify: always list 24-bit FLAC, 16-bit FLAC, and OGG 320 (download still validates cookies + DLL)
-        spotify_quals = ['hifi', 'lossless', 'high']
+        # Spotify: always list 24-bit FLAC, 16-bit FLAC, OGG 320, and OGG 160
+        # (download still validates cookies + DLL)
+        spotify_quals = ['hifi', 'lossless', 'high', 'low']
 
         platform_available_qualities = {
             'applemusic': am_quals,
