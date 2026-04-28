@@ -9468,6 +9468,39 @@ def log_to_textbox(msg, error=False):
             pass
 
 _has_shown_unavailable_warning = False
+_last_auto_opened_qobuz_auth_url = None
+
+def _maybe_auto_open_qobuz_auth_url(msg):
+    """Auto-open Qobuz OAuth URL once per unique URL during GUI sessions."""
+    global _last_auto_opened_qobuz_auth_url
+    try:
+        if not msg:
+            return
+
+        msg_lower = str(msg).lower()
+        if 'qobuz' not in msg_lower and 'auth.qobuz.com' not in msg_lower:
+            return
+
+        # Only react to lines that indicate interactive browser auth flow.
+        if 'browser login' not in msg_lower and 'oauth2/auth' not in msg_lower and 'auth.qobuz.com' not in msg_lower:
+            return
+
+        match = re.search(r'https?://[^\s]+', str(msg), re.IGNORECASE)
+        if not match:
+            return
+
+        url = match.group(0).rstrip(').,;\'"')
+        if 'auth.qobuz.com' not in url.lower():
+            return
+
+        if _last_auto_opened_qobuz_auth_url == url:
+            return
+
+        _last_auto_opened_qobuz_auth_url = url
+        _open_url(url)
+        print(f"[Qobuz] Opened browser login URL: {url}")
+    except Exception as e:
+        print(f"[Qobuz] Failed to auto-open login URL: {e}")
 
 def update_log_area():
     global output_queue, app, _has_shown_unavailable_warning, _current_download_context
@@ -9487,6 +9520,7 @@ def update_log_area():
         while messages_processed < max_messages_per_update:
             try: 
                 msg = output_queue.get_nowait()
+                _maybe_auto_open_qobuz_auth_url(msg)
                 if is_searching:
                     # Drain quickly; skip log_textbox parsing/rendering during search.
                     messages_processed += 1
