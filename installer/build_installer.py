@@ -138,6 +138,18 @@ def build_pyinstaller():
 
     print("\n=== PyInstaller build ===")
 
+    print("Installing librespot to vendor/librespot...")
+    run_command([
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--no-deps",
+        "--target",
+        str(PROJECT_ROOT / "vendor" / "librespot"),
+        "git+https://github.com/kokarare1212/librespot-python"
+    ], cwd=PROJECT_ROOT)
+
     for d in [BUILD_DIR, DIST_DIR]:
         if d.exists():
             shutil.rmtree(d)
