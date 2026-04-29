@@ -243,6 +243,10 @@ a = Analysis(
         'click',
         'pfzy',                     # Dependency for inquirerpy
         'prompt_toolkit',            # Dependency for inquirerpy
+        'websocket',                # Dependency for librespot
+        'zeroconf',                 # Dependency for librespot
+        'ifaddr',                   # Dependency for zeroconf
+        'pyogg',                    # Dependency for librespot
     ] + ffmpeg_hiddenimports + up_hiddenimports + uni_hiddenimports + cap_hiddenimports + voti_hiddenimports + dc_hiddenimports + iq_hiddenimports + collect_submodules('unplayplay') + collect_submodules('votify') + _librespot_hiddenimports + _librespot_player_hi,
     excludes=['torch', 'cuda', 'pytorch', 'matplotlib', 'pandas', 'numpy'],
     hookspath=['.'],
