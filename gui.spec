@@ -1,5 +1,6 @@
 import platform
 import os
+import sys
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 # Do not import Tree from PyInstaller.building (path changed in 6.x). We build datas as 2-tuples below.
 
@@ -56,6 +57,54 @@ if os.path.isdir(_ANOTHER_UP):
         print(f"[PyInstaller] vendor/another_unplayplay: bundled {_n_bundled} SEH JSON file(s) (Spotify 1.2.88 PlayPlay)")
 else:
     print("[PyInstaller] WARNING: vendor/another_unplayplay/ missing — Spotify 1.2.88 lossless keygen may not work in the frozen app")
+
+# Vendored librespot-python (Spotify OAuth/stream path when not using Spotify.dll)
+_librespot_vendor_root = os.path.join(SPEC_DIR, "vendor", "librespot")
+_librespot_files = 0
+if os.path.isdir(_librespot_vendor_root):
+    def _skip_vendor_ls(dirname):
+        if dirname in ("__pycache__", ".git"):
+            return True
+        return False
+    for _root, _dirs, _filenames in os.walk(_librespot_vendor_root):
+        _dirs[:] = [d for d in _dirs if not _skip_vendor_ls(d)]
+        _rel = os.path.relpath(_root, _librespot_vendor_root)
+        for _f in _filenames:
+            if _f.endswith(".pyc"):
+                continue
+            _src = os.path.join(_root, _f)
+            if _rel == ".":
+                _dest_dir = os.path.join("vendor", "librespot")
+            else:
+                _dest_dir = os.path.join("vendor", "librespot", _rel.replace(os.sep, "/"))
+            additional_datas.append((_src, _dest_dir))
+            _librespot_files += 1
+    print(f"[PyInstaller] vendor/librespot: bundled {_librespot_files} file(s)")
+else:
+    print("[PyInstaller] WARNING: vendor/librespot missing — Librespot Spotify mode may fail in frozen app")
+
+_librespot_hiddenimports = []
+_librespot_player_hi = []
+if os.path.isdir(_librespot_vendor_root):
+    _spath_saved = list(sys.path)
+    try:
+        sys.path.insert(0, _librespot_vendor_root)
+        if os.path.isdir(os.path.join(_librespot_vendor_root, "librespot")):
+            try:
+                _librespot_hiddenimports = collect_submodules("librespot")
+                print(f"[PyInstaller] Collected librespot-python submodules: {len(_librespot_hiddenimports)}")
+            except Exception as _lib_exc:
+                print(f"[PyInstaller] WARNING: collect_submodules(librespot) failed: {_lib_exc}")
+                _librespot_hiddenimports = ["librespot"]
+        if os.path.isdir(os.path.join(_librespot_vendor_root, "librespot_player")):
+            try:
+                _librespot_player_hi = collect_submodules("librespot_player")
+                print(f"[PyInstaller] Collected librespot_player submodules: {len(_librespot_player_hi)}")
+            except Exception as _lp_exc:
+                print(f"[PyInstaller] WARNING: collect_submodules(librespot_player) failed: {_lp_exc}")
+                _librespot_player_hi = ["librespot_player"]
+    finally:
+        sys.path[:] = _spath_saved
 
 # Keep Windows as single source of truth via installer/build_installer.py.
 # macOS/Linux installers do not copy Spotify.dll externally, so bundle it in frozen app there.
@@ -131,7 +180,7 @@ elif platform.system() == 'Linux':
 
 a = Analysis(
     ['gui.py'],
-    pathex=['.'],
+    pathex=['.', os.path.join(SPEC_DIR, 'vendor', 'librespot')],
     binaries=additional_binaries + ffmpeg_binaries + up_binaries + uni_binaries + cap_binaries + voti_binaries + dc_binaries + iq_binaries,
     datas=additional_datas + ffmpeg_datas + up_datas + uni_datas + cap_datas + voti_datas + dc_datas + iq_datas,
     hiddenimports=[
@@ -193,8 +242,8 @@ a = Analysis(
         'inquirerpy',                # Dependency for votify
         'click',
         'pfzy',                     # Dependency for inquirerpy
-        'prompt_toolkit'            # Dependency for inquirerpy
-    ] + ffmpeg_hiddenimports + up_hiddenimports + uni_hiddenimports + cap_hiddenimports + voti_hiddenimports + dc_hiddenimports + iq_hiddenimports + collect_submodules('unplayplay') + collect_submodules('votify'),
+        'prompt_toolkit',            # Dependency for inquirerpy
+    ] + ffmpeg_hiddenimports + up_hiddenimports + uni_hiddenimports + cap_hiddenimports + voti_hiddenimports + dc_hiddenimports + iq_hiddenimports + collect_submodules('unplayplay') + collect_submodules('votify') + _librespot_hiddenimports + _librespot_player_hi,
     excludes=['torch', 'cuda', 'pytorch', 'matplotlib', 'pandas', 'numpy'],
     hookspath=['.'],
     hooksconfig={},
