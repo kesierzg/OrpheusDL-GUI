@@ -7544,6 +7544,13 @@ def save_settings(show_confirmation: bool = True):
          if platform_name not in updated_gui_settings["credentials"]: updated_gui_settings["credentials"][platform_name] = {}
          # Get default fields to check for types and valid keys
          default_fields = DEFAULT_SETTINGS.get("credentials", {}).get(platform_name, {})
+         if not default_fields:
+             # Be tolerant to runtime casing differences (e.g. "Tidal" vs "TIDAL")
+             _defaults_creds = DEFAULT_SETTINGS.get("credentials", {})
+             for _k in _defaults_creds.keys():
+                 if str(_k).lower() == str(platform_name).lower():
+                     default_fields = _defaults_creds.get(_k, {})
+                     break
          for field_key, var in fields.items():
               if not isinstance(var, tkinter.Variable): continue
               if field_key.startswith('_'): continue  # skip internal UI state
@@ -7606,12 +7613,22 @@ def save_settings(show_confirmation: bool = True):
     platform_map_to_orpheus = { "Bugs": "bugs", "Nugs": "nugs", "SoundCloud": "soundcloud", "TIDAL": "tidal", "Qobuz": "qobuz", "Deezer": "deezer", "Idagio": "idagio", "lrclib": "LRCLIB", "Napster": "napster", "Beatport": "beatport", "Beatsource": "beatsource", "Musixmatch": "musixmatch", "Spotify": "spotify", "Apple Music": "applemusic", "YouTube": "youtube" }
     for gui_platform, creds in updated_gui_settings.get("credentials", {}).items():
         orpheus_platform = platform_map_to_orpheus.get(gui_platform)
+        if not orpheus_platform:
+            for _gui_name, _orpheus_name in platform_map_to_orpheus.items():
+                if str(_gui_name).lower() == str(gui_platform).lower():
+                    orpheus_platform = _orpheus_name
+                    break
         if orpheus_platform:
             if orpheus_platform not in mapped_orpheus_updates["modules"]: mapped_orpheus_updates["modules"][orpheus_platform] = {}
             mapped_orpheus_updates["modules"][orpheus_platform] = creds.copy()
     # Persist creds for platforms whose tab was never opened (so use_id_token, use_arl, etc. are still written)
     for gui_platform, creds in current_settings.get("credentials", {}).items():
         orpheus_platform = platform_map_to_orpheus.get(gui_platform)
+        if not orpheus_platform:
+            for _gui_name, _orpheus_name in platform_map_to_orpheus.items():
+                if str(_gui_name).lower() == str(gui_platform).lower():
+                    orpheus_platform = _orpheus_name
+                    break
         if orpheus_platform and orpheus_platform not in mapped_orpheus_updates["modules"]:
             mapped_orpheus_updates["modules"][orpheus_platform] = copy.deepcopy(creds)
 
@@ -7633,7 +7650,40 @@ def save_settings(show_confirmation: bool = True):
             _val = _spotify_creds.get("use_spotify_dll")
             mapped_orpheus_updates["modules"]["spotify"]["use_spotify_dll"] = str(_val).lower() if _val is not None else "false"
 
+    # Ensure TIDAL throttle is always persisted even if key casing differs or tab vars were partial.
+    _tidal_creds = (
+        current_settings.get("credentials", {}).get("TIDAL")
+        or current_settings.get("credentials", {}).get("Tidal")
+        or {}
+    )
+    if "tidal" in mapped_orpheus_updates["modules"]:
+        if "throttle" not in mapped_orpheus_updates["modules"]["tidal"]:
+            _val = _tidal_creds.get("throttle", True)
+            mapped_orpheus_updates["modules"]["tidal"]["throttle"] = bool(
+                _val if not isinstance(_val, str) else _val.strip().lower() in ("true", "1", "yes")
+            )
+
     final_settings_to_save = deep_merge(existing_settings, mapped_orpheus_updates, keys_to_overwrite_if_dicts=["codec_conversions", "conversion_flags"])
+
+    # Hard guarantee: persist modules.tidal.throttle from the current UI state.
+    # This runs after merges so any mapping/casing edge case cannot drop the field.
+    try:
+        _tidal_ui_var = None
+        _creds_vars = settings_vars.get("credentials", {}) if isinstance(settings_vars, dict) else {}
+        for _pname, _pvars in _creds_vars.items():
+            if str(_pname).strip().lower() == "tidal" and isinstance(_pvars, dict):
+                _tidal_ui_var = _pvars.get("throttle")
+                break
+        if _tidal_ui_var is not None and hasattr(_tidal_ui_var, "get"):
+            _raw = _tidal_ui_var.get()
+            _throttle_bool = _raw if isinstance(_raw, bool) else str(_raw).strip().lower() in ("true", "1", "yes")
+            if "modules" not in final_settings_to_save or not isinstance(final_settings_to_save.get("modules"), dict):
+                final_settings_to_save["modules"] = {}
+            if "tidal" not in final_settings_to_save["modules"] or not isinstance(final_settings_to_save["modules"].get("tidal"), dict):
+                final_settings_to_save["modules"]["tidal"] = {}
+            final_settings_to_save["modules"]["tidal"]["throttle"] = bool(_throttle_bool)
+    except Exception:
+        pass
     
     # Prune non-schema keys from modules to keep config clean (removes redundant 'codec', 'quality', etc.)
     _inv_map = {v: k for k, v in platform_map_to_orpheus.items()}
@@ -7642,6 +7692,13 @@ def save_settings(show_confirmation: bool = True):
             g_name = _inv_map.get(m_name)
             if g_name and isinstance(m_creds, dict):
                 allowed = set(DEFAULT_SETTINGS.get("credentials", {}).get(g_name, {}).keys())
+                if not allowed:
+                    # Case-insensitive fallback for GUI platform key lookup.
+                    _default_creds = DEFAULT_SETTINGS.get("credentials", {})
+                    for _k, _v in _default_creds.items():
+                        if str(_k).lower() == str(g_name).lower() and isinstance(_v, dict):
+                            allowed = set(_v.keys())
+                            break
                 for k in list(m_creds.keys()):
                     if k not in allowed: del m_creds[k]
 
@@ -10361,10 +10418,18 @@ def patch_download_file_for_cancellation():
                 if concurrent_downloads <= 1:
                     self.print("Using sequential downloads (sync)")
                     results = []
+                    import random as _random
+                    import time as _time
+                    from utils.tidal_throttle import resolve_tidal_throttle
+                    _tidal_cfg = resolve_tidal_throttle(
+                        getattr(self, 'full_settings', None), getattr(self, 'service_name', None)
+                    )
                     for i, (track_info, args) in enumerate(zip(track_list, download_args_list)):
                         if _download_cancelled:
                             print(f"Download cancelled during sequential track {i+1}")
                             break
+                        if i > 0 and _tidal_cfg:
+                            _time.sleep(_random.uniform(_tidal_cfg['delay_min'], _tidal_cfg['delay_max']))
                         try:
                             result = self.download_track(**args)
                             results.append((i, result, None))
@@ -10380,6 +10445,21 @@ def patch_download_file_for_cancellation():
                 total_tracks = len(track_list)
                 self.print(f"Using {concurrent_downloads} concurrent downloads for {total_tracks} tracks", drop_level=performance_summary_indent)
 
+                from utils.tidal_throttle import (
+                    resolve_tidal_throttle,
+                    TidalInterTrackGateSync,
+                    RequestsPerMinuteLimiterSync,
+                )
+                tidal_cfg = resolve_tidal_throttle(
+                    getattr(self, 'full_settings', None), getattr(self, 'service_name', None)
+                )
+                tidal_gate = TidalInterTrackGateSync() if tidal_cfg else None
+                tidal_rpm = (
+                    RequestsPerMinuteLimiterSync(tidal_cfg['rpm'])
+                    if tidal_cfg and tidal_cfg.get('rpm', 0) > 0
+                    else None
+                )
+
                 progress_queue = queue.Queue()
 
                 def download_worker(index, args):
@@ -10387,6 +10467,8 @@ def patch_download_file_for_cancellation():
                         return (index, None, Exception("Download cancelled"))
 
                     try:
+                        if tidal_gate and tidal_cfg:
+                            tidal_gate.wait_turn(tidal_cfg['delay_min'], tidal_cfg['delay_max'])
                         track_id = args.get('track_id', 'Unknown')
                         track_name = f"Track {track_id}"
                         track_info_failed = False
@@ -10401,6 +10483,8 @@ def patch_download_file_for_cancellation():
                                 spatial_codecs=self.global_settings['codecs']['spatial_codecs'],
                                 proprietary_codecs=self.global_settings['codecs']['proprietary_codecs'],
                             )
+                            if tidal_rpm is not None:
+                                tidal_rpm.acquire()
                             track_info = self.service.get_track_info(track_id, quality_tier, codec_options, **args.get('extra_kwargs', {}))
                             if track_info and hasattr(track_info, 'name') and track_info.name:
                                 if hasattr(track_info, 'artists') and track_info.artists:
@@ -10416,6 +10500,8 @@ def patch_download_file_for_cancellation():
                             return (index, None, track_info_error)
                         if _download_cancelled:
                             return (index, None, Exception("Download cancelled"))
+                        if tidal_rpm is not None:
+                            tidal_rpm.acquire()
                         result = self.download_track(**args, verbose=False)
                         if _download_cancelled:
                             return (index, None, Exception("Download cancelled"))
@@ -10897,7 +10983,7 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                     "search_limit": fresh_section.get("search_limit", default_section.get("search_limit", 25)),
                     "concurrent_downloads": fresh_section.get("concurrent_downloads", default_section.get("concurrent_downloads", 5)),
                     "play_sound_on_finish": fresh_section.get("play_sound_on_finish", default_section.get("play_sound_on_finish", False)),
-                    "progress_bar": False
+                    "progress_bar": False,
                 }
             elif isinstance(default_section, dict):
                 # Merge section with defaults
@@ -14713,7 +14799,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         for i, (key, value) in enumerate(default_platform_fields.items()):
             if platform_name == "Spotify":
                 continue
-            if platform_name == "TIDAL" and key in ["prefer_ac4", "fix_mqa"]:
+            if platform_name == "TIDAL" and key in ["prefer_ac4", "fix_mqa", "throttle"]:
                 continue
             if platform_name == "Qobuz" and key == "use_id_token":
                 continue
@@ -14836,20 +14922,61 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 # Enable Mobile
                 var_mobile = tkinter.BooleanVar(value=current_value)
                 chk_mobile = customtkinter.CTkCheckBox(container, text="Enable Mobile", variable=var_mobile)
-                chk_mobile.pack(side="left", padx=(0, 15))
+                chk_mobile.pack(side="left", padx=(0, 18))
                 
                 # Prefer Ac4 (unchecked = E-AC-3 JOC, plays in VLC/Audacity; checked = AC-4, may need special player)
                 val_ac4 = current_settings.get("credentials", {}).get(platform_name, {}).get("prefer_ac4", False)
                 var_ac4 = tkinter.BooleanVar(value=val_ac4)
                 chk_ac4 = customtkinter.CTkCheckBox(container, text="Prefer Ac4", variable=var_ac4)
-                chk_ac4.pack(side="left", padx=(0, 15))
+                chk_ac4.pack(side="left", padx=(0, 18))
                 CTkToolTip(chk_ac4, message="Unchecked: E-AC-3 JOC (Dolby Atmos), plays in VLC and Audacity.\nChecked: AC-4, may require a player with AC-4 support.", bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
                 
                 # Fix MQA
                 val_mqa = current_settings.get("credentials", {}).get(platform_name, {}).get("fix_mqa", True)
                 var_mqa = tkinter.BooleanVar(value=val_mqa)
                 chk_mqa = customtkinter.CTkCheckBox(container, text="Fix MQA", variable=var_mqa)
-                chk_mqa.pack(side="left")
+                chk_mqa.pack(side="left", padx=(0, 18))
+                
+                val_throttle = current_settings.get("credentials", {}).get(platform_name, {}).get("throttle", True)
+                var_throttle = tkinter.BooleanVar(value=val_throttle)
+                chk_throttle = customtkinter.CTkCheckBox(
+                    container, text="Throttle (to prevent login issues)", variable=var_throttle
+                )
+                chk_throttle.pack(side="left", padx=(0, 0))
+                CTkToolTip(
+                    chk_throttle,
+                    message=(
+                        "- Random ~3–5s between starting each track download.\n"
+                        "- 60/min cap on API metadata calls.\n"
+                        "Off: fastest downloads (higher risk of login issues after bulk downloads)."
+                    ),
+                    bg_color=TOOLTIP_MENU_BG,
+                    text_color=WHITE_TEXT_COLOR,
+                    padx=12,
+                    pady=12,
+                )
+                # CTkCheckBox defaults to a fixed outer width (~100) with text column weight=1, so short labels
+                # leave empty space inside the widget (looks like a huge gap before the next checkbox). Tighten
+                # column 2 and set width from checkbox + gutter + measured text.
+                import tkinter.font as tkfont
+                _tidal_chk_gutter = 12
+                for _cb in (chk_mobile, chk_ac4, chk_mqa, chk_throttle):
+                    try:
+                        _ms = _cb._apply_widget_scaling(_tidal_chk_gutter)
+                    except Exception:
+                        _ms = _tidal_chk_gutter
+                    _cb.grid_columnconfigure(1, minsize=_ms)
+                    _cb.grid_columnconfigure(2, weight=0)
+                    try:
+                        _font = tkfont.Font(font=_cb._text_label.cget("font"))
+                        _text_px = _font.measure(_cb.cget("text") or "")
+                        _cw = _cb._apply_widget_scaling(getattr(_cb, "_checkbox_width", 24))
+                        _total_px = int(_cw + _ms + _text_px + 10)
+                        _logical_w = int(_cb._reverse_widget_scaling(_total_px)) + 1
+                        if _logical_w > 0:
+                            _cb.configure(width=_logical_w)
+                    except Exception:
+                        pass
                 
                 # Register variables
                 if platform_name not in settings_vars['credentials']:
@@ -14858,12 +14985,24 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 settings_vars['credentials'][platform_name]["enable_mobile"] = var_mobile
                 settings_vars['credentials'][platform_name]["prefer_ac4"] = var_ac4
                 settings_vars['credentials'][platform_name]["fix_mqa"] = var_mqa
+                settings_vars['credentials'][platform_name]["throttle"] = var_throttle
+
+                def _on_tidal_checkbox_change(field_key):
+                    try:
+                        _auto_save_credential_change(platform_name, field_key)
+                    except Exception:
+                        pass
+
+                chk_mobile.configure(command=lambda: _on_tidal_checkbox_change("enable_mobile"))
+                chk_ac4.configure(command=lambda: _on_tidal_checkbox_change("prefer_ac4"))
+                chk_mqa.configure(command=lambda: _on_tidal_checkbox_change("fix_mqa"))
+                chk_throttle.configure(command=lambda: _on_tidal_checkbox_change("throttle"))
                 
                 # Hide the label for this row since we have internal labels
                 label.grid_forget()
                 
                 # Bind events for all
-                for w in [chk_mobile, chk_ac4, chk_mqa]:
+                for w in [chk_mobile, chk_ac4, chk_mqa, chk_throttle]:
                     w.bind("<Button-3>", show_context_menu)
                     w.bind("<Button-2>", show_context_menu)
                     w.bind("<Control-Button-1>", show_context_menu)
@@ -16988,7 +17127,7 @@ if __name__ == "__main__":
                     "search_limit": 25,
                     "disabled_search_platforms": [],
                     "concurrent_downloads": 5,
-                    "play_sound_on_finish": True
+                    "play_sound_on_finish": True,
                 },
                 "artist_downloading": { "return_credited_albums": True, "separate_tracks_skip_downloaded": True },
                 "formatting": { "album_format": "{artist}/{name}", "playlist_format": "{name}", "track_filename_format": "{artist} - {name}", "single_full_path_format": "{artist} - {name}", "metadata_separator": ";", "split_metadata": True, "enable_zfill": True, "force_album_format": False },
@@ -17045,7 +17184,7 @@ if __name__ == "__main__":
                     "spotify_dll_path": "./Spotify.dll",
                     "use_spotify_dll": "false",
                 },
-                "TIDAL": { "tv_atmos_token": "4N3n6Q1x95LL5K7p", "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=", "mobile_atmos_hires_token": "km8T1xS355y7dd3H", "mobile_hires_token": "6BDSRdpK9hqEBTgU", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True },
+                "TIDAL": { "tv_atmos_token": "4N3n6Q1x95LL5K7p", "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=", "mobile_atmos_hires_token": "km8T1xS355y7dd3H", "mobile_hires_token": "6BDSRdpK9hqEBTgU", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True, "throttle": True },
                 "LRCLIB": {},
                 "YouTube": { "cookies_path": "./config/youtube-cookies.txt", "download_pause_seconds": 5, "download_mode": "sequential" }
             }
