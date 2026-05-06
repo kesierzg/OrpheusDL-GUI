@@ -145,6 +145,7 @@ def build_pyinstaller():
         "pip",
         "install",
         "--no-deps",
+        "--upgrade",
         "--target",
         str(PROJECT_ROOT / "vendor" / "librespot"),
         "git+https://github.com/kokarare1212/librespot-python"
