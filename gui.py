@@ -7218,6 +7218,8 @@ def load_settings():
                 sp_c = settings["credentials"]["Spotify"]
                 if "use_spotify_dll" not in sp_c:
                     sp_c["use_spotify_dll"] = "true"
+                    if "download_pause_seconds" not in sp_c:
+                        sp_c["download_pause_seconds"] = 60
         if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
             print(f"Settings loaded and mapped from {CONFIG_FILE_PATH}")
 
@@ -14672,15 +14674,22 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
             grid_parent.grid_columnconfigure(1, weight=1)
 
+            _sp_pause_lib = 30
+            _sp_pause_desk = 60
+
             var_use_dll = tkinter.BooleanVar(value=use_dll_init)
             var_username = tkinter.StringVar(value=str(sp_creds.get("username") or ""))
             var_client_id = tkinter.StringVar(value=str(sp_creds.get("client_id") or ""))
             var_client_secret = tkinter.StringVar(value=str(sp_creds.get("client_secret") or ""))
-            dp_def = DEFAULT_SETTINGS["credentials"]["Spotify"]["download_pause_seconds"]
-            try:
-                dp_val = int(sp_creds.get("download_pause_seconds", dp_def))
-            except (TypeError, ValueError):
-                dp_val = int(dp_def)
+            _raw_dp = sp_creds.get("download_pause_seconds", None)
+            _fallback_pause = _sp_pause_desk if use_dll_init else _sp_pause_lib
+            if _raw_dp is not None and str(_raw_dp).strip() != "":
+                try:
+                    dp_val = int(_raw_dp)
+                except (TypeError, ValueError):
+                    dp_val = _fallback_pause
+            else:
+                dp_val = _fallback_pause
             var_dl_pause = tkinter.StringVar(value=str(dp_val))
 
             ck_def = sp_creds.get("cookies_path") or "./config/spotify-cookies.txt"
@@ -14703,14 +14712,15 @@ def _create_credential_tab_content(platform_name, tab_frame):
             desk_frame = customtkinter.CTkFrame(grid_parent, fg_color="transparent")
             lib_frame.grid_columnconfigure(1, weight=1)
             desk_frame.grid_columnconfigure(1, weight=1)
+            _sp_field_padx = (10, 5)
 
             lr = 0
             # Slightly tighter than default platforms — pulls “How to set up” up (matches compact mockup)
-            _lib_top = (12, 5)
+            _lib_top = (10, 5)
             _lib_mid = (5, 5)
             customtkinter.CTkLabel(lib_frame, text=label_mapping["username"]).grid(row=lr, column=0, sticky="w", padx=10, pady=_lib_top)
             ent_user = customtkinter.CTkEntry(lib_frame, textvariable=var_username)
-            ent_user.grid(row=lr, column=1, sticky="ew", padx=(10, 5), pady=_lib_top)
+            ent_user.grid(row=lr, column=1, sticky="ew", padx=10, pady=_lib_top)
             ent_user.bind("<Button-3>", show_context_menu)
             ent_user.bind("<FocusIn>", lambda e, w=ent_user: handle_focus_in(w))
             ent_user.bind("<FocusOut>", lambda e, w=ent_user: handle_focus_out(w))
@@ -14718,7 +14728,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
             customtkinter.CTkLabel(lib_frame, text=label_mapping["download_pause_seconds"]).grid(row=lr, column=0, sticky="w", padx=10, pady=_lib_mid)
             ent_pause = customtkinter.CTkEntry(lib_frame, textvariable=var_dl_pause)
-            ent_pause.grid(row=lr, column=1, sticky="ew", padx=(10, 5), pady=_lib_mid)
+            ent_pause.grid(row=lr, column=1, sticky="ew", padx=10, pady=_lib_mid)
             ent_pause.bind("<Button-3>", show_context_menu)
             ent_pause.bind("<FocusIn>", lambda e, w=ent_pause: handle_focus_in(w))
             ent_pause.bind("<FocusOut>", lambda e, w=ent_pause: handle_focus_out(w))
@@ -14726,7 +14736,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
             customtkinter.CTkLabel(lib_frame, text=label_mapping["client_id"]).grid(row=lr, column=0, sticky="w", padx=10, pady=_lib_mid)
             ent_cid = customtkinter.CTkEntry(lib_frame, textvariable=var_client_id)
-            ent_cid.grid(row=lr, column=1, sticky="ew", padx=(10, 5), pady=_lib_mid)
+            ent_cid.grid(row=lr, column=1, sticky="ew", padx=10, pady=_lib_mid)
             ent_cid.bind("<Button-3>", show_context_menu)
             ent_cid.bind("<FocusIn>", lambda e, w=ent_cid: handle_focus_in(w))
             ent_cid.bind("<FocusOut>", lambda e, w=ent_cid: handle_focus_out(w))
@@ -14734,15 +14744,15 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
             customtkinter.CTkLabel(lib_frame, text=label_mapping["client_secret"]).grid(row=lr, column=0, sticky="w", padx=10, pady=_lib_mid)
             ent_sec = customtkinter.CTkEntry(lib_frame, textvariable=var_client_secret, show="*")
-            ent_sec.grid(row=lr, column=1, sticky="ew", padx=(10, 5), pady=_lib_mid)
+            ent_sec.grid(row=lr, column=1, sticky="ew", padx=10, pady=_lib_mid)
             ent_sec.bind("<Button-3>", show_context_menu)
             ent_sec.bind("<FocusIn>", lambda e, w=ent_sec: _masked_entry_focus_in(w))
             ent_sec.bind("<FocusOut>", lambda e, w=ent_sec: _masked_entry_focus_out(w))
 
             dr = 0
-            customtkinter.CTkLabel(desk_frame, text=label_mapping["cookies_path"]).grid(row=dr, column=0, sticky="nw", padx=10, pady=(18, 7))
+            customtkinter.CTkLabel(desk_frame, text=label_mapping["cookies_path"]).grid(row=dr, column=0, sticky="nw", padx=10, pady=_lib_top)
             cookie_container = customtkinter.CTkFrame(desk_frame, fg_color="transparent")
-            cookie_container.grid(row=dr, column=1, sticky="ew", padx=(10, 5), pady=(18, 7))
+            cookie_container.grid(row=dr, column=1, sticky="new", padx=_sp_field_padx, pady=_lib_top)
             cookie_container.grid_columnconfigure(0, weight=1)
             ent_ck = customtkinter.CTkEntry(cookie_container, textvariable=var_cookies)
             ent_ck.grid(row=0, column=0, sticky="ew")
@@ -14802,10 +14812,21 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 hover_color=LINK_COLOR,
                 border_width=0,
             )
-            btn_open.grid(row=dr, column=2, sticky="ne", padx=(5, 5), pady=(18, 7))
+            btn_open.grid(row=dr, column=2, sticky="ne", padx=(5, 5), pady=(9, 5))
             dr += 1
 
-            customtkinter.CTkLabel(desk_frame, text=label_mapping["spotify_dll_path"]).grid(row=dr, column=0, sticky="w", padx=10, pady=(7, 7))
+            _desk_pause_pady = (3, 5)
+            customtkinter.CTkLabel(desk_frame, text=label_mapping["download_pause_seconds"]).grid(
+                row=dr, column=0, sticky="nw", padx=10, pady=_desk_pause_pady
+            )
+            desk_ent_pause = customtkinter.CTkEntry(desk_frame, textvariable=var_dl_pause)
+            desk_ent_pause.grid(row=dr, column=1, sticky="ew", padx=_sp_field_padx, pady=_desk_pause_pady)
+            desk_ent_pause.bind("<Button-3>", show_context_menu)
+            desk_ent_pause.bind("<FocusIn>", lambda e, w=desk_ent_pause: handle_focus_in(w))
+            desk_ent_pause.bind("<FocusOut>", lambda e, w=desk_ent_pause: handle_focus_out(w))
+            dr += 1
+
+            customtkinter.CTkLabel(desk_frame, text=label_mapping["spotify_dll_path"]).grid(row=dr, column=0, sticky="nw", padx=10, pady=_lib_mid)
 
             def _browse_spotify_dll():
                 initial_dir = os.path.dirname(var_dll.get()) if var_dll.get() and os.path.exists(os.path.dirname(var_dll.get())) else get_script_directory()
@@ -14818,7 +14839,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     var_dll.set(fp)
 
             ent_dll = customtkinter.CTkEntry(desk_frame, textvariable=var_dll)
-            ent_dll.grid(row=dr, column=1, sticky="ew", padx=(10, 5), pady=(7, 7))
+            ent_dll.grid(row=dr, column=1, sticky="new", padx=_sp_field_padx, pady=_lib_mid)
             ent_dll.bind("<Button-3>", show_context_menu)
             ent_dll.bind("<FocusIn>", lambda e, w=ent_dll: handle_focus_in(w))
             ent_dll.bind("<FocusOut>", lambda e, w=ent_dll: handle_focus_out(w))
@@ -14832,10 +14853,24 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 hover_color=LINK_COLOR,
                 border_width=0,
             )
-            btn_browse.grid(row=dr, column=2, sticky="e", padx=(5, 5), pady=(7, 7))
+            btn_browse.grid(row=dr, column=2, sticky="ne", padx=(5, 5), pady=(4, 5))
+
+            def _spotify_apply_pause_for_mode(use_dll_mode):
+                val = _sp_pause_desk if use_dll_mode else _sp_pause_lib
+                var_dl_pause.set(str(val))
+                try:
+                    cs = current_settings.setdefault("credentials", {}).setdefault("Spotify", {})
+                    cs["download_pause_seconds"] = val
+                except Exception:
+                    pass
+                try:
+                    save_settings(show_confirmation=False)
+                except Exception:
+                    pass
 
             def _spotify_mode_toggle():
                 ud = var_use_dll.get()
+                _spotify_apply_pause_for_mode(ud)
                 if ud:
                     lib_frame.grid_remove()
                     desk_frame.grid(row=0, column=0, columnspan=3, sticky="ew")
@@ -14864,8 +14899,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 continue
 
             if i == 0:
-                # Adjust top padding for alignment: AppleMusic/YouTube are reference (15), others need +1px (16)
-                top_pad = 15 if platform_name in ["Apple Music", "YouTube", "Spotify"] else 16
+                # Adjust top padding for alignment: AppleMusic/YouTube are reference (9), others need +1px (10)
+                top_pad = 9 if platform_name in ["Apple Music", "YouTube", "Spotify"] else 10
                 # Adjust bottom padding: AppleMusic needs -1px (4) to reduce gap to next row
                 bottom_pad = 4 if platform_name == "Apple Music" else 5
                 pady_config = (top_pad, bottom_pad)
@@ -14873,7 +14908,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 pady_config = 5
             
             if platform_name == "YouTube" and key == "download_pause_seconds":
-                pady_config = (0, 5)
+                pady_config = (5, 5)
             # Use custom label if available, otherwise generate from key
             label_text = label_mapping.get(key, key.replace('_', ' ').title())
             
@@ -16929,7 +16964,13 @@ def final_download_cleanup(success=False):
                     if 'youtube.com' in next_url or 'youtu.be' in next_url:
                         pause_seconds = current_settings.get('credentials', {}).get('YouTube', {}).get('download_pause_seconds', 0)
                     elif 'spotify.com' in next_url:
-                        pause_seconds = float(current_settings.get('credentials', {}).get('Spotify', {}).get('download_pause_seconds', 30))
+                        _spc = current_settings.get('credentials', {}).get('Spotify') or {}
+                        _raw_sp_pause = _spc.get('download_pause_seconds')
+                        if _raw_sp_pause is None or str(_raw_sp_pause).strip() == "":
+                            _sp_dll = str(_spc.get('use_spotify_dll', 'false')).lower() in ('true', '1', 'yes')
+                            pause_seconds = float(60 if _sp_dll else 30)
+                        else:
+                            pause_seconds = float(_raw_sp_pause)
                     else:
                         pause_seconds = 0
                     
@@ -17238,7 +17279,7 @@ if __name__ == "__main__":
                 "SoundCloud": { "web_access_token": "" },
                 "Spotify": {
                     "username": "",
-                    "download_pause_seconds": 15,
+                    "download_pause_seconds": 30,
                     "client_id": "",
                     "client_secret": "",
                     "cookies_path": "./config/spotify-cookies.txt",
