@@ -14706,8 +14706,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
             lr = 0
             # Slightly tighter than default platforms — pulls “How to set up” up (matches compact mockup)
-            _lib_top = (14, 6)
-            _lib_mid = (6, 6)
+            _lib_top = (12, 5)
+            _lib_mid = (5, 5)
             customtkinter.CTkLabel(lib_frame, text=label_mapping["username"]).grid(row=lr, column=0, sticky="w", padx=10, pady=_lib_top)
             ent_user = customtkinter.CTkEntry(lib_frame, textvariable=var_username)
             ent_user.grid(row=lr, column=1, sticky="ew", padx=(10, 5), pady=_lib_top)
@@ -15304,14 +15304,14 @@ def _create_credential_tab_content(platform_name, tab_frame):
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color=SURFACE_COLOR, corner_radius=5)
             # expand MUST stay False: fill="both"+expand=True steals all vertical space in the tab and the
             # DLL checkbox (packed after this frame) ends up below the CTkTabView clip — looks “capped”.
-            help_frame.pack(fill="x", expand=False, padx=3, pady=(8, 4), anchor="nw")
+            help_frame.pack(fill="x", expand=False, padx=3, pady=(7, 8), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
 
             left_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            left_col.grid(row=0, column=0, sticky="nw", padx=16, pady=(10, 10))
+            left_col.grid(row=0, column=0, sticky="nsew", padx=20, pady=(16, 8))
 
             left_header = customtkinter.CTkFrame(left_col, fg_color="transparent")
-            left_header.pack(anchor="w", pady=(0, 8))
+            left_header.pack(anchor="w", pady=(0, 9))
 
             icon_label = customtkinter.CTkLabel(
                 left_header,
@@ -15447,7 +15447,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     pass
 
             s1 = customtkinter.CTkFrame(left_col_lib, fg_color="transparent")
-            s1.pack(anchor="w", pady=(0, 4))
+            s1.pack(anchor="w", pady=(0, 3))
             customtkinter.CTkLabel(s1, text="1.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
             s1i = customtkinter.CTkFrame(s1, fg_color="transparent")
             s1i.pack(side="left")
@@ -15471,7 +15471,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             ).pack(side="left")
 
             s2 = customtkinter.CTkFrame(left_col_lib, fg_color="transparent")
-            s2.pack(anchor="w", pady=(0, 4))
+            s2.pack(anchor="w", pady=(0, 3))
             customtkinter.CTkLabel(s2, text="2.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
             customtkinter.CTkLabel(
                 s2,
@@ -15483,7 +15483,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             ).pack(side="left")
 
             s3 = customtkinter.CTkFrame(left_col_lib, fg_color="transparent")
-            s3.pack(anchor="w", pady=(0, 4))
+            s3.pack(anchor="w", pady=(0, 3))
             customtkinter.CTkLabel(s3, text="3.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
             customtkinter.CTkLabel(
                 s3,
@@ -15495,7 +15495,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             ).pack(side="left")
 
             s4 = customtkinter.CTkFrame(left_col_lib, fg_color="transparent")
-            s4.pack(anchor="w", pady=(0, 4))
+            s4.pack(anchor="w", pady=(0, 3))
             customtkinter.CTkLabel(s4, text="4.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
             s4i = customtkinter.CTkFrame(s4, fg_color="transparent")
             s4i.pack(side="left")
@@ -15503,8 +15503,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
             customtkinter.CTkLabel(
                 s4i,
                 text=_sp_redirect_uri,
-                font=("Segoe UI", 12, "italic"),
-                text_color=GRAY_TEXT_COLOR,
+                font=("Segoe UI", 11),
+                text_color=LINK_COLOR,
             ).pack(side="left")
             s4_copy = customtkinter.CTkButton(
                 s4i,
@@ -15523,27 +15523,27 @@ def _create_credential_tab_content(platform_name, tab_frame):
             s4_copy.bind("<Leave>", lambda e: s4_copy.configure(text_color="gray"))
 
             s5 = customtkinter.CTkFrame(left_col_lib, fg_color="transparent")
-            s5.pack(anchor="w", pady=(0, 4))
+            s5.pack(anchor="w", pady=(0, 1))
             customtkinter.CTkLabel(s5, text="5.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
             s5i = customtkinter.CTkFrame(s5, fg_color="transparent")
             s5i.pack(side="left")
-            customtkinter.CTkLabel(s5i, text="Save → Copy ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
+            customtkinter.CTkLabel(s5i, text="Save the app, then copy ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             customtkinter.CTkLabel(
                 s5i,
                 text="Client ID",
-                font=("Segoe UI", 12, "bold"),
+                font=("Segoe UI", 12),
                 text_color=LINK_COLOR,
             ).pack(side="left")
             customtkinter.CTkLabel(s5i, text=" + ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
             customtkinter.CTkLabel(
                 s5i,
-                text="Secret",
-                font=("Segoe UI", 12, "bold"),
+                text="Client Secret",
+                font=("Segoe UI", 12),
                 text_color=LINK_COLOR,
             ).pack(side="left")
             customtkinter.CTkLabel(
                 s5i,
-                text=", paste them above — Save.",
+                text=", paste above — Save.",
                 font=("Segoe UI", 12),
                 text_color=GRAY_TEXT_COLOR,
             ).pack(side="left")
@@ -15571,7 +15571,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
             spotify_chk_bar = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
             # Match Deezer padx/pdy on deezer_chk_frame; keep gap under help small so toggle stays visible
-            spotify_chk_bar.pack(fill="x", anchor="w", padx=10, pady=(4, 5))
+            spotify_chk_bar.pack(fill="x", anchor="w", padx=10, pady=(6, 5))
             chk_dll = customtkinter.CTkCheckBox(
                 spotify_chk_bar,
                 text="Use Spotify.dll instead (supports Lossless)",
@@ -16911,6 +16911,8 @@ def run_download_in_subprocess(url, output_path, gui_settings, search_result_dat
 
 def final_download_cleanup(success=False):
     """Handles UI cleanup when download process completes."""
+    import random as _random_pause
+
     global download_process_active, file_download_queue, current_batch_output_path, app
     
     try:
@@ -16927,13 +16929,15 @@ def final_download_cleanup(success=False):
                     if 'youtube.com' in next_url or 'youtu.be' in next_url:
                         pause_seconds = current_settings.get('credentials', {}).get('YouTube', {}).get('download_pause_seconds', 0)
                     elif 'spotify.com' in next_url:
-                        pause_seconds = current_settings.get('credentials', {}).get('Spotify', {}).get('download_pause_seconds', 30)
+                        pause_seconds = float(current_settings.get('credentials', {}).get('Spotify', {}).get('download_pause_seconds', 30))
                     else:
                         pause_seconds = 0
                     
-                    if pause_seconds and int(pause_seconds) > 0:
-                        pause_ms = int(pause_seconds) * 1000
-                        print(f"Pausing for {pause_seconds} seconds before next download...")
+                    if pause_seconds and pause_seconds > 0:
+                        jitter = pause_seconds * 0.25
+                        pause_actual = _random_pause.uniform(pause_seconds - jitter, pause_seconds + jitter)
+                        pause_ms = max(1, int(pause_actual * 1000))
+                        print(f"Pausing for {pause_actual:.0f}s before next download (base {pause_seconds:g}s ±25%)...")
                 except Exception as e:
                     print(f"[Warning] Could not read pause setting: {e}")
                 
