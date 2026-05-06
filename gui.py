@@ -484,6 +484,26 @@ def _cleanup_debug_log_files(debug_enabled):
 
 def setup_crash_reporting():
     """Setup global exception hooks to capture fatal crashes."""
+    def _is_librespot_thread_disconnect(args):
+        """Return True for noisy Librespot receiver disconnect tracebacks."""
+        thread_name = getattr(getattr(args, "thread", None), "name", "")
+        if thread_name != "session-packet-receiver":
+            return False
+
+        exc_type_name = getattr(args.exc_type, "__name__", "")
+        error_text = str(args.exc_value or "")
+
+        # Common transient disconnect/reconnect failures from Librespot threads.
+        if exc_type_name in ("ConnectionResetError", "ConnectionError"):
+            return True
+        if "WinError 10054" in error_text:
+            return True
+        if "unpack requires a buffer of 4 bytes" in error_text:
+            return True
+        if "login_failed" in error_text:
+            return True
+        return False
+
     def handle_exception(exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
@@ -516,7 +536,19 @@ def setup_crash_reporting():
     if hasattr(threading, 'excepthook'):
         def handle_thread_exception(args):
             error_msg = "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback))
-            print(f"\n{'!'*20} FATAL THREAD ERROR ({args.thread.name}) {'!'*10}\n{error_msg}\n{'!'*52}")
+            if _is_librespot_thread_disconnect(args):
+                print(
+                    "\n[Spotify] Connection to Spotify was interrupted. "
+                    "The downloader will retry automatically.\n"
+                    "(Enable debug mode to see full stack traces.)"
+                )
+                if _log_capture.log_file:
+                    print(
+                        f"\n{'!'*20} FATAL THREAD ERROR ({args.thread.name}) {'!'*10}\n"
+                        f"{error_msg}\n{'!'*52}"
+                    )
+            else:
+                print(f"\n{'!'*20} FATAL THREAD ERROR ({args.thread.name}) {'!'*10}\n{error_msg}\n{'!'*52}")
             _log_capture.flush()
             
         threading.excepthook = handle_thread_exception
@@ -11017,6 +11049,17 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         for netloc_pattern, mod_name in orpheus.module_netloc_constants.items():
             if re.findall(netloc_pattern, parsed_url.netloc): module_name = mod_name; break
 
+        # Spotify fallback in Librespot mode:
+        # force unsupported higher tiers to OGG 320-equivalent ("high").
+        if module_name == 'spotify':
+            spotify_creds = (fresh_orpheus_settings.get("modules", {}).get("spotify", {}) or {})
+            use_dll = str(spotify_creds.get("use_spotify_dll", "false")).lower() in ("true", "1", "yes")
+            if not use_dll:
+                current_q = str(downloader_settings.get("general", {}).get("download_quality", "")).lower()
+                if current_q in ("atmos", "hifi", "lossless"):
+                    downloader_settings.setdefault("general", {})["download_quality"] = "high"
+                    print("|GRAY|Spotify Librespot mode does not support Atmos/Lossless tiers. Falling back to High.|RESET|")
+
         # Smart Atmos Fallback: If quality is set to 'atmos' but platform/track doesn't support it, fall back to 'hifi'
         if downloader_settings.get("general", {}).get("download_quality") == "atmos":
             is_atmos_possible = False
@@ -13642,9 +13685,23 @@ def show_search_context_menu(event):
             elif best_mp3 > 0:
                 platform_button_configs['soundcloud'] = [("FLAC", "lossless"), (f"MP3 {best_mp3}", "high"), ("MP3 64", "low")]
 
-        # Spotify: always list 24-bit FLAC, 16-bit FLAC, OGG 320, and OGG 160
-        # (download still validates cookies + DLL)
-        spotify_quals = ['hifi', 'lossless', 'high', 'low']
+        # Spotify quality options depend on Desktop API (DLL) mode:
+        # - DLL enabled: FLAC + OGG options
+        # - DLL disabled (Librespot): OGG only
+        spotify_use_dll = False
+        try:
+            if 'settings_vars' in globals() and 'credentials' in settings_vars:
+                sp_settings = settings_vars['credentials'].get('Spotify', {})
+                if 'use_spotify_dll' in sp_settings:
+                    _v = sp_settings['use_spotify_dll'].get()
+                    spotify_use_dll = bool(_v) if not isinstance(_v, str) else _v.lower() in ("true", "1", "yes")
+            if not spotify_use_dll and 'current_settings' in globals():
+                _stored = ((current_settings.get('credentials') or {}).get('Spotify') or {}).get('use_spotify_dll', "false")
+                spotify_use_dll = str(_stored).lower() in ("true", "1", "yes")
+        except Exception:
+            spotify_use_dll = False
+
+        spotify_quals = ['hifi', 'lossless', 'high', 'low'] if spotify_use_dll else ['high', 'low']
 
         platform_available_qualities = {
             'applemusic': am_quals,
@@ -15524,7 +15581,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             chk_dll.pack(side="left")
             CTkToolTip(
                 chk_dll,
-                message="Checked: Desktop API — spotify-cookies.txt + Spotify.dll (lossless-capable).\nUnchecked: Librespot — Spotify Developer Client ID/Secret and username.",
+                message="Checked: Desktop API — spotify-cookies.txt + Spotify.dll (FLAC + OGG).\nUnchecked: Librespot — Spotify Developer Client ID/Secret + username (OGG only).",
                 bg_color=TOOLTIP_MENU_BG,
                 text_color=WHITE_TEXT_COLOR,
                 padx=12,
