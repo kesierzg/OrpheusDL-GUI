@@ -6492,7 +6492,7 @@ def _show_spotify_dll_instructions():
     customtkinter.CTkLabel(link_inner, text=" used by this app.", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
 
     # Buttons (Centered)
-    mega_url = "https://mega.nz/file/1dxDRapL#OqYhyOC6xBsLyh4sOLdlRLRQhYvhwXx7mj4X5cmTP4A"
+    mega_url = "https://orpheusdl-gui.x10.mx/Spotify.dll"
     
     download_btn = customtkinter.CTkButton(
         main_frame, 
