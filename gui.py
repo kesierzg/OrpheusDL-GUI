@@ -14726,12 +14726,19 @@ def _create_credential_tab_content(platform_name, tab_frame):
             ent_user.bind("<FocusOut>", lambda e, w=ent_user: handle_focus_out(w))
             lr += 1
 
-            customtkinter.CTkLabel(lib_frame, text=label_mapping["download_pause_seconds"]).grid(row=lr, column=0, sticky="w", padx=10, pady=_lib_mid)
+            lbl_lib_pause = customtkinter.CTkLabel(lib_frame, text=label_mapping["download_pause_seconds"])
+            lbl_lib_pause.grid(row=lr, column=0, sticky="w", padx=10, pady=_lib_mid)
             ent_pause = customtkinter.CTkEntry(lib_frame, textvariable=var_dl_pause)
             ent_pause.grid(row=lr, column=1, sticky="ew", padx=10, pady=_lib_mid)
             ent_pause.bind("<Button-3>", show_context_menu)
             ent_pause.bind("<FocusIn>", lambda e, w=ent_pause: handle_focus_in(w))
             ent_pause.bind("<FocusOut>", lambda e, w=ent_pause: handle_focus_out(w))
+            _sp_pause_tooltip = (
+                "Delay in seconds between track downloads.\n"
+                "A random timing offset of about 25% is applied to each pause to reduce predictable request patterns."
+            )
+            CTkToolTip(lbl_lib_pause, message=_sp_pause_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+            CTkToolTip(ent_pause, message=_sp_pause_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
             lr += 1
 
             customtkinter.CTkLabel(lib_frame, text=label_mapping["client_id"]).grid(row=lr, column=0, sticky="w", padx=10, pady=_lib_mid)
@@ -14750,12 +14757,16 @@ def _create_credential_tab_content(platform_name, tab_frame):
             ent_sec.bind("<FocusOut>", lambda e, w=ent_sec: _masked_entry_focus_out(w))
 
             dr = 0
-            customtkinter.CTkLabel(desk_frame, text=label_mapping["cookies_path"]).grid(row=dr, column=0, sticky="nw", padx=10, pady=_lib_top)
+            lbl_sp_cookies = customtkinter.CTkLabel(desk_frame, text=label_mapping["cookies_path"])
+            lbl_sp_cookies.grid(row=dr, column=0, sticky="nw", padx=10, pady=_lib_top)
             cookie_container = customtkinter.CTkFrame(desk_frame, fg_color="transparent")
             cookie_container.grid(row=dr, column=1, sticky="new", padx=_sp_field_padx, pady=_lib_top)
             cookie_container.grid_columnconfigure(0, weight=1)
             ent_ck = customtkinter.CTkEntry(cookie_container, textvariable=var_cookies)
             ent_ck.grid(row=0, column=0, sticky="ew")
+            _sp_cookies_tooltip = "Path to cookies.txt in Netscape format, required for Spotify Desktop mode."
+            CTkToolTip(lbl_sp_cookies, message=_sp_cookies_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+            CTkToolTip(ent_ck, message=_sp_cookies_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
             warn_ck = customtkinter.CTkLabel(cookie_container, text="", text_color=ERROR_COLOR, font=("Segoe UI", 10), anchor="w", height=12)
             warn_ck.grid(row=1, column=0, sticky="w", pady=(2, 0))
 
@@ -14816,7 +14827,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
             dr += 1
 
             _desk_pause_pady = (3, 5)
-            customtkinter.CTkLabel(desk_frame, text=label_mapping["download_pause_seconds"]).grid(
+            lbl_desk_pause = customtkinter.CTkLabel(desk_frame, text=label_mapping["download_pause_seconds"])
+            lbl_desk_pause.grid(
                 row=dr, column=0, sticky="nw", padx=10, pady=_desk_pause_pady
             )
             desk_ent_pause = customtkinter.CTkEntry(desk_frame, textvariable=var_dl_pause)
@@ -14824,9 +14836,12 @@ def _create_credential_tab_content(platform_name, tab_frame):
             desk_ent_pause.bind("<Button-3>", show_context_menu)
             desk_ent_pause.bind("<FocusIn>", lambda e, w=desk_ent_pause: handle_focus_in(w))
             desk_ent_pause.bind("<FocusOut>", lambda e, w=desk_ent_pause: handle_focus_out(w))
+            CTkToolTip(lbl_desk_pause, message=_sp_pause_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+            CTkToolTip(desk_ent_pause, message=_sp_pause_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
             dr += 1
 
-            customtkinter.CTkLabel(desk_frame, text=label_mapping["spotify_dll_path"]).grid(row=dr, column=0, sticky="nw", padx=10, pady=_lib_mid)
+            lbl_sp_dll = customtkinter.CTkLabel(desk_frame, text=label_mapping["spotify_dll_path"])
+            lbl_sp_dll.grid(row=dr, column=0, sticky="nw", padx=10, pady=_lib_mid)
 
             def _browse_spotify_dll():
                 initial_dir = os.path.dirname(var_dll.get()) if var_dll.get() and os.path.exists(os.path.dirname(var_dll.get())) else get_script_directory()
@@ -14843,6 +14858,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
             ent_dll.bind("<Button-3>", show_context_menu)
             ent_dll.bind("<FocusIn>", lambda e, w=ent_dll: handle_focus_in(w))
             ent_dll.bind("<FocusOut>", lambda e, w=ent_dll: handle_focus_out(w))
+            _sp_dll_tooltip = "Path to Spotify.dll. Required for FLAC downloads in Spotify Desktop mode."
+            CTkToolTip(lbl_sp_dll, message=_sp_dll_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+            CTkToolTip(ent_dll, message=_sp_dll_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
             btn_browse = customtkinter.CTkButton(
                 desk_frame,
                 text="Browse",
@@ -15015,6 +15033,14 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 var_mobile = tkinter.BooleanVar(value=current_value)
                 chk_mobile = customtkinter.CTkCheckBox(container, text="Enable Mobile", variable=var_mobile)
                 chk_mobile.pack(side="left", padx=(0, 18))
+                CTkToolTip(
+                    chk_mobile,
+                    message="Use TIDAL mobile client credentials when possible. Can improve compatibility for some Atmos/Hi-Res scenarios.",
+                    bg_color=TOOLTIP_MENU_BG,
+                    text_color=WHITE_TEXT_COLOR,
+                    padx=12,
+                    pady=12,
+                )
                 
                 # Prefer Ac4 (unchecked = E-AC-3 JOC, plays in VLC/Audacity; checked = AC-4, may need special player)
                 val_ac4 = current_settings.get("credentials", {}).get(platform_name, {}).get("prefer_ac4", False)
@@ -15028,6 +15054,14 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 var_mqa = tkinter.BooleanVar(value=val_mqa)
                 chk_mqa = customtkinter.CTkCheckBox(container, text="Fix MQA", variable=var_mqa)
                 chk_mqa.pack(side="left", padx=(0, 18))
+                CTkToolTip(
+                    chk_mqa,
+                    message="Apply MQA metadata/header fixes after download to improve compatibility with players and tag readers.",
+                    bg_color=TOOLTIP_MENU_BG,
+                    text_color=WHITE_TEXT_COLOR,
+                    padx=12,
+                    pady=12,
+                )
                 
                 val_throttle = current_settings.get("credentials", {}).get(platform_name, {}).get("throttle", True)
                 var_throttle = tkinter.BooleanVar(value=val_throttle)
@@ -15174,6 +15208,14 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 widget = customtkinter.CTkEntry(container)
                 widget.configure(textvariable=var)
                 widget.grid(row=0, column=0, sticky="ew")
+                _cookies_tooltip_by_platform = {
+                    "Apple Music": "Path to cookies.txt in Netscape format used for Apple Music authentication.",
+                    "YouTube": "Path to cookies.txt in Netscape format used for YouTube authentication.",
+                }
+                _cookies_tip = _cookies_tooltip_by_platform.get(platform_name)
+                if _cookies_tip:
+                    CTkToolTip(label, message=_cookies_tip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+                    CTkToolTip(widget, message=_cookies_tip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
                 widget.bind("<Button-3>", show_context_menu)
                 widget.bind("<Button-2>", show_context_menu)
                 widget.bind("<Control-Button-1>", show_context_menu)
@@ -15310,6 +15352,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 elif platform_name == "YouTube" and key == "download_pause_seconds":
                      # Match padding of Cookies Path (10, 5) so widths align
                      widget.grid(row=i, column=1, sticky="ew", padx=(10, 5), pady=pady_config)
+                elif platform_name == "TIDAL":
+                    # Keep TIDAL fields slightly shorter so they align with Spotify visually.
+                    widget.grid(row=i, column=1, sticky="ew", padx=(10, 10), pady=pady_config)
                 else:
                     # For all other fields/platforms, use default layout (just under each other)
                     widget.grid(row=i, column=1, sticky="ew", padx=10, pady=pady_config)
@@ -15326,6 +15371,21 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 else:
                     widget.bind("<FocusIn>", lambda e, w=widget: handle_focus_in(w))
                     widget.bind("<FocusOut>", lambda e, w=widget: handle_focus_out(w))
+
+                if platform_name == "Apple Music":
+                    _am_tooltip_texts = {
+                        "language": "Language/locale for Apple Music requests (for example: en-US).",
+                        "wrapper_decrypt_ip": "IP:port of your external wrapper decrypt server used with Wrapper mode (for Atmos/ALAC).",
+                    }
+                    _am_tip = _am_tooltip_texts.get(key)
+                    if _am_tip:
+                        CTkToolTip(label, message=_am_tip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+                        CTkToolTip(widget, message=_am_tip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+
+                if platform_name == "YouTube" and key == "download_pause_seconds":
+                    _yt_pause_tip = "Delay in seconds between YouTube track downloads to reduce rate limiting risk."
+                    CTkToolTip(label, message=_yt_pause_tip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+                    CTkToolTip(widget, message=_yt_pause_tip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
             
             if platform_name not in settings_vars['credentials']:
                 settings_vars['credentials'][platform_name] = {}
@@ -18204,9 +18264,9 @@ if __name__ == "__main__":
             "formatting.force_album_format": "Use the album_format structure even for single track downloads.",
             "codecs.proprietary_codecs": "Enable potentially proprietary codecs like MQA (if supported by module).",
             "codecs.spatial_codecs": "Enable spatial audio codecs like Dolby Atmos (if supported by module).",
-            "module_defaults.lyrics": "Default module to use for fetching lyrics.",
-            "module_defaults.covers": "Default module to use for fetching cover art.",
-            "module_defaults.credits": "Default module to use for fetching track credits.",
+            "module_defaults.lyrics": "Default provider for lyrics when the source platform does not return usable lyrics.\nUse 'default' to auto-pick the best available lyrics module.",
+            "module_defaults.covers": "Default provider for cover art when the source platform image is missing/low quality.\nUse 'default' to auto-pick the best available cover module.",
+            "module_defaults.credits": "Default provider for track credits when credits are missing from the source platform.\nUse 'default' to auto-pick the best available credits module.",
             "lyrics.embed_lyrics": "Embed standard (unsynced) lyrics into the audio file.",
             "lyrics.embed_synced_lyrics": "Embed synced (LRC) lyrics into the audio file (requires embed_lyrics).",
             "lyrics.save_synced_lyrics": "Save synced lyrics as a separate .lrc file alongside the track.",
@@ -18223,7 +18283,7 @@ if __name__ == "__main__":
             "playlist.extended_m3u": "Include extended info like track length in M3U file.",
             "advanced.advanced_login_system": "Enable advanced login system (Use only if instructed by module documentation).",
             "advanced.ffmpeg_path": "Full path to the ffmpeg executable \nIf set to just 'ffmpeg', it's assumed to be in the system PATH.\nThis is used for codec conversions.",
-            "advanced.codec_conversions": "Defines custom codec conversions (e.g., alac to flac). Enter source format on the left, target on the right.",
+            "advanced.codec_conversions": "Defines automatic codec remapping before save (for example: alac -> flac).\nLeft dropdown = source codec from module, right dropdown = target codec to convert to.",
             "advanced.conversion_keep_original": "Keep the original file after successful codec conversion.",
             "advanced.cover_variance_threshold": "Tolerance for accepting covers with slightly different sizes (0-100).",
             "advanced.debug_mode": "Allows various detailed informational and diagnostic messages to be printed to the console.\nIntended for troubleshooting issues only.",
@@ -18409,6 +18469,7 @@ Unnecessary Lossless-to-Lossless""",
                             codec_frame = customtkinter.CTkFrame(global_settings_frame, fg_color="transparent")
                             codec_frame.grid(row=row, column=1, sticky="ew", padx=5, pady=5, columnspan=2)
                             codec_frame.grid_columnconfigure(2, weight=1)
+                            widget = codec_frame
                             if isinstance(current_value, dict) and current_value:
                                 current_conversions = current_value
                             else:
