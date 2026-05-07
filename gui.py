@@ -15081,11 +15081,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     padx=12,
                     pady=12,
                 )
-                # CTkCheckBox defaults to a fixed outer width (~100) with text column weight=1, so short labels
-                # leave empty space inside the widget (looks like a huge gap before the next checkbox). Tighten
-                # column 2 and set width from checkbox + gutter + measured text.
-                import tkinter.font as tkfont
-                _tidal_chk_gutter = 12
+                # Keep TIDAL checkbox marker/text spacing aligned with other tabs.
+                _tidal_chk_gutter = 6
                 for _cb in (chk_mobile, chk_ac4, chk_mqa, chk_throttle):
                     try:
                         _ms = _cb._apply_widget_scaling(_tidal_chk_gutter)
@@ -15093,16 +15090,6 @@ def _create_credential_tab_content(platform_name, tab_frame):
                         _ms = _tidal_chk_gutter
                     _cb.grid_columnconfigure(1, minsize=_ms)
                     _cb.grid_columnconfigure(2, weight=0)
-                    try:
-                        _font = tkfont.Font(font=_cb._text_label.cget("font"))
-                        _text_px = _font.measure(_cb.cget("text") or "")
-                        _cw = _cb._apply_widget_scaling(getattr(_cb, "_checkbox_width", 24))
-                        _total_px = int(_cw + _ms + _text_px + 10)
-                        _logical_w = int(_cb._reverse_widget_scaling(_total_px)) + 1
-                        if _logical_w > 0:
-                            _cb.configure(width=_logical_w)
-                    except Exception:
-                        pass
                 
                 # Register variables
                 if platform_name not in settings_vars['credentials']:
