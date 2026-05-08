@@ -6231,7 +6231,7 @@ def _show_spotify_cookies_instructions():
     
     warning_label = customtkinter.CTkLabel(
         warning_frame,
-        text="WARNING! Your account might get suspended downloading from Spotify.",
+        text="WARNING: Downloading from Spotify may suspend your account.",
         font=("Segoe UI", 12, "bold"),
         text_color=ERROR_COLOR,
         wraplength=540,
@@ -6241,7 +6241,7 @@ def _show_spotify_cookies_instructions():
 
     recommendation_label = customtkinter.CTkLabel(
         warning_frame,
-        text="Recommendation: Only download those tracks that are simply not available on other platforms.",
+        text="RECOMMENDED: Only download tracks unavailable elsewhere.",
         font=("Segoe UI", 12),
         text_color=WHITE_TEXT_COLOR,
         wraplength=540,
@@ -6251,9 +6251,9 @@ def _show_spotify_cookies_instructions():
 
     # 4. Suspension Info (Updated Text & Size)
     suspension_info = (
-        "If your account gets suspended, you’ll receive an email to contact support.\n"
-        "By doing so, within 5 days, you should receive an email to update your Spotify password\n"
-        "(and regain access)."
+       "If your account is suspended, contact support via the email you receive.\n"
+       "Within 5 days, you should get a password reset email to regain access.\n"
+       "(A 3rd suspension is permanent)\n"        
     )
     suspension_label = customtkinter.CTkLabel(
         main_frame,
@@ -6350,7 +6350,7 @@ def _show_spotify_pre_download_warning() -> bool:
 
     customtkinter.CTkLabel(
         main_frame,
-        text="WARNING! Your account might get suspended downloading from Spotify.",
+        text="WARNING: Downloading from Spotify may suspend your account.",
         font=("Segoe UI", 13, "bold"),
         text_color=ERROR_COLOR,
         wraplength=_wrap,
@@ -6359,7 +6359,7 @@ def _show_spotify_pre_download_warning() -> bool:
 
     customtkinter.CTkLabel(
         main_frame,
-        text="Recommendation: Only download those tracks that are simply not available on other platforms.",
+        text="RECOMMENDED: Only download tracks unavailable elsewhere.",
         font=("Segoe UI", 12),
         text_color=WHITE_TEXT_COLOR,
         wraplength=_wrap,
@@ -6367,9 +6367,9 @@ def _show_spotify_pre_download_warning() -> bool:
     ).pack(fill="x", pady=(0, 6))
 
     suspension_info = (
-        "If your account gets suspended, you’ll receive an email to contact support.\n"
-        "By doing so, within 5 days, you should receive an email to update your Spotify password\n"
-        "(and regain access)."
+        "If your account is suspended, contact support via the email you receive.\n"
+        "Within 5 days, you should get a password reset email to regain access.\n"
+        "(A 3rd suspension is permanent)\n"        
     )
     customtkinter.CTkLabel(
         main_frame,
@@ -11653,7 +11653,9 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
         show_centered_messagebox("Input Error", f"Could not process input: {url_to_download}\nError: {parse_e}\nPlease enter a valid web URL or .txt file path.", dialog_type="error")
         return False
 
-    # Spotify: Desktop API needs cookies + DLL; Librespot needs Developer credentials
+    # Spotify: Desktop API needs cookies + DLL; Librespot needs Developer credentials.
+    # Account-suspension warning is shown for BOTH methods (DLL and Librespot) since
+    # downloading from Spotify carries the same risk regardless of backend.
     if "spotify.com" in url_to_download:
         spotify_creds = (current_settings.get("credentials") or {}).get("Spotify") or {}
         use_dll = str(spotify_creds.get("use_spotify_dll", "false")).lower() in ("true", "1", "yes")
@@ -11668,10 +11670,6 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
             if not os.path.isfile(dll_path):
                 _show_spotify_dll_instructions()
                 return False
-            if not spotify_pre_download_warning_acknowledged:
-                if not _show_spotify_pre_download_warning():
-                    return False
-                spotify_pre_download_warning_acknowledged = True
         else:
             missing = []
             if not (spotify_creds.get("username") or "").strip():
@@ -11688,6 +11686,12 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
                     dialog_type="warning",
                 )
                 return False
+
+        # Show suspension warning once per session for both DLL and Librespot backends.
+        if not spotify_pre_download_warning_acknowledged:
+            if not _show_spotify_pre_download_warning():
+                return False
+            spotify_pre_download_warning_acknowledged = True
 
     # Beatport: require username and password before download
     if 'beatport.com' in url_to_download:
@@ -11830,7 +11834,8 @@ def start_download_thread(search_result_data=None):
         input_text = url_entry.get().strip()
         if not input_text:
              show_centered_messagebox("Info", "Please enter a URL or a file path.", dialog_type="warning"); return
-        # New user-initiated download session: show Spotify DLL warning once.
+        # New user-initiated download session: show Spotify suspension warning once
+        # (applies to both Spotify.dll and Librespot backends).
         spotify_pre_download_warning_acknowledged = False
 
         output_path = path_var_main.get().strip()
@@ -15654,7 +15659,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 cursor=HAND_CURSOR_LINK,
             )
             s1_dash.pack(side="left")
-            s1_dash.bind("<Button-1>", lambda e: _open_url("https://dashboard.spotify.com/"))
+            s1_dash.bind("<Button-1>", lambda e: _open_url("https://developer.spotify.com/"))
             s1_dash.bind("<Enter>", lambda e: s1_dash.configure(text_color=LINK_HOVER_COLOR))
             s1_dash.bind("<Leave>", lambda e: s1_dash.configure(text_color=LINK_COLOR))
             customtkinter.CTkLabel(
