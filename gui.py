@@ -1169,6 +1169,7 @@ file_download_queue = []
 output_queue = queue.Queue()
 current_batch_output_path = None
 _current_download_context = None
+spotify_pre_download_warning_acknowledged = False
 
 _queue_log_handler_instance = None
 
@@ -11461,7 +11462,47 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                     next_url = file_download_queue.pop(0)
                     print(f"Queueing next download from file: {next_url} ({len(file_download_queue)} remaining)")
                     if 'app' in globals() and app and app.winfo_exists() and current_batch_output_path:
-                        app.after(100, lambda u=next_url, p=current_batch_output_path: _start_single_download(u, p, None))
+                        # Respect per-platform inter-download pause for queued items.
+                        pause_ms = 100  # default fallback
+                        try:
+                            import random as _random_pause
+                            _mods = current_settings.get('modules', {}) if isinstance(current_settings, dict) else {}
+                            _creds = current_settings.get('credentials', {}) if isinstance(current_settings, dict) else {}
+                            _next_url_l = (next_url or '').lower()
+
+                            if 'youtube.com' in _next_url_l or 'youtu.be' in _next_url_l:
+                                _yt_mod = _mods.get('youtube') or {}
+                                _yt_cred = _creds.get('YouTube') or {}
+                                _raw_yt_pause = _yt_mod.get('download_pause_seconds', _yt_cred.get('download_pause_seconds', 5))
+                                pause_seconds = float(_raw_yt_pause)
+                            elif 'spotify.com' in _next_url_l:
+                                _sp_mod = _mods.get('spotify') or {}
+                                _sp_cred = _creds.get('Spotify') or {}
+                                _raw_sp_pause = _sp_mod.get('download_pause_seconds')
+                                if _raw_sp_pause is None or str(_raw_sp_pause).strip() == "":
+                                    _sp_dll_raw = _sp_mod.get('use_spotify_dll', _sp_cred.get('use_spotify_dll', 'false'))
+                                    _sp_dll = str(_sp_dll_raw).lower() in ('true', '1', 'yes')
+                                    pause_seconds = float(60 if _sp_dll else 30)
+                                else:
+                                    pause_seconds = float(_raw_sp_pause)
+                            else:
+                                pause_seconds = 0.0
+
+                            if pause_seconds > 0:
+                                jitter = pause_seconds * 0.25
+                                pause_actual = _random_pause.uniform(pause_seconds - jitter, pause_seconds + jitter)
+                                pause_ms = max(1, int(pause_actual * 1000))
+                                pause_msg = f"Pausing for {pause_actual:.0f}s before next download (base {pause_seconds:g}s ±25%)..."
+                                print(pause_msg)
+                                try:
+                                    if 'output_queue' in globals() and output_queue:
+                                        output_queue.put(f"|GRAY|{pause_msg}|RESET|\n")
+                                except Exception:
+                                    pass
+                        except Exception as e:
+                            print(f"[Warning] Could not read pause setting: {e}")
+
+                        app.after(pause_ms, lambda u=next_url, p=current_batch_output_path: _start_single_download(u, p, None))
                     else:
                         print("[Error] Cannot queue next download: App not available or batch path missing.")
                         set_ui_state_downloading(False)
@@ -11526,6 +11567,7 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
 def _start_single_download(url_to_download, output_path_final, search_result_data=None):
     """Starts the download in a separate thread for a single URL."""
     global download_process_active, current_settings, orpheus_instance, stop_event
+    global spotify_pre_download_warning_acknowledged
     
     if orpheus_instance is None:
         print("Download cancelled: Orpheus instance is None.")
@@ -11563,8 +11605,10 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
             if not os.path.isfile(dll_path):
                 _show_spotify_dll_instructions()
                 return False
-            if not _show_spotify_pre_download_warning():
-                return False
+            if not spotify_pre_download_warning_acknowledged:
+                if not _show_spotify_pre_download_warning():
+                    return False
+                spotify_pre_download_warning_acknowledged = True
         else:
             missing = []
             if not (spotify_creds.get("username") or "").strip():
@@ -11707,7 +11751,7 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
 def start_download_thread(search_result_data=None):
     """Validates inputs (URL or file path) and starts the download process(es). Queues downloads from files."""
     global download_process_active, current_settings, orpheus_instance, url_entry, path_var_main, stop_event
-    global file_download_queue, current_batch_output_path
+    global file_download_queue, current_batch_output_path, spotify_pre_download_warning_acknowledged
 
     if orpheus_instance is None:
         show_centered_messagebox("Error", "Orpheus library not initialized. Cannot start download.", dialog_type="error")
@@ -11723,6 +11767,8 @@ def start_download_thread(search_result_data=None):
         input_text = url_entry.get().strip()
         if not input_text:
              show_centered_messagebox("Info", "Please enter a URL or a file path.", dialog_type="warning"); return
+        # New user-initiated download session: show Spotify DLL warning once.
+        spotify_pre_download_warning_acknowledged = False
 
         output_path = path_var_main.get().strip()
         if not output_path:
@@ -14204,7 +14250,10 @@ def build_url_from_result(result_data):
 
 def download_selected():
     global tabview, url_entry, file_download_queue, current_batch_output_path
+    global spotify_pre_download_warning_acknowledged
     try:
+        # New user-initiated download session from search results.
+        spotify_pre_download_warning_acknowledged = False
         selected_items = get_selected_items_data()
         if not selected_items: 
             show_centered_messagebox("Error", "No items selected.", dialog_type="warning")
@@ -17007,14 +17056,22 @@ def final_download_cleanup(success=False):
                 # Determine pause duration based on platform
                 pause_ms = 100  # Default 100ms
                 try:
-                    # Detect platform from URL
+                    # Detect platform from URL and use module pause settings (same source as downloader).
+                    _mods = current_settings.get('modules', {}) if isinstance(current_settings, dict) else {}
+                    _creds = current_settings.get('credentials', {}) if isinstance(current_settings, dict) else {}
+
                     if 'youtube.com' in next_url or 'youtu.be' in next_url:
-                        pause_seconds = current_settings.get('credentials', {}).get('YouTube', {}).get('download_pause_seconds', 0)
+                        _yt_mod = _mods.get('youtube') or {}
+                        _yt_cred = _creds.get('YouTube') or {}
+                        _raw_yt_pause = _yt_mod.get('download_pause_seconds', _yt_cred.get('download_pause_seconds', 5))
+                        pause_seconds = float(_raw_yt_pause)
                     elif 'spotify.com' in next_url:
-                        _spc = current_settings.get('credentials', {}).get('Spotify') or {}
-                        _raw_sp_pause = _spc.get('download_pause_seconds')
+                        _sp_mod = _mods.get('spotify') or {}
+                        _sp_cred = _creds.get('Spotify') or {}
+                        _raw_sp_pause = _sp_mod.get('download_pause_seconds')
                         if _raw_sp_pause is None or str(_raw_sp_pause).strip() == "":
-                            _sp_dll = str(_spc.get('use_spotify_dll', 'false')).lower() in ('true', '1', 'yes')
+                            _sp_dll_raw = _sp_mod.get('use_spotify_dll', _sp_cred.get('use_spotify_dll', 'false'))
+                            _sp_dll = str(_sp_dll_raw).lower() in ('true', '1', 'yes')
                             pause_seconds = float(60 if _sp_dll else 30)
                         else:
                             pause_seconds = float(_raw_sp_pause)
@@ -17025,7 +17082,13 @@ def final_download_cleanup(success=False):
                         jitter = pause_seconds * 0.25
                         pause_actual = _random_pause.uniform(pause_seconds - jitter, pause_seconds + jitter)
                         pause_ms = max(1, int(pause_actual * 1000))
-                        print(f"Pausing for {pause_actual:.0f}s before next download (base {pause_seconds:g}s ±25%)...")
+                        pause_msg = f"Pausing for {pause_actual:.0f}s before next download (base {pause_seconds:g}s ±25%)..."
+                        print(pause_msg)
+                        try:
+                            if 'output_queue' in globals() and output_queue:
+                                output_queue.put(f"|GRAY|{pause_msg}|RESET|\n")
+                        except Exception:
+                            pass
                 except Exception as e:
                     print(f"[Warning] Could not read pause setting: {e}")
                 
