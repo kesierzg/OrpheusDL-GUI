@@ -1170,6 +1170,7 @@ output_queue = queue.Queue()
 current_batch_output_path = None
 _current_download_context = None
 spotify_pre_download_warning_acknowledged = False
+_pause_countdown_line_start = None
 
 _queue_log_handler_instance = None
 
@@ -9618,7 +9619,7 @@ def _maybe_auto_open_qobuz_auth_url(msg):
         print(f"[Qobuz] Failed to auto-open login URL: {e}")
 
 def update_log_area():
-    global output_queue, app, _has_shown_unavailable_warning, _current_download_context
+    global output_queue, app, _has_shown_unavailable_warning, _current_download_context, _pause_countdown_line_start
     is_searching = bool(globals().get("search_process_active", False) and not globals().get("download_process_active", False))
     try:
         messages_processed = 0
@@ -9644,6 +9645,47 @@ def update_log_area():
                     continue
 
                 msg_strip = msg.strip()
+                import re
+                _countdown_match = re.search(r'Pausing (\d+)\s+seconds?\s+to prevent rate limiting\.\.\.', msg_strip)
+                if not _countdown_match:
+                    _countdown_match = re.search(r'Next download starts in (\d+)s\.\.\.', msg_strip)
+                if _countdown_match:
+                    _n = _countdown_match.group(1)
+                    _sec_label = "second" if _n == "1" else "seconds"
+                    countdown_plain = f"Pausing {_n} {_sec_label} to prevent rate limiting..."
+                    try:
+                        if 'log_textbox' in globals() and log_textbox and log_textbox.winfo_exists():
+                            log_textbox.configure(state="normal")
+                            if _pause_countdown_line_start:
+                                try:
+                                    log_textbox.delete(_pause_countdown_line_start, f"{_pause_countdown_line_start} lineend+1c")
+                                    log_textbox.insert(_pause_countdown_line_start, countdown_plain + "\n", ("color_gray",))
+                                except Exception:
+                                    log_textbox.insert("end", countdown_plain + "\n", ("color_gray",))
+                                    _pause_countdown_line_start = log_textbox.index("end-2l linestart")
+                            else:
+                                log_textbox.insert("end", countdown_plain + "\n", ("color_gray",))
+                                _pause_countdown_line_start = log_textbox.index("end-2l linestart")
+                            if _auto_scroll_active:
+                                log_textbox.yview_moveto(1.0)
+                            log_textbox.configure(state="disabled")
+                        else:
+                            log_to_textbox(f"|GRAY|{countdown_plain}|RESET|\n")
+                    except Exception:
+                        log_to_textbox(f"|GRAY|{countdown_plain}|RESET|\n")
+                    continue
+                else:
+                    if _pause_countdown_line_start and 'log_textbox' in globals() and log_textbox and log_textbox.winfo_exists():
+                        try:
+                            # Ensure exactly one visual spacer after countdown mode.
+                            log_textbox.configure(state="normal")
+                            log_textbox.insert("end", "\n")
+                            if _auto_scroll_active:
+                                log_textbox.yview_moveto(1.0)
+                            log_textbox.configure(state="disabled")
+                        except Exception:
+                            pass
+                    _pause_countdown_line_start = None
                 if msg_strip.startswith('[Apple Music]'):
                     continue
                 # Filter redundant YouTube error messages (track failure already shows error status with X icon)
@@ -9706,7 +9748,6 @@ def update_log_area():
                     if len(parts) >= 2:
                         log_to_textbox(f"Fetching data. Please wait...\n")
                         continue
-                import re
                 if re.search(r'Fetching \d+/\d+', msg_strip):
                     if '===' in msg_strip:
                         cleaned_msg = re.sub(r'Fetching \d+/\d+', '', msg_strip)
@@ -11492,15 +11533,37 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                                 jitter = pause_seconds * 0.25
                                 pause_actual = _random_pause.uniform(pause_seconds - jitter, pause_seconds + jitter)
                                 pause_ms = max(1, int(pause_actual * 1000))
-                                pause_msg = f"Pausing for {pause_actual:.0f}s before next download (base {pause_seconds:g}s ±25%)..."
-                                print(pause_msg)
-                                try:
-                                    if 'output_queue' in globals() and output_queue:
-                                        output_queue.put(f"|GRAY|{pause_msg}|RESET|\n")
-                                except Exception:
-                                    pass
                         except Exception as e:
                             print(f"[Warning] Could not read pause setting: {e}")
+
+                        # Show dynamic countdown in app log during the pause.
+                        try:
+                            countdown_seconds = max(0, int(round(pause_ms / 1000.0)))
+                        except Exception:
+                            countdown_seconds = 0
+
+                        if countdown_seconds > 1:
+                            try:
+                                if 'output_queue' in globals() and output_queue:
+                                    output_queue.put("\n")
+                            except Exception:
+                                pass
+                            def _countdown_tick(remaining):
+                                try:
+                                    if 'output_queue' in globals() and output_queue:
+                                        sec_label = "second" if remaining == 1 else "seconds"
+                                        output_queue.put(f"|GRAY|Pausing {remaining} {sec_label} to prevent rate limiting...|RESET|\n")
+                                except Exception:
+                                    pass
+                                if remaining > 1:
+                                    app.after(1000, lambda r=remaining - 1: _countdown_tick(r))
+                                else:
+                                    try:
+                                        if 'output_queue' in globals() and output_queue:
+                                            output_queue.put("\n")
+                                    except Exception:
+                                        pass
+                            _countdown_tick(countdown_seconds)
 
                         app.after(pause_ms, lambda u=next_url, p=current_batch_output_path: _start_single_download(u, p, None))
                     else:
@@ -17082,16 +17145,38 @@ def final_download_cleanup(success=False):
                         jitter = pause_seconds * 0.25
                         pause_actual = _random_pause.uniform(pause_seconds - jitter, pause_seconds + jitter)
                         pause_ms = max(1, int(pause_actual * 1000))
-                        pause_msg = f"Pausing for {pause_actual:.0f}s before next download (base {pause_seconds:g}s ±25%)..."
-                        print(pause_msg)
-                        try:
-                            if 'output_queue' in globals() and output_queue:
-                                output_queue.put(f"|GRAY|{pause_msg}|RESET|\n")
-                        except Exception:
-                            pass
                 except Exception as e:
                     print(f"[Warning] Could not read pause setting: {e}")
                 
+                # Show dynamic countdown in app log during the pause.
+                try:
+                    countdown_seconds = max(0, int(round(pause_ms / 1000.0)))
+                except Exception:
+                    countdown_seconds = 0
+
+                if countdown_seconds > 1:
+                    try:
+                        if 'output_queue' in globals() and output_queue:
+                            output_queue.put("\n")
+                    except Exception:
+                        pass
+                    def _countdown_tick(remaining):
+                        try:
+                            if 'output_queue' in globals() and output_queue:
+                                sec_label = "second" if remaining == 1 else "seconds"
+                                output_queue.put(f"|GRAY|Pausing {remaining} {sec_label} to prevent rate limiting...|RESET|\n")
+                        except Exception:
+                            pass
+                        if remaining > 1:
+                            app.after(1000, lambda r=remaining - 1: _countdown_tick(r))
+                        else:
+                            try:
+                                if 'output_queue' in globals() and output_queue:
+                                    output_queue.put("\n")
+                            except Exception:
+                                pass
+                    _countdown_tick(countdown_seconds)
+
                 app.after(pause_ms, lambda u=next_url, p=current_batch_output_path: _start_single_download(u, p, None))
             else:
                 print("[Error] Batch path missing.")
