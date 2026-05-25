@@ -84,7 +84,7 @@ os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 from utils.vendor_bootstrap import bootstrap_vendor_paths
 bootstrap_vendor_paths()
 
-from utils.utils import find_system_ffmpeg, get_clean_env
+from utils.utils import find_system_ffmpeg, get_clean_env, ensure_shaka_packager_in_data_dir, resolve_shaka_packager
 try:
     from utils.sleep import keep_awake, allow_sleep
 except Exception as _sleep_import_error:
@@ -7548,11 +7548,37 @@ def copy_bundled_resources_to_data_dir(data_dir):
             print(f"[Resource Copy] ffmpeg already exists at {dest_ffmpeg}")
         else:
             print(f"[Resource Copy] No bundled ffmpeg found at {bundled_ffmpeg}")
+
+        # Shaka Packager (Amazon Music) — copy beside writable data dir so decryption works after chdir
+        if platform.system() == 'Windows':
+            packager_names = ('packager-win-x64.exe', 'packager-win.exe', 'shaka-packager.exe')
+        elif platform.system() == 'Darwin':
+            packager_names = ('packager-osx-x64', 'packager-osx', 'shaka-packager')
+        else:
+            packager_names = ('packager-linux-x64', 'packager-linux', 'shaka-packager')
+        for packager_name in packager_names:
+            bundled_packager = os.path.join(bundle_path, packager_name)
+            if os.path.isfile(bundled_packager):
+                dest_packager = os.path.join(data_dir, packager_name)
+                try:
+                    if not os.path.isfile(dest_packager) or os.path.getsize(dest_packager) < os.path.getsize(bundled_packager):
+                        shutil.copy2(bundled_packager, dest_packager)
+                        print(f"[Resource Copy] Copied Shaka Packager to {dest_packager}")
+                except Exception as e:
+                    print(f"[Resource Copy] Failed to copy Shaka Packager: {e}")
+                break
+
         # On Windows, prepend app dir to PATH so bundled deno.exe is findable by yt-dlp
         app_dir = get_script_directory()
         if app_dir and app_dir not in os.environ.get('PATH', '').split(os.pathsep):
             os.environ['PATH'] = app_dir + os.pathsep + os.environ.get('PATH', '')
             print(f"[Resource Copy] Prepended app dir to PATH for Deno: {app_dir}")
+        packager_path = ensure_shaka_packager_in_data_dir(data_dir)
+        if packager_path:
+            packager_dir = os.path.dirname(os.path.abspath(packager_path))
+            if packager_dir and packager_dir not in os.environ.get('PATH', '').split(os.pathsep):
+                os.environ['PATH'] = packager_dir + os.pathsep + os.environ.get('PATH', '')
+                print(f"[Resource Copy] Prepended Shaka Packager dir to PATH: {packager_dir}")
     elif platform.system() == 'Darwin':
         # On macOS, don't bundle FFmpeg - check for Homebrew installation instead
         print(f"[FFmpeg] macOS detected - using system FFmpeg (Homebrew recommended)")
@@ -8875,6 +8901,12 @@ def _clear_platform_session(platform_name):
             # Success message
             if platform_name.lower() == "tidal":
                 msg = "Tidal stored session has been cleared.\n\nYou can still search and preview tracks in Guest mode. Restart the app if it's still searching."
+            elif platform_name.lower().replace(" ", "") == "amazonmusic":
+                msg = (
+                    "Amazon Music stored session has been cleared.\n\n"
+                    "Use Sign in on the Amazon Music settings tab (or search/download) "
+                    "to open the browser login again."
+                )
             else:
                 msg = f"{platform_name} stored session has been cleared.\n\nNext search or download will log in with your credentials from above."
             
@@ -16261,6 +16293,71 @@ def _create_credential_tab_content(platform_name, tab_frame):
             _country_tip = "Two-letter country code for login (e.g. US, FR, UK)."
             CTkToolTip(lbl_country, message=_country_tip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
             CTkToolTip(ent_country, message=_country_tip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+
+            def _amazonmusic_sign_in():
+                country_val = str(var_country.get() or "").strip().upper()
+                wvd_val = str(var_wvd.get() or "").strip()
+                if not wvd_val:
+                    show_centered_messagebox(
+                        "Amazon Music",
+                        "Set your .wvd file path first, then save.",
+                        dialog_type="warning",
+                    )
+                    return
+                if len(country_val) != 2:
+                    show_centered_messagebox(
+                        "Amazon Music",
+                        "Set a two-letter country code (e.g. NL, US, DE) before signing in.",
+                        dialog_type="warning",
+                    )
+                    return
+                try:
+                    current_settings.setdefault("credentials", {}).setdefault("Amazon Music", {})["force_login"] = True
+                    current_settings["credentials"]["Amazon Music"]["country"] = country_val
+                    save_settings(show_confirmation=False)
+                except Exception as ex:
+                    show_centered_messagebox("Amazon Music", f"Could not save settings: {ex}", dialog_type="error")
+                    return
+
+                def _run_sign_in():
+                    global orpheus_instance
+                    try:
+                        if not orpheus_instance:
+                            initialize_orpheus()
+                        if orpheus_instance:
+                            orpheus_instance.load_module("amazonmusic")
+                            output_queue.put("Amazon Music: Sign-in finished. You can search and download now.\n")
+                    except Exception as ex:
+                        output_queue.put(f"Amazon Music sign-in failed: {ex}\n")
+                    finally:
+                        try:
+                            current_settings["credentials"]["Amazon Music"]["force_login"] = False
+                            save_settings(show_confirmation=False)
+                        except Exception:
+                            pass
+
+                threading.Thread(target=_run_sign_in, daemon=True).start()
+                output_queue.put("Amazon Music: Opening browser login…\n")
+
+            btn_sign_in = customtkinter.CTkButton(
+                region_container,
+                text="Sign in",
+                width=88,
+                height=28,
+                command=_amazonmusic_sign_in,
+                fg_color=BUTTON_COLOR,
+                hover_color=LINK_COLOR,
+                border_width=0,
+            )
+            btn_sign_in.grid(row=0, column=3, sticky="w", padx=(12, 0))
+            CTkToolTip(
+                btn_sign_in,
+                message="Open the Amazon browser login (OAuth). Use after clearing session or on a new PC.",
+                bg_color=TOOLTIP_MENU_BG,
+                text_color=WHITE_TEXT_COLOR,
+                padx=12,
+                pady=12,
+            )
             ar += 1
 
             lbl_max_q = customtkinter.CTkLabel(grid_parent, text=label_mapping["max_track_quality_to_use"])
@@ -18733,6 +18830,19 @@ if __name__ == "__main__":
                 
                 # Copy bundled resources (modules, ffmpeg) to data directory
                 copy_bundled_resources_to_data_dir(_DATA_DIR)
+                packager_path = ensure_shaka_packager_in_data_dir(_DATA_DIR)
+                if packager_path:
+                    packager_dir = os.path.dirname(os.path.abspath(packager_path))
+                    if packager_dir and packager_dir not in os.environ.get('PATH', '').split(os.pathsep):
+                        os.environ['PATH'] = packager_dir + os.pathsep + os.environ.get('PATH', '')
+                        print(f"[Init] Prepended Shaka Packager to PATH: {packager_dir}")
+                elif not getattr(sys, 'frozen', False):
+                    dev_packager = resolve_shaka_packager()
+                    if dev_packager:
+                        packager_dir = os.path.dirname(str(dev_packager))
+                        if packager_dir and packager_dir not in os.environ.get('PATH', '').split(os.pathsep):
+                            os.environ['PATH'] = packager_dir + os.pathsep + os.environ.get('PATH', '')
+                            print(f"[Init] Prepended Shaka Packager to PATH: {packager_dir}")
             else:
                 print(f"[CWD] FATAL: _DATA_DIR could not be determined. Application will likely fail.")
                 if 'show_centered_messagebox' in globals() and callable(show_centered_messagebox):

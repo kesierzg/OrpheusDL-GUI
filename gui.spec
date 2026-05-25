@@ -178,7 +178,7 @@ elif platform.system() == 'Darwin':
 elif platform.system() == 'Linux':
     print("[PyInstaller] Linux: NOT bundling ffmpeg (use: sudo apt install ffmpeg)")
 
-# Shaka Packager (Amazon Music decryption) — platform-specific binary beside the app
+# Shaka Packager (Amazon Music decryption) — native binary (not datas) to avoid DLL load issues
 _shaka_candidates = []
 if platform.system() == 'Windows':
     _shaka_candidates = ['packager-win-x64.exe', 'packager-win.exe', 'shaka-packager.exe']
@@ -189,6 +189,7 @@ else:
 for _shaka_name in _shaka_candidates:
     _shaka_path = os.path.join(SPEC_DIR, _shaka_name)
     if os.path.isfile(_shaka_path):
+        additional_binaries.append((_shaka_path, '.'))
         additional_datas.append((_shaka_path, '.'))
         print(f"[PyInstaller] Bundling Shaka Packager: {_shaka_name}")
         break
