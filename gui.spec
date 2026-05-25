@@ -178,6 +178,23 @@ elif platform.system() == 'Darwin':
 elif platform.system() == 'Linux':
     print("[PyInstaller] Linux: NOT bundling ffmpeg (use: sudo apt install ffmpeg)")
 
+# Shaka Packager (Amazon Music decryption) — platform-specific binary beside the app
+_shaka_candidates = []
+if platform.system() == 'Windows':
+    _shaka_candidates = ['packager-win-x64.exe', 'packager-win.exe', 'shaka-packager.exe']
+elif platform.system() == 'Darwin':
+    _shaka_candidates = ['packager-osx-x64', 'packager-osx', 'shaka-packager']
+else:
+    _shaka_candidates = ['packager-linux-x64', 'packager-linux', 'shaka-packager']
+for _shaka_name in _shaka_candidates:
+    _shaka_path = os.path.join(SPEC_DIR, _shaka_name)
+    if os.path.isfile(_shaka_path):
+        additional_datas.append((_shaka_path, '.'))
+        print(f"[PyInstaller] Bundling Shaka Packager: {_shaka_name}")
+        break
+else:
+    print("[PyInstaller] WARNING: Shaka Packager not found — Amazon Music downloads may fail until it is placed next to the app")
+
 a = Analysis(
     ['gui.py'],
     pathex=['.', os.path.join(SPEC_DIR, 'vendor', 'librespot')],

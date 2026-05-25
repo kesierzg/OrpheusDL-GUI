@@ -21,7 +21,39 @@ BUILD_DIR = PROJECT_ROOT / "build"
 DIST_DIR = PROJECT_ROOT / "dist"
 
 
+SHAKA_PACKAGER_ASSETS = {
+    "Windows": ("packager-win-x64.exe", "packager-win-x64.exe"),
+    "Darwin": ("packager-osx-x64", "packager-osx-x64"),
+    "Linux": ("packager-linux-x64", "packager-linux-x64"),
+}
+
+
+def ensure_shaka_packager():
+    """Download Shaka Packager for the current OS if missing from project root."""
+    asset = SHAKA_PACKAGER_ASSETS.get(platform.system())
+    if not asset:
+        print("[Shaka] Unknown platform; skipping Shaka Packager download")
+        return False
+    filename, url_name = asset
+    dest = PROJECT_ROOT / filename
+    if dest.is_file():
+        print(f"[Shaka] Found {filename}")
+        return True
+    url = f"https://github.com/shaka-project/shaka-packager/releases/latest/download/{url_name}"
+    print(f"[Shaka] Downloading {filename} from GitHub releases...")
+    try:
+        urllib.request.urlretrieve(url, dest)
+        if platform.system() != "Windows":
+            dest.chmod(dest.stat().st_mode | stat.S_IEXEC)
+        print(f"[Shaka] Saved to {dest}")
+        return True
+    except Exception as exc:
+        print(f"[Shaka] WARNING: Could not download Shaka Packager: {exc}")
+        return False
+
+
 AVAILABLE_MODULES = [
+    "amazonmusic",
     "applemusic",
     "beatport",
     "beatsource",
@@ -37,6 +69,7 @@ AVAILABLE_MODULES = [
 
 
 MODULE_NAMES = {
+    "amazonmusic": "Amazon Music",
     "applemusic": "Apple Music",
     "beatport": "Beatport",
     "beatsource": "Beatsource",
@@ -137,6 +170,8 @@ def run_command(cmd, cwd=None, check=True, env=None):
 def build_pyinstaller():
 
     print("\n=== PyInstaller build ===")
+
+    ensure_shaka_packager()
 
     print("Installing librespot to vendor/librespot...")
     run_command([
@@ -644,6 +679,8 @@ Source: "..\\..\\ffmpeg.exe"; DestDir: "{{app}}"; Components: ffmpeg; Flags: ign
 Source: "..\\..\\ffprobe.exe"; DestDir: "{{app}}"; Components: ffmpeg; Flags: ignoreversion skipifsourcedoesntexist
 
 Source: "..\\..\\deno.exe"; DestDir: "{{app}}"; Components: deno; Flags: ignoreversion skipifsourcedoesntexist
+
+Source: "..\\..\\packager-win-x64.exe"; DestDir: "{{app}}"; Components: main; Flags: ignoreversion skipifsourcedoesntexist
 
 {module_files}
 

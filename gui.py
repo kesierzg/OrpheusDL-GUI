@@ -663,7 +663,8 @@ SERVICE_COLORS = {
     "bugs": "#FF3B28",
     "nugs": "#C83B30",
     "lrclib": "#4338CA",
-    "youtube": "#FF0000"
+    "youtube": "#FF0000",
+    "amazonmusic": "#25D1DA",
 }
 
 SERVICE_DISPLAY_NAMES = {
@@ -681,7 +682,8 @@ SERVICE_DISPLAY_NAMES = {
     "bugs": "Bugs!",
     "nugs": "Nugs.net",
     "lrclib": "LRCLIB",
-    "youtube": "YouTube"
+    "youtube": "YouTube",
+    "amazonmusic": "Amazon Music",
 }
 
 # Standardized UI Colors
@@ -1165,6 +1167,296 @@ class TidalAutoAuthPatcher:
             self.output_queue.put(f"TIDAL Auth: Unexpected prompt '{prompt}' - returning empty\n")
         return ''
 
+
+AMAZON_MUSIC_QUALITY_OPTIONS = [
+    "(Use global download quality)",
+    "LD", "LD_MEDIUM", "LD_LOW",
+    "SD", "SD_LOW", "SD_MEDIUM", "SD_HIGH",
+    "HD", "HD_44",
+    "UHD", "UHD_48",
+    "SPATIAL_ATMOS", "SPATIAL_ATMOS_LOW", "SPATIAL_ATMOS_MEDIUM", "SPATIAL_ATMOS_HIGH",
+    "SPATIAL_RA360", "SPATIAL_RA360_L0", "SPATIAL_RA360_L1", "SPATIAL_RA360_L2", "SPATIAL_RA360_L3",
+]
+_AMAZON_MUSIC_HIDDEN_CRED_KEYS = frozenset({
+    "email",
+    "password",
+    "prefer_aria2c",
+    "trim_track_by_sample_rate",
+    "use_own_master_keys",
+    "master_keys",
+    "force_login",
+    "prefer_removal_of_device_when_revoked",
+})
+
+
+def _amazonmusic_quality_display(stored_value: str) -> str:
+    if not str(stored_value or "").strip():
+        return AMAZON_MUSIC_QUALITY_OPTIONS[0]
+    return str(stored_value).strip()
+
+
+def _amazonmusic_quality_store(display_value: str) -> str:
+    if not display_value or display_value == AMAZON_MUSIC_QUALITY_OPTIONS[0]:
+        return ""
+    return str(display_value).strip()
+
+
+AMAZON_MUSIC_OAUTH_OPEN_DELAY_SEC = 10
+
+
+def _show_amazonmusic_oauth_dialog(oauth_url: str, application_name: str) -> str:
+    """Show login dialog: countdown, then open browser; user pastes callback URL."""
+    global app
+    result = {"url": ""}
+
+    dialog_width = 640
+    dialog_height = 400
+
+    dialog = customtkinter.CTkToplevel(app)
+    dialog.title("Amazon Music login")
+    dialog.resizable(False, False)
+    dialog.transient(app)
+    _center_dialog_on_app(dialog, dialog_width, dialog_height)
+
+    # allow_withdraw: only hide dialog on focus loss after the browser opens (not during countdown).
+    _oauth_ui = {"withdrawn": False, "active": True, "allow_withdraw": False}
+
+    def _present_oauth_dialog():
+        """Keep login instructions visible on top until the browser takes over."""
+        if not dialog.winfo_exists():
+            return
+        try:
+            dialog.deiconify()
+            dialog.lift()
+            dialog.attributes("-topmost", True)
+            dialog.focus_force()
+        except Exception:
+            pass
+
+    def _restore_oauth_dialog():
+        if not dialog.winfo_exists():
+            return
+        try:
+            if not dialog.winfo_viewable():
+                dialog.deiconify()
+                dialog.lift()
+                dialog.attributes("-topmost", False)
+            _oauth_ui["withdrawn"] = False
+        except Exception:
+            pass
+
+    def _focus_still_in_dialog():
+        try:
+            focus = dialog.focus_get()
+            if focus is None:
+                return False
+            w = focus
+            while w is not None:
+                if w == dialog:
+                    return True
+                w = getattr(w, "master", None)
+        except Exception:
+            return False
+        return False
+
+    def _hide_oauth_dialog_if_focus_left():
+        if not dialog.winfo_exists():
+            return
+        if not _oauth_ui.get("allow_withdraw"):
+            return
+        if _focus_still_in_dialog():
+            return
+        try:
+            if dialog.winfo_viewable():
+                dialog.withdraw()
+                _oauth_ui["withdrawn"] = True
+        except Exception:
+            pass
+
+    def _on_oauth_dialog_focus_out(_event=None):
+        dialog.after(80, _hide_oauth_dialog_if_focus_left)
+
+    def _on_app_focus_in(_event=None):
+        if not _oauth_ui.get("active"):
+            return
+        if _oauth_ui["withdrawn"]:
+            _restore_oauth_dialog()
+
+    def _on_oauth_dialog_focus_in(_event=None):
+        if _oauth_ui["withdrawn"]:
+            _restore_oauth_dialog()
+
+    dialog.bind("<FocusOut>", _on_oauth_dialog_focus_out)
+    dialog.bind("<FocusIn>", _on_oauth_dialog_focus_in)
+    app.bind("<FocusIn>", _on_app_focus_in, add="+")
+
+    content = customtkinter.CTkFrame(dialog, fg_color="transparent")
+    content.pack(fill="both", expand=True, padx=20, pady=16)
+
+    customtkinter.CTkLabel(
+        content,
+        text="Amazon Music — browser login",
+        font=("Segoe UI", 16, "bold"),
+        text_color=WHITE_TEXT_COLOR,
+    ).pack(anchor="w", pady=(0, 10))
+
+    steps_frame = customtkinter.CTkFrame(content, fg_color="transparent")
+    steps_frame.pack(fill="x", pady=(0, 12))
+
+    for step_num, step_text in enumerate(
+        (
+            "Your browser will open automatically — sign in with your Amazon account.",
+            "You may need to sign in twice and complete a CAPTCHA.",
+            'After login you will see a "not found" page — that is expected.',
+            "Copy the full URL from the address bar and paste it below.",
+        ),
+        start=1,
+    ):
+        row = customtkinter.CTkFrame(steps_frame, fg_color="transparent")
+        row.pack(fill="x", pady=3)
+        row.grid_columnconfigure(1, weight=1)
+        customtkinter.CTkLabel(
+            row, text=f"{step_num}.", font=("Segoe UI", 12, "bold"),
+            text_color=PURE_WHITE_TEXT_COLOR, width=22,
+        ).grid(row=0, column=0, sticky="nw", padx=(0, 6))
+        customtkinter.CTkLabel(
+            row, text=step_text, font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR,
+            justify="left", wraplength=560,
+        ).grid(row=0, column=1, sticky="nw")
+
+    status_row = customtkinter.CTkFrame(content, fg_color="transparent")
+    status_row.pack(fill="x", pady=(0, 8))
+
+    countdown_label = customtkinter.CTkLabel(
+        status_row,
+        text="",
+        font=("Segoe UI", 12, "bold"),
+        text_color=PURE_WHITE_TEXT_COLOR,
+        justify="left",
+        wraplength=560,
+    )
+    countdown_label.pack(anchor="w")
+
+    customtkinter.CTkLabel(
+        status_row,
+        text=f"Signing in to: {application_name}",
+        font=("Segoe UI", 11),
+        text_color=GRAY_TEXT_COLOR,
+    ).pack(anchor="w", pady=(4, 0))
+
+    url_var = tkinter.StringVar()
+    url_entry = customtkinter.CTkEntry(content, textvariable=url_var, placeholder_text="Paste URL from browser after login")
+    url_entry.pack(fill="x", pady=(4, 12))
+    url_entry.bind("<Button-3>", show_context_menu)
+
+    _countdown_state = {"remaining": AMAZON_MUSIC_OAUTH_OPEN_DELAY_SEC, "opened": False, "timer_id": None}
+
+    def _open_oauth_browser():
+        if _countdown_state["opened"] or not dialog.winfo_exists():
+            return
+        _countdown_state["opened"] = True
+        _oauth_ui["allow_withdraw"] = True
+        try:
+            dialog.attributes("-topmost", False)
+        except Exception:
+            pass
+        try:
+            _open_url(oauth_url)
+            countdown_label.configure(
+                text="Browser opened — complete sign-in, then paste the page URL below.",
+                text_color=GRAY_TEXT_COLOR,
+            )
+            url_entry.focus_set()
+        except Exception as ex:
+            countdown_label.configure(text="Could not open browser.", text_color=ERROR_COLOR)
+            show_centered_messagebox("Error", f"Could not open browser:\n{ex}", dialog_type="error", parent=dialog)
+
+    def _tick_countdown():
+        if not dialog.winfo_exists() or _countdown_state["opened"]:
+            return
+        _present_oauth_dialog()
+        remaining = _countdown_state["remaining"]
+        if remaining > 0:
+            unit = "second" if remaining == 1 else "seconds"
+            countdown_label.configure(
+                text=f"Opening Amazon login page in {remaining} {unit}…",
+                text_color=PURE_WHITE_TEXT_COLOR,
+            )
+            _countdown_state["remaining"] = remaining - 1
+            _countdown_state["timer_id"] = dialog.after(1000, _tick_countdown)
+        else:
+            _open_oauth_browser()
+
+    def _cancel_countdown_timer():
+        timer_id = _countdown_state.get("timer_id")
+        if timer_id is not None:
+            try:
+                dialog.after_cancel(timer_id)
+            except Exception:
+                pass
+            _countdown_state["timer_id"] = None
+
+    btn_row2 = customtkinter.CTkFrame(content, fg_color="transparent")
+    btn_row2.pack(fill="x", pady=(0, 4))
+
+    def _confirm():
+        _cancel_countdown_timer()
+        result["url"] = url_var.get().strip()
+        _oauth_ui["active"] = False
+        dialog.destroy()
+
+    def _cancel():
+        _cancel_countdown_timer()
+        result["url"] = ""
+        _oauth_ui["active"] = False
+        dialog.destroy()
+
+    customtkinter.CTkButton(
+        btn_row2, text="Confirm", width=100, command=_confirm,
+        fg_color=BUTTON_COLOR, hover_color=LINK_COLOR,
+    ).pack(side="right", padx=(8, 0))
+    customtkinter.CTkButton(
+        btn_row2, text="Cancel", width=100, command=_cancel,
+        fg_color=BUTTON_COLOR, hover_color=ERROR_COLOR,
+    ).pack(side="right")
+
+    dialog.protocol("WM_DELETE_WINDOW", _cancel)
+    _schedule_toplevel_window_chrome(dialog, "Amazon Music")
+    dialog.update_idletasks()
+    _present_oauth_dialog()
+    dialog.after(200, _tick_countdown)
+
+    dialog.wait_window()
+    _restore_main_app_window_chrome()
+    return result["url"]
+
+
+def amazonmusic_oauth_flow_handler(oauth_url: str, application_name: str) -> str:
+    """GUI handler for Amazon Music OAuth (called from module on worker thread)."""
+    global app
+    if not oauth_url:
+        return ""
+    result_holder = {"url": None}
+    done = threading.Event()
+
+    def _run_on_main():
+        try:
+            result_holder["url"] = _show_amazonmusic_oauth_dialog(oauth_url, application_name)
+        except Exception as ex:
+            result_holder["url"] = ""
+            if "output_queue" in globals() and output_queue:
+                output_queue.put(f"Amazon Music login dialog error: {ex}\n")
+        finally:
+            done.set()
+
+    if "app" in globals() and app and app.winfo_exists():
+        app.after(0, _run_on_main)
+        done.wait(timeout=600)
+    else:
+        return ""
+    return result_holder["url"] or ""
+
+
 file_download_queue = []
 output_queue = queue.Queue()
 current_batch_output_path = None
@@ -1432,8 +1724,11 @@ SPECIAL_MENU_BG = UI_ELEMENT_BG_COLOR
 HELP_CONTENT_WIDTH = 920
 
 # Platform icons on cover in column #0 (loaded from local "platforms" folder)
-PLATFORM_ICON_NAMES = ("Apple Music", "Beatport", "Beatsource", "Deezer", "LRCLIB", "Qobuz", "SoundCloud", "Spotify", "Tidal", "YouTube")
+PLATFORM_ICON_NAMES = ("Amazon Music", "Apple Music", "Beatport", "Beatsource", "Deezer", "LRCLIB", "Qobuz", "SoundCloud", "Spotify", "Tidal", "YouTube")
 PLATFORM_ICON_SIZE = 16  # Size of platform icon in the overlay (compact so it doesn’t dominate the row)
+# Text-search hits often omit per-track duration (Spotify, Amazon, etc.). Only hide duration-less
+# track rows for platforms that return known junk entries (e.g. YouTube live streams).
+_PLATFORMS_FILTER_ZERO_DURATION_TRACK_ROWS = frozenset({"youtube"})
 _platform_icon_cache = {}  # platform_name -> PhotoImage (keep references)
 _platform_icon_cache_lock = threading.Lock()
 _platform_icon_photo_refs = []  # Unused (platform icons drawn on cover in column #0)
@@ -1464,6 +1759,32 @@ def _platform_icon_path(platform_name):
         pass
 
     return None
+
+
+def _platform_window_icon_paths(platform_name):
+    """Return (ico_path, raster_path) for platform title-bar icons in platforms/."""
+    if not platform_name:
+        return None, None
+    base = resource_path("platforms")
+    if not os.path.isdir(base):
+        return None, None
+    target = platform_name.replace(" ", "").lower()
+    ico_path = None
+    raster_path = None
+    try:
+        for filename in os.listdir(base):
+            name_only, ext = os.path.splitext(filename)
+            if name_only.lower() != target:
+                continue
+            full = os.path.join(base, filename)
+            if ext.lower() == ".ico":
+                ico_path = full
+            elif ext.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+                raster_path = full
+    except Exception:
+        pass
+    return ico_path, raster_path
+
 
 def _load_platform_icon_sync(platform_name):
     """Load platform icon from local platforms folder and return a small PhotoImage; cache it."""
@@ -1501,6 +1822,49 @@ def _load_platform_icon_pil(platform_name):
     except Exception:
         return None
 
+_setup_section_icon_cache = {}
+
+def _load_setup_section_icon(icon_key):
+    """Load 16×16 CTkImage for 'How to set up' headers (platform name or e.g. 'docker')."""
+    cache_key = (icon_key or "").strip().lower()
+    if cache_key in _setup_section_icon_cache:
+        return _setup_section_icon_cache[cache_key]
+    path = _platform_icon_path(icon_key)
+    if not path:
+        return None
+    try:
+        img = Image.open(path).convert("RGBA")
+        img = img.resize((PLATFORM_ICON_SIZE, PLATFORM_ICON_SIZE), Image.Resampling.LANCZOS)
+        ctk_img = customtkinter.CTkImage(
+            light_image=img,
+            dark_image=img,
+            size=(PLATFORM_ICON_SIZE, PLATFORM_ICON_SIZE),
+        )
+        _setup_section_icon_cache[cache_key] = ctk_img
+        return ctk_img
+    except Exception:
+        return None
+
+def _pack_setup_header_icon(parent, icon_key, padx=(0, 0), anchor="center", side="left"):
+    """Pack platform (or custom) icon in a setup section header at 16px; empty spacer if missing."""
+    ctk_img = _load_setup_section_icon(icon_key)
+    if ctk_img:
+        lbl = customtkinter.CTkLabel(
+            parent,
+            text="",
+            image=ctk_img,
+            width=35,
+            height=PLATFORM_ICON_SIZE,
+        )
+    else:
+        lbl = customtkinter.CTkLabel(parent, text="", width=35, height=PLATFORM_ICON_SIZE)
+    lbl.pack(side=side, padx=padx, anchor=anchor)
+    return lbl
+
+def _setup_header_title_indent(padx=None):
+    """Left padding to align body text with setup header title (icon + gap)."""
+    return 35
+
 def _composite_platform_icon_on_cover(pil_cover, platform_name, cover_size=COVER_SIZE):
     """Paste platform icon onto bottom-right of cover; return new PIL Image. pil_cover must be RGBA."""
     icon_pil = _load_platform_icon_pil(platform_name)
@@ -1515,6 +1879,21 @@ def _composite_platform_icon_on_cover(pil_cover, platform_name, cover_size=COVER
     out.paste(icon_pil, (x, y), icon_pil)
     return out
 
+
+
+def _amazonmusic_has_loginstorage(app_path) -> bool:
+    """Amazon Music search needs a logged-in session in loginstorage.bin."""
+    if not app_path:
+        return False
+    storage_path = os.path.join(app_path, "config", "loginstorage.bin")
+    if not os.path.isfile(storage_path):
+        return False
+    try:
+        from modules.amazonmusic.interface import ModuleInterface
+
+        return ModuleInterface.has_cached_credentials(storage_path)
+    except Exception:
+        return False
 
 
 def get_searchable_platforms(settings, installed_platform_keys, app_path):
@@ -1532,6 +1911,10 @@ def get_searchable_platforms(settings, installed_platform_keys, app_path):
     except NameError:
         default_creds = {}
     for platform_name in base:
+        if platform_name == "Amazon Music":
+            if _amazonmusic_has_loginstorage(app_path):
+                configured.append(platform_name)
+            continue
         if platform_name in platforms_with_optional_credentials:
             configured.append(platform_name)
             continue
@@ -2958,7 +3341,7 @@ def on_tree_motion(event):
                 can_lazy_load = False
                 is_youtube_track = False
                 if not has_preview and row_type == 'track':
-                    if current_platform in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic'):
+                    if current_platform in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic', 'amazonmusic'):
                         can_lazy_load = True
                     elif current_platform == 'youtube':
                         is_youtube_track = True
@@ -3096,7 +3479,7 @@ def _restore_preview_icon(item_iid):
                 if not has_preview:
                     if is_track_row and item_data:
                         current_platform = (item_data.get('platform') or '').lower().replace(' ', '')
-                        if current_platform in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic'):
+                        if current_platform in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic', 'amazonmusic'):
                             can_lazy_load = True
                         elif current_platform == 'youtube':
                             is_youtube_track = True
@@ -3486,6 +3869,8 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
             x_logical = int(x_phys / scaling)
             y_logical = int(y_phys / scaling)
             popup.geometry(f"+{x_logical}+{y_logical}")
+
+        _schedule_toplevel_window_chrome(popup)
         
         # Defer popup close on WM_DELETE_WINDOW to avoid macOS Tk crash (EXC_BAD_ACCESS in TkMacOSXGetHostToplevel)
         def _on_popup_close():
@@ -4010,6 +4395,7 @@ def show_cover_popup(cover_url, title="", artist="", platform_name="", raw_resul
                                     x_logical = int(x_phys / scaling)
                                     y_logical = int(y_phys / scaling)
                                     popup.geometry(f"+{x_logical}+{y_logical}")
+                                _schedule_toplevel_window_chrome(popup)
                         except Exception as e:
                             print(f"Error updating cover popup UI: {e}")
                     
@@ -4177,6 +4563,45 @@ def _collapse_album_playlist(parent_iid):
         if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
             print(f"[Expand] Error collapsing album/playlist: {e}")
 
+def _display_text(value, fallback=''):
+    """Coerce API metadata (str, nested artist dict, list) for UI fields and .strip() callers."""
+    if value is None:
+        return fallback
+    if isinstance(value, dict):
+        for key in ('name', 'title', 'artistName', 'username', 'displayName'):
+            if value.get(key):
+                return str(value[key]).strip() or fallback
+        return fallback
+    if isinstance(value, (list, tuple)):
+        parts = [_display_text(v, '') for v in value if v is not None]
+        joined = ' / '.join(p for p in parts if p)
+        return joined or fallback
+    return str(value).strip() or fallback
+
+def _explicit_from_entity(entity, title_hint=''):
+    """True when a track/album dict or TrackInfo is explicit (Amazon: parentalControls)."""
+    if entity is None:
+        title = title_hint or ''
+        return '[explicit]' in str(title).lower()
+    if isinstance(entity, dict):
+        ex = entity.get('explicit')
+        if ex in (True, 1, '1', 'true', 'True') or (isinstance(ex, str) and ex.strip()):
+            return True
+        pc = entity.get('parentalControls')
+        if isinstance(pc, dict) and pc.get('hasExplicitLanguage'):
+            return True
+        meta = entity.get('metadata')
+        if isinstance(meta, dict):
+            pc = meta.get('parentalControls')
+            if isinstance(pc, dict) and pc.get('hasExplicitLanguage'):
+                return True
+        title = entity.get('title') or entity.get('name') or title_hint
+    else:
+        if getattr(entity, 'explicit', False):
+            return True
+        title = getattr(entity, 'name', None) or title_hint
+    return '[explicit]' in str(title or '').lower()
+
 def _track_to_result_entry(track, index, parent_data, parent_iid, platform_str):
     """Convert a track (TrackInfo, dict, or plain ID) to a search result entry dict for display."""
     # Some modules (e.g. Deezer) return tracks as list of IDs; others return TrackInfo/dict with name, artists, etc.
@@ -4184,21 +4609,32 @@ def _track_to_result_entry(track, index, parent_data, parent_iid, platform_str):
     if is_plain_id:
         tid = str(track) if isinstance(track, (str, int)) else str(track.get('id', ''))
         name = f"Track {index}"
-        artist_str = (parent_data.get('artist') or parent_data.get('title') or '').strip() or ''
-        duration_str = year_str = ''
+        artist_str = _display_text(parent_data.get('artist') or parent_data.get('title'), '')
+        duration_str = ''
+        py = parent_data.get('year') if parent_data else None
+        year_str = '' if py is None or str(py) == 'None' else str(py)
         additional = ''
-        explicit_str = ''
+        explicit_str = '🅴' if _explicit_from_entity(parent_data) or (parent_data or {}).get('explicit') else ''
         cover_url = ''
         preview_url = None
         raw = track
     else:
-        tid = getattr(track, 'id', None) or (track.get('id') if isinstance(track, dict) else None) or ''
+        tid = getattr(track, 'id', None) or (track.get('id') if isinstance(track, dict) else None) or (track.get('asin') if isinstance(track, dict) else None) or ''
         name = getattr(track, 'name', None) or (track.get('name') if isinstance(track, dict) else None) or (track.get('title') if isinstance(track, dict) else None) or ''
-        artists = getattr(track, 'artists', None) or (track.get('artists') if isinstance(track, dict) else []) or []
-        artist_str = ', '.join([(a.get('name') if isinstance(a, dict) else str(a)) for a in artists]) if artists else ''
+        artists = getattr(track, 'artists', None) or (track.get('artists') if isinstance(track, dict) else None)
+        if isinstance(artists, dict):
+            artists = [artists]
+        elif not isinstance(artists, (list, tuple)):
+            artists = []
+        artist_str = ', '.join([(a.get('name') if isinstance(a, dict) else str(a)) for a in artists if a]) if artists else ''
         dur = getattr(track, 'duration', None)
         if dur is None and isinstance(track, dict):
             dur = track.get('duration')
+            if dur is None and track.get('durationSeconds') is not None:
+                dur = track.get('durationSeconds')
+            elif dur is None and isinstance(track.get('metadata'), dict):
+                meta = track['metadata']
+                dur = meta.get('duration') or meta.get('durationSeconds')
         
         if dur is None and isinstance(track, dict) and 'duration_ms' in track:
             try:
@@ -4207,9 +4643,37 @@ def _track_to_result_entry(track, index, parent_data, parent_iid, platform_str):
                 pass
         duration_str = beauty_format_seconds(dur) if dur is not None else ''
         year = getattr(track, 'release_year', None) or (track.get('release_year') if isinstance(track, dict) else None)
+        if year is None and isinstance(track, dict):
+            for key in ('originalReleaseDate', 'merchantReleaseDate', 'releaseDate'):
+                raw = track.get(key)
+                if raw is not None:
+                    try:
+                        ts = int(raw)
+                        if ts > 1_000_000_000_000:
+                            ts //= 1000
+                        year = datetime.datetime.fromtimestamp(ts).year
+                        break
+                    except (OSError, OverflowError, ValueError, TypeError):
+                        pass
+            if year is None and isinstance(track.get('metadata'), dict):
+                meta = track['metadata']
+                for key in ('originalReleaseDate', 'merchantReleaseDate', 'releaseDate'):
+                    raw = meta.get(key)
+                    if raw is not None:
+                        try:
+                            ts = int(raw)
+                            if ts > 1_000_000_000_000:
+                                ts //= 1000
+                            year = datetime.datetime.fromtimestamp(ts).year
+                            break
+                        except (OSError, OverflowError, ValueError, TypeError):
+                            pass
         year_str = '' if year is None or str(year) == 'None' else str(year)
-        explicit = getattr(track, 'explicit', False) or (track.get('explicit') if isinstance(track, dict) else False)
-        explicit_str = '🅴' if explicit else ''
+        if not year_str and parent_data:
+            py = parent_data.get('year')
+            year_str = '' if py is None or str(py) == 'None' else str(py)
+        track_title = name if isinstance(name, str) else ''
+        explicit_str = '🅴' if _explicit_from_entity(track, track_title) else ''
         cover_url = getattr(track, 'cover_url', None) or \
                     (track.get('cover_url') if isinstance(track, dict) else None) or \
                     (track.get('thumbnail') if isinstance(track, dict) else None) or \
@@ -4220,13 +4684,21 @@ def _track_to_result_entry(track, index, parent_data, parent_iid, platform_str):
         if not name:
             name = f"Track {index}"
         if not artist_str or artist_str.lower() == 'unknown':
-            # Check for literal 'artists' list first, then 'artist' singular string
-            artists_data = (track.get('artists') if isinstance(track, dict) else []) or []
-            if artists_data:
-                artist_str = ', '.join([(a.get('name') if isinstance(a, dict) else str(a)) for a in artists_data])
+            if isinstance(track, dict):
+                artist_str = _display_text(
+                    track.get('artist') or track.get('artistName') or track.get('albumArtistName'),
+                    _display_text(parent_data.get('artist'), ''),
+                )
             else:
-                artist_str = (track.get('artist') if isinstance(track, dict) else (parent_data.get('artist') or '')).strip() or ''
-        additional = getattr(track, 'additional', None) or (track.get('additional') if isinstance(track, dict) else None) or ''
+                artist_str = _display_text(parent_data.get('artist'), '')
+        additional = getattr(track, 'additional', None) or (track.get('additional') if isinstance(track, dict) else None)
+        if isinstance(additional, (list, tuple)):
+            additional = ' / '.join(str(x) for x in additional if x is not None)
+        elif isinstance(additional, dict):
+            additional = ''
+        else:
+            additional = additional or ''
+        additional = str(additional)
     child_iid = f"{parent_iid}_t{index}"
     return {
         "id": str(tid), "number": str(index), "title": name, "artist": artist_str,
@@ -4245,7 +4717,7 @@ def _insert_album_playlist_children(parent_iid, parent_data, track_entries):
         platform_str = parent_data.get('platform', 'Unknown')
         # Same logic as display_results: show play icon when preview available or platform supports lazy-load
         # Normalize platform (e.g. "Apple Music" -> "applemusic") for comparison
-        platforms_with_preview = ('qobuz', 'soundcloud', 'spotify', 'tidal', 'youtube', 'deezer', 'applemusic')
+        platforms_with_preview = ('qobuz', 'soundcloud', 'spotify', 'tidal', 'youtube', 'deezer', 'applemusic', 'amazonmusic')
         platform_key = (platform_str or '').lower().replace(' ', '')
         for entry in track_entries:
             tree_iid = entry['tree_iid']
@@ -4297,7 +4769,7 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                 tree.item(parent_iid, values=tuple(current_values))
             _start_loading_animation(parent_iid)
         # Extract track count from additional field (e.g. "50 tracks") for specific loading message
-        track_count, _ = _parse_additional_track_count(item_data.get('additional', ''))
+        track_count, _ = _parse_additional_track_count(_display_text(item_data.get('additional'), ''))
         # Fallback: try raw_result for track count (handles both dict and SearchResult objects)
         if not track_count:
             raw = item_data.get('raw_result')
@@ -4330,8 +4802,10 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
             _expand_long_loading_after_id = app.after(7000, _show_expand_long_loading_message)
         def worker():
             track_entries = []
+            expand_error = None
             try:
                 module_instance = orpheus_instance.load_module(platform_name)
+                am_kwargs = _amazonmusic_api_kwargs(item_data) if platform_name == 'amazonmusic' else {}
                 # SoundCloud requires data dict (id -> entity) for get_album_info/get_playlist_info
                 if platform_name == 'soundcloud':
                     raw = item_data.get('raw_result')
@@ -4349,10 +4823,11 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                             playlist_kwargs = {k: v for k, v in getattr(raw, 'extra_kwargs').items() if k != 'raw_result'}
                         elif isinstance(raw, dict) and isinstance(raw.get('extra_kwargs'), dict):
                             playlist_kwargs = {k: v for k, v in raw.get('extra_kwargs', {}).items() if k != 'raw_result'}
+                    merged_kwargs = {**playlist_kwargs, **am_kwargs}
                     if item_type == 'album':
-                        info = module_instance.get_album_info(res_id) if hasattr(module_instance, 'get_album_info') else None
+                        info = module_instance.get_album_info(res_id, **merged_kwargs) if hasattr(module_instance, 'get_album_info') else None
                     else:
-                        info = module_instance.get_playlist_info(res_id, **playlist_kwargs) if hasattr(module_instance, 'get_playlist_info') else None
+                        info = module_instance.get_playlist_info(res_id, **merged_kwargs) if hasattr(module_instance, 'get_playlist_info') else None
                 if not info or not getattr(info, 'tracks', None):
                     return
                 tracks = info.tracks
@@ -4377,6 +4852,7 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                 except Exception:
                     pass
                 resolved = []
+                am_data = (extra_kwargs.get('data') if isinstance(extra_kwargs, dict) else None) or {}
                 for idx, track in enumerate(tracks, start=1):
                     # Check if we need to fetch full track info.
                     # 1. If track is just an ID (str/int)
@@ -4384,6 +4860,12 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                     track_id_to_fetch = None
                     if isinstance(track, (str, int)):
                         track_id_to_fetch = str(track)
+                        # Amazon Music: album/playlist APIs already return per-track duration (same as the website)
+                        if platform_name == 'amazonmusic' and isinstance(am_data, dict):
+                            td = am_data.get(track_id_to_fetch) or am_data.get(f"{track_id_to_fetch}_playlist")
+                            if isinstance(td, dict) and (td.get('title') or td.get('duration') is not None):
+                                track = td
+                                track_id_to_fetch = None
                     elif hasattr(track, 'name') and track.name == 'Loading...' and hasattr(track, 'id'):
                         track_id_to_fetch = track.id
                     elif isinstance(track, dict) and track.get('name') == 'Loading...' and track.get('id'):
@@ -4438,26 +4920,48 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                     entry = _track_to_result_entry(track, idx, item_data, parent_iid, platform_name)
                     # Hide entries with no duration (e.g. YouTube live streams)
                     if not entry.get('duration') and not entry.get('duration_seconds'):
-                        continue
+                        pk = (platform_name or "").lower().replace(" ", "")
+                        if pk in _PLATFORMS_FILTER_ZERO_DURATION_TRACK_ROWS:
+                            continue
+                    if platform_name == 'amazonmusic':
+                        if item_data.get('media_region_country'):
+                            entry['media_region_country'] = item_data['media_region_country']
+                        if item_data.get('media_region_domain_tld'):
+                            entry['media_region_domain_tld'] = item_data['media_region_domain_tld']
+                        tid = entry.get('id')
+                        qmap = am_data.get(f"{tid}_quality_mapping") if tid else None
+                        if qmap and hasattr(module_instance, '_quality_label_from_mapped'):
+                            try:
+                                per_track_q = module_instance._quality_label_from_mapped(
+                                    qmap, quality_tier
+                                )
+                                if per_track_q:
+                                    entry['additional'] = per_track_q
+                            except Exception:
+                                pass
                     track_entries.append(entry)
                 # Inject album quality into tracks that have no additional info of their own
-                # (e.g. Qobuz album tracks shown as plain IDs don't carry quality per-track)
-                # Only inject if quality is genuinely hi-res (not standard 44.1kHz/16bit CD quality)
                 if item_type == 'album' and track_entries:
+                    album_year = getattr(info, 'release_year', None) or item_data.get('year')
+                    if album_year is not None and str(album_year) not in ('', '0', 'None'):
+                        year_s = str(album_year)
+                        for entry in track_entries:
+                            if not entry.get('year'):
+                                entry['year'] = year_s
                     album_quality = getattr(info, 'quality', None)
-                    if album_quality and '44.1kHz/16bit' not in album_quality and '44.1kHz 16bit' not in album_quality:
+                    if album_quality:
                         for entry in track_entries:
                             if not entry.get('additional'):
                                 entry['additional'] = album_quality
                 # For playlists: inherit Hi-Res label from the parent playlist row when present
                 if item_type == 'playlist' and track_entries:
-                    parent_additional = item_data.get('additional') or []
-                    parent_additional_str = ' / '.join(parent_additional) if isinstance(parent_additional, list) else str(parent_additional)
+                    parent_additional_str = _display_text(item_data.get('additional'), '')
                     if 'HI-RES' in parent_additional_str:
                         for entry in track_entries:
                             if not entry.get('additional'):
                                 entry['additional'] = '🅷 HI-RES'
             except Exception as e:
+                expand_error = e
                 # Spotify 429 rate limit: show popup recommending right-click → Open Link
                 if 'RateLimit' in type(e).__name__:
                     def _show_rate_limit_popup():
@@ -4481,11 +4985,17 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                 _stop_loading_animation()
                 if track_entries:
                     _show_album_track_list_view(item_data, track_entries)
-                elif tree and tree.winfo_exists() and tree.exists(parent_iid):
-                    current_values = list(tree.item(parent_iid, 'values'))
-                    if current_values:
-                        current_values[0] = PREVIEW_EXPAND_COLLAPSED
-                        tree.item(parent_iid, values=tuple(current_values))
+                else:
+                    if expand_error and platform_name == 'amazonmusic' and 'show_centered_messagebox' in globals():
+                        err_msg = str(expand_error)
+                        if not err_msg.startswith("Amazon Music:"):
+                            err_msg = f"Amazon Music: Could not load tracks.\n{err_msg}"
+                        show_centered_messagebox("Amazon Music", err_msg, dialog_type="error")
+                    if tree and tree.winfo_exists() and tree.exists(parent_iid):
+                        current_values = list(tree.item(parent_iid, 'values'))
+                        if current_values:
+                            current_values[0] = PREVIEW_EXPAND_COLLAPSED
+                            tree.item(parent_iid, values=tuple(current_values))
             try:
                 if app and app.winfo_exists():
                     app.after(0, on_done)
@@ -4544,6 +5054,7 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
             _expand_long_loading_after_id = app.after(7000, _show_expand_long_loading_message)
         def worker():
             album_entries = []
+            expand_error = None
             context_kind = "Label" if (item_data.get('type') or '').lower() == 'label' else "Artist"
             def on_done():
                 _clear_expand_long_loading_message()
@@ -4551,6 +5062,11 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                 if album_entries:
                     _show_artist_albums_view(item_data, album_entries, context_kind)
                 else:
+                    if expand_error and platform_name == 'amazonmusic' and 'show_centered_messagebox' in globals():
+                        err_msg = str(expand_error)
+                        if not err_msg.startswith("Amazon Music:"):
+                            err_msg = f"Amazon Music: Could not load releases.\n{err_msg}"
+                        show_centered_messagebox("Amazon Music", err_msg, dialog_type="error")
                     if tree and tree.winfo_exists() and tree.exists(parent_iid):
                         current_values = list(tree.item(parent_iid, 'values'))
                         if current_values:
@@ -4791,7 +5307,8 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                     if _original_mod_print_a:
                         module_instance.print = _artist_progress_print
                     try:
-                        info = module_instance.get_artist_info(res_id, get_credited_albums=True, **{})
+                        artist_kwargs = _amazonmusic_api_kwargs(item_data) if platform_name == 'amazonmusic' else {}
+                        info = module_instance.get_artist_info(res_id, get_credited_albums=True, **artist_kwargs)
                     finally:
                         if _original_mod_print_a:
                             module_instance.print = _original_mod_print_a
@@ -4918,47 +5435,112 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                             except (TypeError, ValueError):
                                 duration_str = str(dur)
                         title = album_dict.get('title') or album_dict.get('name', 'Unknown Album')
-                        artist_raw = (album_dict.get('user') or {}).get('username') if isinstance(album_dict.get('user'), dict) else album_dict.get('artist', artist_name)
-                        # Tidal/Qobuz etc. return artist as dict {'id', 'name', ...}; extract name
-                        artist = (artist_raw.get('name') if isinstance(artist_raw, dict) else artist_raw) or artist_name
-                        cover_url = album_dict.get('artwork_url') or album_dict.get('cover_url') or ''
+                        artist = _display_text(
+                            (album_dict.get('user') or {}).get('username') if isinstance(album_dict.get('user'), dict) else None,
+                            _display_text(
+                                album_dict.get('artist') or album_dict.get('artistName') or album_dict.get('primaryArtistName'),
+                                artist_name,
+                            ),
+                        )
+                        platform_key = (platform_str or '').lower().replace(' ', '')
+                        if platform_key == 'amazonmusic':
+                            cover_url = _amazonmusic_cover_url_from_dict(album_dict)
+                            if not cover_url and album_data_dict:
+                                asin = str(album_dict.get('asin') or album_dict.get('id') or album or '')
+                                if asin:
+                                    search_doc = (
+                                        album_data_dict.get(f"{asin}_search")
+                                        or album_data_dict.get(asin)
+                                    )
+                                    if isinstance(search_doc, dict) and search_doc is not album_dict:
+                                        cover_url = _amazonmusic_cover_url_from_dict(search_doc)
+                        else:
+                            cover_url = album_dict.get('artwork_url') or album_dict.get('cover_url') or ''
                         # Tidal: cover is a UUID, not a URL; generate Tidal image URL
-                        if not cover_url and platform_str.lower().replace(' ', '') == 'tidal':
+                        if not cover_url and platform_key == 'tidal':
                             cover_id = album_dict.get('cover')
                             if cover_id:
                                 cover_url = f'https://resources.tidal.com/images/{str(cover_id).replace("-", "/")}/750x750.jpg'
                         if cover_url and '-large' in cover_url:
                             cover_url = cover_url.replace('-large', '-t200x200')
                         year = ''
-                        for key in ('release_date', 'display_date', 'created_at', 'releaseDate', 'streamStartDate'):
-                            val = album_dict.get(key)
-                            if val and isinstance(val, str) and len(val) >= 4:
-                                year = val[:4]
-                                break
-                        if not year and album_dict.get('release_year'):
-                            year = str(album_dict.get('release_year'))
+                        additional = ''
+                        explicit_str = ''
+                        if platform_key == 'amazonmusic':
+                            media_region = (
+                                album_extra.get('media_region')
+                                if isinstance(album_extra, dict)
+                                else None
+                            )
+                            if media_region and hasattr(
+                                module_instance, 'artist_album_display_meta'
+                            ):
+                                try:
+                                    am_row = module_instance.artist_album_display_meta(
+                                        album_dict, media_region
+                                    )
+                                    year = am_row.get('year') or ''
+                                    additional = am_row.get('additional') or ''
+                                    if am_row.get('explicit'):
+                                        explicit_str = '🅴'
+                                except Exception:
+                                    pass
+                        else:
+                            for key in (
+                                'release_date',
+                                'display_date',
+                                'created_at',
+                                'releaseDate',
+                                'streamStartDate',
+                            ):
+                                val = album_dict.get(key)
+                                if val and isinstance(val, str) and len(val) >= 4:
+                                    year = val[:4]
+                                    break
+                            if not year and album_dict.get('release_year'):
+                                year = str(album_dict.get('release_year'))
+                            additional = _display_text(
+                                album_dict.get('additional')
+                                or album_dict.get('genre')
+                                or album_dict.get('primaryGenre'),
+                                '',
+                            )
+                            if (
+                                album_dict.get('explicit')
+                                or album_dict.get('explicit_lyrics')
+                                or str(album_dict.get('explicit_content_lyrics')) == '1'
+                                or str(album_dict.get('EXPLICIT_LYRICS')) == '1'
+                                or str(album_dict.get('EXPLICIT_ALBUM')) == '1'
+                                or (
+                                    isinstance(album_dict.get('EXPLICIT_ALBUM_CONTENT'), dict)
+                                    and str(
+                                        album_dict['EXPLICIT_ALBUM_CONTENT'].get(
+                                            'EXPLICIT_LYRICS_STATUS'
+                                        )
+                                    )
+                                    in ('1', '4')
+                                )
+                                or "explicit" in title.lower()
+                            ):
+                                explicit_str = '🅴'
                         entry = {
                             "tree_iid": f"artist_album_{idx}",
                             "title": title,
                             "artist": artist,
                             "cover_url": cover_url,
-                            "id": str(album_dict.get('id', album) if album_dict.get('id') is not None else album),
+                            "id": str(
+                                album_dict.get('asin')
+                                or album_dict.get('id')
+                                or album
+                            ),
                             "platform": platform_str,
                             "type": "album",
                             "is_album_playlist": True,
                             "number": str(idx),
                             "year": year,
                             "duration": duration_str,
-                            "additional": ((" / ".join(album_dict.get('additional')) if isinstance(album_dict.get('additional'), list) else album_dict.get('additional')) or album_dict.get('genre') or ''),
-                            "explicit": '🅴' if (
-                                album_dict.get('explicit') or 
-                                album_dict.get('explicit_lyrics') or 
-                                str(album_dict.get('explicit_content_lyrics')) == '1' or 
-                                str(album_dict.get('EXPLICIT_LYRICS')) == '1' or 
-                                str(album_dict.get('EXPLICIT_ALBUM')) == '1' or
-                                (isinstance(album_dict.get('EXPLICIT_ALBUM_CONTENT'), dict) and str(album_dict['EXPLICIT_ALBUM_CONTENT'].get('EXPLICIT_LYRICS_STATUS')) in ('1', '4')) or
-                                "explicit" in title.lower()
-                            ) else '',
+                            "additional": additional,
+                            "explicit": explicit_str,
                             "parent_iid": None,
                             "raw_result": album_dict,
                         }
@@ -4994,8 +5576,14 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                                     "explicit" in (raw.get('title') or raw.get('name') or "").lower()
                                 ):
                                     entry['explicit'] = '🅴'
+                    if platform_name == 'amazonmusic':
+                        if item_data.get('media_region_country'):
+                            entry['media_region_country'] = item_data['media_region_country']
+                        if item_data.get('media_region_domain_tld'):
+                            entry['media_region_domain_tld'] = item_data['media_region_domain_tld']
                     album_entries.append(entry)
             except Exception as e:
+                expand_error = e
                 # Spotify 429 rate limit: show popup recommending right-click → Open Link
                 if 'RateLimit' in type(e).__name__:
                     def _show_rate_limit_popup():
@@ -5127,7 +5715,7 @@ def _show_album_track_list_view(album_item_data, track_entries):
         album_view_title = f"{kind}: {title}"
         platform_str = album_item_data.get('platform', 'Unknown')
         album_cover_url = album_item_data.get('cover_url') or ''
-        platforms_with_preview = ('qobuz', 'soundcloud', 'spotify', 'tidal', 'youtube', 'deezer', 'applemusic')
+        platforms_with_preview = ('qobuz', 'soundcloud', 'spotify', 'tidal', 'youtube', 'deezer', 'applemusic', 'amazonmusic')
         platform_key = (platform_str or '').lower().replace(' ', '')
         # Use distinct tree_iids (album_track_1, ...) so we don't overwrite cover cache for original search (item_1, ...)
         flat = []
@@ -5300,7 +5888,7 @@ def _back_to_search_results():
                 platform_str = item_data.get('platform', 'Unknown')
                 search_type_str = item_data.get('type', 'track')
                 is_track_search = search_type_str.lower() == "track"
-                can_lazy_load_preview = (platform_str.lower().replace(' ', '') in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic')) and is_track_search
+                can_lazy_load_preview = (platform_str.lower().replace(' ', '') in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic', 'amazonmusic')) and is_track_search
                 is_youtube_track = (platform_str.lower().replace(' ', '') == 'youtube') and is_track_search
                 is_album_playlist = item_data.get('is_album_playlist')
                 is_artist = item_data.get('is_artist')
@@ -5370,7 +5958,7 @@ def _try_lazy_load_preview(item_iid, item_data):
         if not current_platform:
             return
         # Services that support lazy-loading of preview URLs (for search and expanded album/playlist child tracks)
-        lazy_load_services = ['qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic']
+        lazy_load_services = ['qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic', 'amazonmusic']
         if current_platform not in lazy_load_services:
             return
         
@@ -5496,6 +6084,27 @@ def _try_lazy_load_preview(item_iid, item_data):
                                             preview_url = previews[0].get('url')
                         except Exception as e:
                             print(f"[Preview] Apple Music lazy load error: {e}")
+
+                elif current_platform == 'amazonmusic':
+                    # Amazon Music: no preview URLs — decrypt full track (low quality) for local playback
+                    if (item_data.get('type') or 'track').lower() == 'track' and hasattr(
+                        module_instance, 'get_preview_audio_path'
+                    ):
+                        country = item_data.get('media_region_country')
+                        if not country:
+                            raw = item_data.get('raw_result')
+                            if isinstance(raw, dict):
+                                country = raw.get('musicTerritory') or raw.get('music_territory')
+                        preview_url = module_instance.get_preview_audio_path(
+                            track_id, media_region_country=country
+                        )
+                        if preview_url:
+                            print(f"[Preview] Amazon Music decrypted preview ready: {preview_url}")
+                        else:
+                            print(
+                                "[Preview] Amazon Music preview failed. "
+                                "Check .wvd path, login, and Shaka Packager next to orpheus.py."
+                            )
                 
                 # Check again before updating UI
                 if _lazy_loading_preview_iid != target_iid:
@@ -5559,6 +6168,11 @@ def _on_preview_url_fetched(item_iid, item_data, preview_url):
                 print(f"[Preview] No preview available for this track (Spotify embed had no preview)")
             elif platform_str == 'soundcloud':
                 print(f"[Preview] No preview available for this track (SoundCloud). The track may be restricted in your region or not streamable.")
+            elif platform_str == 'amazonmusic':
+                print(
+                    "[Preview] Amazon Music preview unavailable. "
+                    "Ensure .wvd, login, and Shaka Packager are configured (first play decrypts the full track and may take a moment)."
+                )
             elif platform_str:
                 print(f"[Preview] No preview available for this track ({platform_str})")
             else:
@@ -6090,6 +6704,227 @@ def _center_dialog_on_app(dialog, dialog_width, dialog_height):
             pass
 
 
+def _resolve_app_icon_ico_path():
+    """Absolute path to bundled icon.ico (dev, PyInstaller, or cwd)."""
+    candidates = []
+    try:
+        candidates.append(resource_path("icon.ico"))
+    except Exception:
+        pass
+    try:
+        candidates.append(os.path.join(get_script_directory(), "icon.ico"))
+    except Exception:
+        pass
+    try:
+        candidates.append(os.path.join(application_path, "icon.ico"))
+    except Exception:
+        pass
+    candidates.append(os.path.join(os.getcwd(), "icon.ico"))
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return os.path.abspath(path)
+    return None
+
+
+def _main_app_hwnd_set():
+    """HWNDs belonging to the main OrpheusDL window (must not get child-dialog icons)."""
+    hwnds = set()
+    try:
+        if "app" not in globals() or not app or not app.winfo_exists():
+            return hwnds
+        import ctypes
+        user32 = ctypes.windll.user32
+        wid = int(app.winfo_id())
+        hwnds.add(wid)
+        parent = user32.GetParent(wid)
+        if parent:
+            hwnds.add(int(parent))
+    except Exception:
+        pass
+    return hwnds
+
+
+def _collect_toplevel_hwnds(dialog):
+    """HWND candidates for one toplevel only — never the main app root (avoids stealing its icon)."""
+    hwnds = []
+    seen = set()
+
+    def _add(hwnd):
+        if hwnd:
+            h = int(hwnd)
+            if h not in seen:
+                seen.add(h)
+                hwnds.append(h)
+
+    try:
+        is_main_window = "app" in globals() and app is not None and dialog == app
+    except Exception:
+        is_main_window = False
+
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        wid = int(dialog.winfo_id())
+        _add(wid)
+        parent = user32.GetParent(wid)
+        if parent and int(parent) != wid:
+            _add(parent)
+    except Exception:
+        pass
+
+    if not is_main_window:
+        app_hwnds = _main_app_hwnd_set()
+        hwnds = [h for h in hwnds if h not in app_hwnds]
+    return hwnds
+
+
+def _toplevel_native_hwnd(dialog):
+    """Best HWND for a Tk/CTk toplevel on Windows (DWM / title bar)."""
+    hwnds = _collect_toplevel_hwnds(dialog)
+    return hwnds[0] if hwnds else None
+
+
+def _set_windows_toplevel_icon(dialog, ico_path):
+    """Set title-bar/taskbar icon via Win32 (reliable for CTkToplevel)."""
+    if platform.system() != "Windows" or not ico_path:
+        return False
+    ico_path = os.path.abspath(ico_path)
+    if not os.path.isfile(ico_path):
+        return False
+    hwnds = _collect_toplevel_hwnds(dialog)
+    if not hwnds:
+        return False
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        LR_LOADFROMFILE = 0x10
+        IMAGE_ICON = 1
+        WM_SETICON = 0x0080
+        ICON_SMALL, ICON_BIG = 0, 1
+        hicon = None
+        for cx, cy in ((16, 16), (32, 32), (48, 48), (0, 0)):
+            hicon = user32.LoadImageW(0, ico_path, IMAGE_ICON, cx, cy, LR_LOADFROMFILE)
+            if hicon:
+                break
+        if not hicon:
+            return False
+        for hwnd in hwnds:
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon)
+            user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon)
+        return True
+    except Exception:
+        pass
+    return False
+
+
+def _apply_tk_toplevel_iconbitmap(dialog, ico_path):
+    """Tk wm iconbitmap fallback."""
+    if not ico_path or not os.path.isfile(ico_path):
+        return False
+    icon_path_str = os.path.abspath(ico_path)
+    try:
+        dialog.tk.call("wm", "iconbitmap", dialog._w, icon_path_str)
+        return True
+    except Exception:
+        pass
+    try:
+        dialog.iconbitmap(icon_path_str)
+        return True
+    except Exception:
+        pass
+    return False
+
+
+def _apply_toplevel_window_chrome(dialog, platform_name=None):
+    """Apply window icon (icon.ico or platforms/<platform>.ico) and dark native title bar."""
+    if not dialog:
+        return
+    try:
+        if not dialog.winfo_exists():
+            return
+    except Exception:
+        return
+    try:
+        dialog.update_idletasks()
+        dialog.update()
+    except Exception:
+        pass
+    try:
+        if platform_name:
+            ico_path, raster_path = _platform_window_icon_paths(platform_name)
+            icon_set = False
+            if platform.system() != "Darwin" and ico_path:
+                icon_set = _set_windows_toplevel_icon(dialog, ico_path) or _apply_tk_toplevel_iconbitmap(dialog, ico_path)
+            if not icon_set and raster_path and os.path.exists(raster_path):
+                icon_image = tkinter.PhotoImage(file=str(os.path.abspath(raster_path)))
+                dialog.iconphoto(False, icon_image)
+                dialog._toplevel_icon_ref = icon_image
+        elif platform.system() == "Linux":
+            png_path = resource_path("icon.png")
+            if png_path and os.path.exists(png_path):
+                icon_image = tkinter.PhotoImage(file=str(os.path.abspath(png_path)))
+                dialog.iconphoto(True, icon_image)
+                dialog._toplevel_icon_ref = icon_image
+        elif platform.system() != "Darwin":
+            ico_path = _resolve_app_icon_ico_path()
+            if ico_path:
+                if not _set_windows_toplevel_icon(dialog, ico_path):
+                    if not _apply_tk_toplevel_iconbitmap(dialog, ico_path):
+                        png_path = resource_path("icon.png")
+                        if png_path and os.path.exists(png_path):
+                            icon_image = tkinter.PhotoImage(file=str(os.path.abspath(png_path)))
+                            dialog.iconphoto(True, icon_image)
+                            dialog._toplevel_icon_ref = icon_image
+    except Exception:
+        pass
+    if platform.system() == "Windows":
+        try:
+            import ctypes
+            hwnd = _toplevel_native_hwnd(dialog)
+            if not hwnd:
+                return
+            dark = ctypes.c_int(1)
+            for attr in (20, 19):
+                try:
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                        hwnd, attr, ctypes.byref(dark), ctypes.sizeof(dark),
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
+def _restore_main_app_window_chrome():
+    """Re-apply icon.ico on the main window after a child dialog used a platform icon."""
+    try:
+        if "app" not in globals() or not app or not app.winfo_exists():
+            return
+        _apply_toplevel_window_chrome(app)
+        app.after(50, lambda: _apply_toplevel_window_chrome(app) if app.winfo_exists() else None)
+        app.after(150, lambda: _apply_toplevel_window_chrome(app) if app.winfo_exists() else None)
+    except Exception:
+        pass
+
+
+def _schedule_toplevel_window_chrome(dialog, platform_name=None):
+    """Apply icon.ico (or platform .ico) immediately and after the window is mapped (Windows CTkToplevel)."""
+    def _apply():
+        try:
+            if dialog.winfo_exists():
+                _apply_toplevel_window_chrome(dialog, platform_name)
+        except Exception:
+            pass
+
+    _apply()
+    try:
+        if dialog.winfo_exists():
+            for delay in (1, 50, 150, 300, 500):
+                dialog.after(delay, _apply)
+    except Exception:
+        pass
+
+
 def _show_spotify_cookies_instructions():
     """Show a detailed instruction popup for Spotify cookies setup."""
     global app
@@ -6114,11 +6949,11 @@ def _show_spotify_cookies_instructions():
 
     main_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
     main_frame.pack(fill="both", expand=True, padx=30, pady=30)
-    
+
     # Define a helper for link hover effects
     def on_link_enter(label):
         label.configure(text_color=LINK_HOVER_COLOR)
-    
+
     def on_link_leave(label, original_color=LINK_COLOR):
         label.configure(text_color=original_color)
 
@@ -6137,10 +6972,10 @@ def _show_spotify_cookies_instructions():
     setup_frame.pack(fill="both", expand=False, pady=(0, 30))
     
     setup_header_frame = customtkinter.CTkFrame(setup_frame, fg_color="transparent")
-    setup_header_frame.pack(fill="x", padx=20, pady=(15, 10))
+    setup_header_frame.pack(anchor="w", padx=20, pady=(15, 10))
     
-    customtkinter.CTkLabel(setup_header_frame, text="💡", font=("", 20), text_color=WARNING_COLOR).pack(side="left", padx=(0, 10))
-    customtkinter.CTkLabel(setup_header_frame, text="How to set up", font=("Segoe UI", 16, "bold"), text_color=WHITE_TEXT_COLOR).pack(side="left")
+    _pack_setup_header_icon(setup_header_frame, "Spotify")
+    customtkinter.CTkLabel(setup_header_frame, text="How to set up", font=("Segoe UI", 16, "bold"), text_color=WHITE_TEXT_COLOR).pack(side="left", anchor="center")
 
     # Steps
     steps_frame = customtkinter.CTkFrame(setup_frame, fg_color="transparent")
@@ -6149,12 +6984,12 @@ def _show_spotify_cookies_instructions():
     # Step 1: Extension
     step1_frame = customtkinter.CTkFrame(steps_frame, fg_color="transparent")
     step1_frame.pack(fill="x", pady=2)
-    customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=30).pack(side="left")
+    customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left")
     customtkinter.CTkLabel(step1_frame, text="Install extension", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
     
     step1_bullets = customtkinter.CTkFrame(steps_frame, fg_color="transparent")
     step1_bullets.pack(fill="x", pady=(0, 10))
-    customtkinter.CTkLabel(step1_bullets, text="", width=30).pack(side="left")
+    customtkinter.CTkLabel(step1_bullets, text="", width=35).pack(side="left")
     customtkinter.CTkLabel(step1_bullets, text="• Chrome / Edge → ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
     
     chrome_link = customtkinter.CTkLabel(step1_bullets, text="Get cookies.txt", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
@@ -6174,7 +7009,7 @@ def _show_spotify_cookies_instructions():
     # Step 2: Login
     step2_frame = customtkinter.CTkFrame(steps_frame, fg_color="transparent")
     step2_frame.pack(fill="x", pady=2)
-    customtkinter.CTkLabel(step2_frame, text="2.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=30).pack(side="left")
+    customtkinter.CTkLabel(step2_frame, text="2.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left")
     customtkinter.CTkLabel(step2_frame, text="Log in to ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
     
     spotify_link = customtkinter.CTkLabel(step2_frame, text="Spotify", font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK)
@@ -6188,7 +7023,7 @@ def _show_spotify_cookies_instructions():
     # Step 3: Export
     step3_frame = customtkinter.CTkFrame(steps_frame, fg_color="transparent")
     step3_frame.pack(fill="x", pady=(10, 2))
-    customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=30).pack(side="left")
+    customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left")
     customtkinter.CTkLabel(step3_frame, text="Export & save as ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
     customtkinter.CTkLabel(
         step3_frame, text="spotify-cookies.txt", font=("Segoe UI", 12, "italic"), text_color=GRAY_TEXT_COLOR
@@ -6207,7 +7042,7 @@ def _show_spotify_cookies_instructions():
 
     config_line_frame = customtkinter.CTkFrame(steps_frame, fg_color="transparent")
     config_line_frame.pack(fill="x", pady=(0, 0)) # Spacing from previous step
-    customtkinter.CTkLabel(config_line_frame, text="", width=30).pack(side="left") # Indent to match Step 3 text
+    customtkinter.CTkLabel(config_line_frame, text="", width=35).pack(side="left") # Indent to match Step 3 text
     
     customtkinter.CTkLabel(config_line_frame, text="Save it in the ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
     
@@ -6271,7 +7106,7 @@ def _show_spotify_cookies_instructions():
     ok_button.focus_set()
     dialog.bind("<Return>", lambda e: ok_button.invoke())
 
-
+    _schedule_toplevel_window_chrome(dialog)
     dialog.grab_set()
     dialog.wait_window()
 
@@ -6424,6 +7259,7 @@ def _show_spotify_pre_download_warning() -> bool:
     state['after_id'] = dialog.after(0, tick_countdown)
     dialog.protocol("WM_DELETE_WINDOW", cleanup_cancel)
 
+    _schedule_toplevel_window_chrome(dialog)
     dialog.grab_set()
     dialog.wait_window()
     return result[0]
@@ -6514,7 +7350,8 @@ def _show_spotify_dll_instructions():
         wraplength=500,
         justify="center"
     ).pack(pady=(10, 0), fill="x")
-    
+
+    _schedule_toplevel_window_chrome(dialog)
     dialog.grab_set()
     dialog.wait_window()
 
@@ -6650,6 +7487,7 @@ def _show_deno_install_message():
         x = app.winfo_rootx() + (app.winfo_width() - dw) // 2
         y = app.winfo_rooty() + (app.winfo_height() - dh) // 2
         dialog.geometry(f"+{x}+{y}")
+    _schedule_toplevel_window_chrome(dialog)
 
 
 # Keep old function name for backward compatibility
@@ -7055,6 +7893,8 @@ def load_settings():
                         "split_metadata": True,
                         "enable_zfill": True,
                         "force_album_format": False,
+                        "use_playlist_position": False,
+                        "use_album_position": False,
                         "truncate_length": 40
                     },
                     "codecs": {
@@ -7202,7 +8042,7 @@ def load_settings():
                              deep_merge(settings["globals"][section_key], section_data)
         if "modules" in file_settings:
             settings["modules"] = copy.deepcopy(file_settings["modules"])
-            platform_map_from_orpheus = { "bugs": "Bugs", "nugs": "Nugs", "soundcloud": "SoundCloud", "tidal": "TIDAL", "qobuz": "Qobuz", "deezer": "Deezer", "idagio": "Idagio", "lrclib": "LRCLIB", "napster": "Napster", "beatport": "Beatport", "beatsource": "Beatsource", "musixmatch": "Musixmatch", "spotify": "Spotify", "applemusic": "Apple Music", "youtube": "YouTube" }
+            platform_map_from_orpheus = { "bugs": "Bugs", "nugs": "Nugs", "soundcloud": "SoundCloud", "tidal": "TIDAL", "qobuz": "Qobuz", "deezer": "Deezer", "idagio": "Idagio", "lrclib": "LRCLIB", "napster": "Napster", "beatport": "Beatport", "beatsource": "Beatsource", "musixmatch": "Musixmatch", "spotify": "Spotify", "applemusic": "Apple Music", "amazonmusic": "Amazon Music", "youtube": "YouTube" }
             for orpheus_platform, creds_from_file in file_settings["modules"].items():
                 gui_platform = platform_map_from_orpheus.get(orpheus_platform)
                 if gui_platform and gui_platform in DEFAULT_SETTINGS["credentials"]:
@@ -7215,6 +8055,11 @@ def load_settings():
                 yt_creds = settings["credentials"]["YouTube"]
                 if not yt_creds.get("cookies_path"):
                     yt_creds["cookies_path"] = "./config/youtube-cookies.txt"
+            # Amazon Music: email/password stay in config (OAuth login); not shown in GUI tab
+            if "Amazon Music" in settings["credentials"]:
+                am_creds = settings["credentials"]["Amazon Music"]
+                am_creds.setdefault("email", "")
+                am_creds.setdefault("password", "")
             # Legacy Spotify configs without use_spotify_dll: assume Desktop API (cookies + DLL)
             if "Spotify" in settings["credentials"]:
                 sp_c = settings["credentials"]["Spotify"]
@@ -7355,6 +8200,7 @@ def initialize_orpheus():
             
             # Register GUI handlers for core/module interaction
             orpheus_instance.register_gui_handler("show_missing_component_dialog", show_missing_component_dialog)
+            orpheus_instance.register_gui_handler("amazonmusic_oauth_flow", amazonmusic_oauth_flow_handler)
             
             if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
                 print("[Orpheus Init] Orpheus engine initialized successfully.")
@@ -7617,6 +8463,19 @@ def save_settings(show_confirmation: bool = True):
                       )
                   else:
                       updated_gui_settings["credentials"][platform_name][field_key] = str(raw_val)
+    # Amazon Music: map quality dropdown label to stored value; keep hidden keys from current config
+    _am_gui = updated_gui_settings.get("credentials", {}).get("Amazon Music")
+    _am_cur = (current_settings.get("credentials") or {}).get("Amazon Music") or {}
+    if _am_gui is not None:
+        if "max_track_quality_to_use" in _am_gui:
+            _am_gui["max_track_quality_to_use"] = _amazonmusic_quality_store(str(_am_gui.get("max_track_quality_to_use", "")))
+        for _hk in _AMAZON_MUSIC_HIDDEN_CRED_KEYS:
+            if _hk in _am_gui:
+                continue
+            if _hk in _am_cur:
+                _am_gui[_hk] = copy.deepcopy(_am_cur[_hk])
+            elif _hk in ("email", "password"):
+                _am_gui[_hk] = ""
     if not validate_codec_conversions():
         return False
 
@@ -7646,7 +8505,7 @@ def save_settings(show_confirmation: bool = True):
                       if section_key == "advanced" and item_key == "conversion_flags":
                           continue
                       mapped_orpheus_updates["global"][section_key][item_key] = item_value
-    platform_map_to_orpheus = { "Bugs": "bugs", "Nugs": "nugs", "SoundCloud": "soundcloud", "TIDAL": "tidal", "Qobuz": "qobuz", "Deezer": "deezer", "Idagio": "idagio", "lrclib": "LRCLIB", "Napster": "napster", "Beatport": "beatport", "Beatsource": "beatsource", "Musixmatch": "musixmatch", "Spotify": "spotify", "Apple Music": "applemusic", "YouTube": "youtube" }
+    platform_map_to_orpheus = { "Bugs": "bugs", "Nugs": "nugs", "SoundCloud": "soundcloud", "TIDAL": "tidal", "Qobuz": "qobuz", "Deezer": "deezer", "Idagio": "idagio", "lrclib": "LRCLIB", "Napster": "napster", "Beatport": "beatport", "Beatsource": "beatsource", "Musixmatch": "musixmatch", "Spotify": "spotify", "Apple Music": "applemusic", "Amazon Music": "amazonmusic", "YouTube": "youtube" }
     for gui_platform, creds in updated_gui_settings.get("credentials", {}).items():
         orpheus_platform = platform_map_to_orpheus.get(gui_platform)
         if not orpheus_platform:
@@ -7998,7 +8857,7 @@ def _clear_platform_session(platform_name):
                 show_centered_messagebox("Error", f"Could not clear token: {e}", dialog_type="error")
             return
         storage_path = os.path.join(data_dir, 'config', 'loginstorage.bin')
-        module_key = platform_name.lower()
+        module_key = platform_name.lower().replace(" ", "")
         if not os.path.isfile(storage_path):
             show_centered_messagebox("No Session", f"No stored session found for {platform_name}. You can search or download to log in.", dialog_type="info")
             return
@@ -8010,7 +8869,7 @@ def _clear_platform_session(platform_name):
             # Import here to avoid potential circular imports at top level if utils imports gui
             from utils.utils import remove_module_from_storage
             
-            if platform_name.lower() in ("beatport", "beatsource", "tidal", "qobuz", "deezer"):
+            if platform_name.lower().replace(" ", "") in ("beatport", "beatsource", "tidal", "qobuz", "deezer", "amazonmusic"):
                 remove_module_from_storage(storage_path, module_key)
             
             # Reset the Orpheus instance so it reloads storage on next use
@@ -8228,45 +9087,13 @@ def show_centered_messagebox(title, message, dialog_type="info", parent=None):
 
     dialog = customtkinter.CTkToplevel(parent); dialog.title(title); dialog.geometry("450x150"); dialog.resizable(False, False); dialog.attributes("-topmost", True); dialog.transient(parent)
     dialog.update_idletasks()
-    
-    # NOTE: CTkToplevel does not support icon setting - this is a known CustomTkinter limitation.
-    # The icon setting code below is kept for potential future CustomTkinter updates, but currently
-    # dialogs will show the default icon. The main window icon works correctly.
-    # 
-    # If icon support is critical, consider using regular tkinter.Toplevel with CustomTkinter styling,
-    # or wait for CustomTkinter to add icon support for CTkToplevel.
-    #
-    # Attempt to set icon (may not work due to CTkToplevel limitations):
-    try:
-        if platform.system() != "Darwin":
-            # Try ICO first on Windows
-            ico_path = resource_path("icon.ico")
-            if ico_path and os.path.exists(ico_path):
-                icon_path_str = str(os.path.abspath(ico_path))
-                try:
-                    # Method 1: Direct tk.call (most likely to work if any method does)
-                    dialog.tk.call('wm', 'iconbitmap', dialog._w, icon_path_str)
-                except Exception:
-                    try:
-                        # Method 2: iconbitmap method
-                        dialog.iconbitmap(icon_path_str)
-                    except Exception:
-                        # Method 3: Try PNG with PhotoImage
-                        png_path = resource_path("icon.png")
-                        if png_path and os.path.exists(png_path):
-                            from tkinter import PhotoImage
-                            icon_image = PhotoImage(file=str(os.path.abspath(png_path)))
-                            dialog.iconphoto(True, icon_image)
-                            if not hasattr(dialog, '_icon_ref'):
-                                dialog._icon_ref = icon_image
-    except Exception:
-        pass
-    
     parent_width = parent.winfo_width(); parent_height = parent.winfo_height(); parent_x = parent.winfo_x(); parent_y = parent.winfo_y(); dialog_width = dialog.winfo_width(); dialog_height = dialog.winfo_height()
     center_x = parent_x + (parent_width // 2) - (dialog_width // 2); center_y = parent_y + (parent_height // 2) - (dialog_height // 2); dialog.geometry(f"+{center_x}+{center_y}")
     message_label = customtkinter.CTkLabel(dialog, text=message, wraplength=400, justify="left"); message_label.pack(pady=(20, 10), padx=20, expand=True, fill="both")
     ok_button = customtkinter.CTkButton(dialog, text="OK", command=lambda: _destroy_dialog(dialog), width=100); ok_button.pack(pady=(0, 20)); ok_button.focus_set(); dialog.bind("<Return>", lambda event: ok_button.invoke())
-    dialog.grab_set(); dialog.wait_window()
+    dialog.grab_set()
+    _schedule_toplevel_window_chrome(dialog)
+    dialog.wait_window()
 
 
 def show_centered_yes_no_dialog(title, message, parent=None):
@@ -8322,6 +9149,7 @@ def show_centered_yes_no_dialog(title, message, parent=None):
     dialog.bind("<Escape>", lambda event: no_button.invoke())
     dialog.protocol("WM_DELETE_WINDOW", _select_no)
     dialog.grab_set()
+    _schedule_toplevel_window_chrome(dialog)
     dialog.wait_window()
     return result["value"]
 
@@ -8342,15 +9170,6 @@ def show_missing_component_dialog(title, message, download_url=None, parent=None
     dialog.attributes("-topmost", True)
     dialog.transient(parent)
     dialog.update_idletasks()
-    
-    # Attempt to set icon (same as show_centered_messagebox)
-    try:
-        if platform.system() != "Darwin":
-            ico_path = resource_path("icon.ico")
-            if ico_path and os.path.exists(ico_path):
-                dialog.tk.call('wm', 'iconbitmap', dialog._w, str(os.path.abspath(ico_path)))
-    except Exception:
-        pass
     
     parent_width = parent.winfo_width(); parent_height = parent.winfo_height()
     parent_x = parent.winfo_x(); parent_y = parent.winfo_y()
@@ -8398,6 +9217,7 @@ def show_missing_component_dialog(title, message, download_url=None, parent=None
     ok_button.focus_set()
     dialog.bind("<Return>", lambda event: ok_button.invoke())
     dialog.grab_set()
+    _schedule_toplevel_window_chrome(dialog)
     dialog.wait_window()
 
 def show_shortcuts_popup(parent=None):
@@ -8503,6 +9323,7 @@ def show_shortcuts_popup(parent=None):
     dialog.bind("<Return>", lambda e: _destroy_dialog(dialog))
     dialog.bind("<Escape>", lambda e: _destroy_dialog(dialog))
     dialog.grab_set()
+    _schedule_toplevel_window_chrome(dialog)
     dialog.wait_window()
 
 def show_centered_confirm(title, message, parent=None):
@@ -8527,26 +9348,6 @@ def show_centered_confirm(title, message, parent=None):
     dialog.attributes("-topmost", True)
     dialog.transient(parent)
     dialog.update_idletasks()
-    try:
-        if platform.system() != "Darwin":
-            ico_path = resource_path("icon.ico")
-            if ico_path and os.path.exists(ico_path):
-                icon_path_str = str(os.path.abspath(ico_path))
-                try:
-                    dialog.tk.call('wm', 'iconbitmap', dialog._w, icon_path_str)
-                except Exception:
-                    try:
-                        dialog.iconbitmap(icon_path_str)
-                    except Exception:
-                        png_path = resource_path("icon.png")
-                        if png_path and os.path.exists(png_path):
-                            from tkinter import PhotoImage
-                            icon_image = PhotoImage(file=str(os.path.abspath(png_path)))
-                            dialog.iconphoto(True, icon_image)
-                            if not hasattr(dialog, '_icon_ref'):
-                                dialog._icon_ref = icon_image
-    except Exception:
-        pass
     parent_width = parent.winfo_width()
     parent_height = parent.winfo_height()
     parent_x = parent.winfo_x()
@@ -8568,6 +9369,7 @@ def show_centered_confirm(title, message, parent=None):
     dialog.bind("<Return>", lambda e: on_yes())
     dialog.bind("<Escape>", lambda e: on_no())
     dialog.grab_set()
+    _schedule_toplevel_window_chrome(dialog)
     dialog.wait_window()
     return result[0]
 
@@ -8661,8 +9463,9 @@ def show_log_viewer(title="Application Logs", parent=None):
     
     close_btn = customtkinter.CTkButton(button_frame, text="Close", command=lambda: _destroy_dialog(dialog), width=100)
     close_btn.pack(side="right", padx=5)
-    
+
     dialog.grab_set()
+    _schedule_toplevel_window_chrome(dialog)
     dialog.wait_window()
 
 def _bind_hover_effect(widget, hover_color=None, normal_color=CONTEXT_MENU_TEXT_COLOR, hover_bg=CONTEXT_MENU_HOVER_COLOR, normal_bg=None, hover_image=None, normal_image=None):
@@ -9157,6 +9960,7 @@ def _clean_ansi_and_process_markers(text):
         r'Platform: \033\[35m(Idagio)\033\[0m': 'idagio',
         r'Platform: \033\[31m(Bugs)\033\[0m': 'bugs',
         r'Platform: \033\[31m(Nugs)\033\[0m': 'nugs',
+        r'Platform: \033\[38;2;37;209;218m(Amazon Music)\033\[0m': 'amazonmusic',
     }
     for platform_pattern, platform_name in platform_patterns.items():
         display_name = SERVICE_DISPLAY_NAMES.get(platform_name, platform_name)
@@ -10123,6 +10927,7 @@ class QueueWriter(io.TextIOBase):
                     self.completed_track_count = 0
                 if (not self.media_type or self.media_type == DownloadTypeEnum.track) and (
                     stripped_line.startswith("Artists:") or
+                    stripped_line.startswith("Artist:") or
                     stripped_line.startswith("Release year:") or
                     stripped_line.startswith("Duration:") or
                     stripped_line.startswith("Platform:") or
@@ -10240,6 +11045,7 @@ class QueueWriter(io.TextIOBase):
                     elif "This song is unavailable" in stripped_line:
                         line = "       " + stripped_line
                     elif (stripped_line.startswith("Artists:") or
+                          stripped_line.startswith("Artist:") or
                           stripped_line.startswith("Release year:") or
                           stripped_line.startswith("Duration:") or
                           stripped_line.startswith("Platform:") or
@@ -10249,15 +11055,8 @@ class QueueWriter(io.TextIOBase):
                           stripped_line.startswith("Tagging file...") or
                           stripped_line.startswith("Spotify API error during track download:") or
                           stripped_line.startswith("[ERROR]") or
-                          stripped_line.startswith("No download info available") or
-                          (len(line) - len(line.lstrip()) >= 16 and any(detail in stripped_line for detail in [
-                              "Artists:", "Release year:", "Duration:", "Platform:", "Codec:",
-                              "Downloading audio...", "Downloading artwork...", "Tagging file..."
-                          ]))):
-                        if len(line) - len(line.lstrip()) >= 16:
-                            line = line
-                        else:
-                            line = "       " + stripped_line
+                          stripped_line.startswith("No download info available")):
+                        line = "       " + stripped_line
                     elif any(msg in stripped_line for msg in self.MESSAGES_TO_INDENT):
                         line = "       " + stripped_line
                     elif (stripped_line.startswith("Artist:") or
@@ -10281,6 +11080,7 @@ class QueueWriter(io.TextIOBase):
                     elif "This song is unavailable" in stripped_line:
                         line = "       " + stripped_line
                     elif (stripped_line.startswith("Artists:") or
+                          stripped_line.startswith("Artist:") or
                           stripped_line.startswith("Release year:") or
                           stripped_line.startswith("Duration:") or
                           stripped_line.startswith("Platform:") or
@@ -10292,8 +11092,6 @@ class QueueWriter(io.TextIOBase):
                           stripped_line.startswith("[ERROR]") or
                           stripped_line.startswith("No download info available")):
                         line = "       " + stripped_line
-                    elif line.startswith('        ') and not line.startswith('         ') and not line.startswith('=== '):
-                        line = line[1:]
 
                 self.queue.put(line + '\n')
             self.buffer = lines[-1]
@@ -11061,6 +11859,12 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                     "play_sound_on_finish": fresh_section.get("play_sound_on_finish", default_section.get("play_sound_on_finish", False)),
                     "progress_bar": False,
                 }
+                # GUI log uses its own layout; disable tqdm bars so they do not pad lines before status text.
+                try:
+                    from utils.utils import set_progress_bars_enabled
+                    set_progress_bars_enabled(False)
+                except Exception:
+                    pass
             elif isinstance(default_section, dict):
                 # Merge section with defaults
                 downloader_settings[section_key] = {**default_section, **fresh_section}
@@ -11210,6 +12014,15 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                             media_id = components[-1]                        
                         else:
                             raise ValueError(f"Could not determine media ID from URL path: {parsed_url.path}")
+
+            # Spotify podcast episode URLs decode as track downloads but must use librespot, not Desktop API
+            if module_name == 'spotify':
+                path_lower = (parsed_url.path or '').lower()
+                if '/episode/' in path_lower or (components and 'episode' in components):
+                    if not hasattr(downloader, 'extra_kwargs') or downloader.extra_kwargs is None:
+                        downloader.extra_kwargs = {}
+                    downloader.extra_kwargs['is_episode'] = True
+                    downloader.extra_kwargs['spotify_media_type'] = 'episode'
 
             # Load the downloader service (re-entrancy handled by TidalAutoAuthPatcher if active)
             downloader.service = orpheus.load_module(module_name)
@@ -11530,8 +12343,16 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                                 pause_seconds = 0.0
 
                             if pause_seconds > 0:
-                                jitter = pause_seconds * 0.25
-                                pause_actual = _random_pause.uniform(pause_seconds - jitter, pause_seconds + jitter)
+                                if 'spotify.com' in _next_url_l:
+                                    _sp_dll_raw = _sp_mod.get('use_spotify_dll', _sp_cred.get('use_spotify_dll', 'false'))
+                                    _sp_use_dll = str(_sp_dll_raw).lower() in ('true', '1', 'yes')
+                                else:
+                                    _sp_use_dll = False
+                                if _sp_use_dll:
+                                    jitter = pause_seconds * 0.25
+                                    pause_actual = _random_pause.uniform(pause_seconds - jitter, pause_seconds + jitter)
+                                else:
+                                    pause_actual = pause_seconds
                                 pause_ms = max(1, int(pause_actual * 1000))
                         except Exception as e:
                             print(f"[Warning] Could not read pause setting: {e}")
@@ -11903,6 +12724,7 @@ def stop_download():
     output_queue.put("|GRAY|Download stop requested... Please wait.|RESET|\n")
 
 search_stop_requested = False
+search_session_id = 0
 
 def stop_search():
     global search_stop_requested, search_button, output_queue
@@ -12122,8 +12944,8 @@ def display_results(results):
         res_id = result.get('id', f'sim_{item_number}')
         _y = result.get('year')
         _y = '' if _y is None or str(_y) == 'None' else str(_y)
-        name = result.get('title') or ''
-        artist_str = result.get('artist') or ''
+        name = _display_text(result.get('title'), '')
+        artist_str = _display_text(result.get('artist'), '')
         duration_str = result.get('duration') or ''
         year = _y
         explicit = result.get('explicit', '')
@@ -12152,9 +12974,11 @@ def display_results(results):
         normalized_result_type = result_type.replace("  ◗◖ ᴀᴛᴍᴏs", " (ATMOS)").replace("( ◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs )", "(ATMOS)").replace("(◗◖ ᴀᴛᴍᴏs)", "(ATMOS)").replace("(◗◖ atmos)", "(ATMOS)").replace("(◗◖atmos)", "(ATMOS)").replace("(◗◖ATMOS)", "(ATMOS)").strip()
         if normalized_result_type in ("track (ATMOS)", "album (ATMOS)"):
             result_type = 'track' if 'track' in normalized_result_type.lower() else 'album'
-        # Hide entries that have no Time/Duration when we expect a track row
+        # Hide junk track rows with no duration (e.g. YouTube live streams in search)
         if result_type == "track" and not duration_str and dur_sec is None:
-            continue
+            row_pk = (row_platform or "").lower().replace(" ", "")
+            if row_pk in _PLATFORMS_FILTER_ZERO_DURATION_TRACK_ROWS:
+                continue
         result_entry = {
             "id": res_id, "number": str(item_number), "title": name,
             "artist": artist_str, "duration": duration_str, "year": year,
@@ -12193,6 +13017,10 @@ def display_results(results):
             result_entry["is_album_playlist"] = True
             if result.get("label_slug"):
                 result_entry["label_slug"] = result.get("label_slug")
+        if result.get("media_region_country"):
+            result_entry["media_region_country"] = result.get("media_region_country")
+        if result.get("media_region_domain_tld"):
+            result_entry["media_region_domain_tld"] = result.get("media_region_domain_tld")
 
         search_results_data.append(result_entry)
 
@@ -12203,7 +13031,7 @@ def display_results(results):
                 is_track_row = (current_search_type_str.lower() == "track") or (result_type == "track")
                 is_album_playlist_row = (current_search_type_lower in ("album", "playlist") or ((row_platform or '').lower() == "youtube" and current_search_type_lower == "channel") or current_search_type_lower == "label") or (result_type == "album") or (result_type == "playlist")
                 is_artist_row = current_search_type_lower in ("artist", "channel")
-                can_lazy_load_preview = ((row_platform or '').lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer')) and is_track_row
+                can_lazy_load_preview = ((row_platform or '').lower().replace(' ', '') in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic', 'amazonmusic')) and is_track_row
                 is_youtube_track = ((row_platform or '').lower() == 'youtube') and is_track_row
                 preview_icon = (PREVIEW_EXPAND_COLLAPSED if (is_album_playlist_row or is_artist_row) else
                     (PREVIEW_PLAY_ICON if (preview_url or can_lazy_load_preview or is_youtube_track) else PREVIEW_UNAVAILABLE))
@@ -12285,6 +13113,75 @@ def _result_has_dolby_atmos(quality_str, raw_result):
         return True
     return False
 
+def _looks_like_amazon_asin_token(value) -> bool:
+    s = str(value or "").strip().upper()
+    return len(s) == 10 and s.startswith("B0") and s.isalnum()
+
+def _amazon_manifest_quality_in_addl(addl_list) -> bool:
+    """True when search already attached MPD-derived quality (not catalog flags)."""
+    for q in addl_list or []:
+        qs = str(q)
+        if re.search(r"\d+(?:\.\d+)?\s*kHz\s*/\s*\d+\s*bit", qs, re.I):
+            return True
+        if re.search(r"opus\s+only", qs, re.I):
+            return True
+        if any(h in qs.lower() for h in ("e-ac-3", "ac-4", "atmos", "3d", "360", "mpeg-h")):
+            return True
+    return False
+
+def _amazon_catalog_quality_displayed(addl_list) -> bool:
+    """True when Amazon search already has display quality (manifest or mapped catalog)."""
+    for q in addl_list or []:
+        qs = str(q).strip()
+        if qs in ("FLAC", "IMMERSIVE AUDIO", "360 Reality Audio"):
+            return True
+        if "🅷" in qs or "◗◖" in qs:
+            return True
+        if re.search(r"\d+(?:\.\d+)?\s*kHz\s*/\s*\d+\s*bit", qs, re.I):
+            return True
+        if re.search(r"\bopus\s+only\b", qs, re.I):
+            return True
+    return False
+
+def _is_amazon_catalog_quality_token(q) -> bool:
+    """True for Amazon text-search contentEncoding flags (HD/UHD/Atmos), not MPD sample rates."""
+    qs = str(q or "").strip()
+    if not qs or re.search(r"\d+(?:\.\d+)?\s*kHz", qs, re.I):
+        return False
+    ql = qs.lower()
+    if ql in (
+        "hd",
+        "uhd",
+        "ultra hd",
+        "dolby atmos",
+        "immersive audio",
+        "360 reality audio",
+    ):
+        return True
+    return ("atmos" in ql and "khz" not in ql) or (
+        "immersive" in ql and "audio" in ql
+    )
+
+def _apply_amazonmusic_catalog_quality_display(addl_list: list) -> list:
+    """Replace HD/UHD/Atmos/Immersive catalog flags with Apple-style Additional labels."""
+    tokens: list[str] = []
+    rest: list[str] = []
+    for q in addl_list or []:
+        qs = str(q).strip()
+        if _is_amazon_catalog_quality_token(qs):
+            tokens.append(qs)
+        elif qs:
+            rest.append(qs)
+    if not tokens:
+        return addl_list
+    try:
+        from modules.amazonmusic.interface import ModuleInterface
+
+        display = ModuleInterface._amazon_catalog_quality_display_labels(tokens)
+    except ImportError:
+        display = []
+    return rest + display
+
 def _build_additional_string(result, search_type_str, raw_result):
     """Unified helper to build the Additional/Quality string with track counts for playlists and albums."""
     # Explicit type check to avoid NameError and handle cases like "track (ATMOS)"
@@ -12293,7 +13190,19 @@ def _build_additional_string(result, search_type_str, raw_result):
     
     addl_list = getattr(result, 'additional', []) or []
     if not isinstance(addl_list, (list, tuple)): addl_list = [str(addl_list)]
-    else: addl_list = [str(q) for q in addl_list]
+    else: addl_list = [str(q) for q in addl_list if not _looks_like_amazon_asin_token(q)]
+    if (
+        isinstance(raw_result, dict)
+        and not _amazon_manifest_quality_in_addl(addl_list)
+        and not _amazon_catalog_quality_displayed(addl_list)
+    ):
+        try:
+            from modules.amazonmusic.interface import ModuleInterface
+            for tag in ModuleInterface._quality_labels_from_entity(raw_result):
+                if tag not in addl_list:
+                    addl_list.append(tag)
+        except ImportError:
+            pass
 
     # Look for existing track info to preserve it if new extraction fails
     existing_tc_str = next((q for q in addl_list if "track" in str(q).lower()), None)
@@ -12323,13 +13232,25 @@ def _build_additional_string(result, search_type_str, raw_result):
     # Prefer new extraction, fallback to existing info
     final_tc_str = new_tc_str or existing_tc_str
 
+    if not _amazon_manifest_quality_in_addl(addl_list):
+        addl_list = _apply_amazonmusic_catalog_quality_display(addl_list)
+
     final_list = []
-    if final_tc_str: final_list.append(final_tc_str)
-    
+    if final_tc_str:
+        final_list.append(final_tc_str)
+
+    seen_quality: set[str] = set()
     for q in addl_list:
         # Add all other metadata, filtering out the old track count if we replaced it
-        if q and str(q).strip() and "track" not in str(q).lower():
-            final_list.append(str(q))
+        if not q or not str(q).strip():
+            continue
+        if "track" in str(q).lower() or _looks_like_amazon_asin_token(q):
+            continue
+        qs = str(q).strip()
+        if qs in seen_quality:
+            continue
+        seen_quality.add(qs)
+        final_list.append(qs)
 
     return ' / '.join(final_list) or ''
 
@@ -12376,6 +13297,13 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
                 if platform_name.lower() == 'qobuz':
                     return [], f"API Access Error ({platform_name}): Guest search failed or is restricted. Try logging in or checking your App ID in settings."
                 return [], f"Authentication Error ({platform_name}): The login token is invalid or has expired. Please check settings."
+            if err_str.startswith("Amazon Music:") or "amazon music:" in err_lower:
+                return [], err_str
+            if isinstance(e, PermissionError) and orpheus_platform == 'amazonmusic':
+                return [], (
+                    "Amazon Music: Widevine device file (.wvd) is missing or invalid.\n"
+                    "Set wvd_path in Settings → Amazon Music."
+                )
             return [], f"Error during search ({platform_name}): {err_str}"
         formatted_results = []
         for result in search_results:
@@ -12512,6 +13440,13 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             if platform_name.lower() == 'qobuz':
                  return [], f"API Access Error ({platform_name}): Guest search failed or is restricted. Try logging in or checking your App ID in settings."
             return [], f"Authentication Error ({platform_name}): The login token is invalid or has expired. Please check settings."
+        if err_str.startswith("Amazon Music:") or "amazon music:" in err_lower:
+            return [], err_str
+        if isinstance(e, PermissionError) and orpheus_platform == 'amazonmusic':
+            return [], (
+                "Amazon Music: Widevine device file (.wvd) is missing or invalid.\n"
+                "Set wvd_path in Settings → Amazon Music."
+            )
         return [], f"Error during search ({platform_name}): {err_str}"
 
     formatted_results = []
@@ -12565,6 +13500,10 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             'platform': platform_name,
             'type': (search_type_str or 'track').lower(),
         }
+        if isinstance(extra_kwargs, dict) and extra_kwargs.get('media_region') is not None:
+            mr = extra_kwargs['media_region']
+            formatted_result['media_region_country'] = getattr(mr, 'country', None)
+            formatted_result['media_region_domain_tld'] = getattr(mr, 'domain_tld', None)
         if search_type_str and search_type_str.lower() == 'label':
             formatted_result['title'] = ''
             formatted_result['artist'] = _name
@@ -12610,9 +13549,9 @@ def _sort_results_by_relevance(query, results):
     results.sort(key=lambda r: _relevance_score(query, r), reverse=True)
 
 
-def run_search_all_platforms_target(orpheus, platforms_list, search_type_str, query, gui_settings):
+def run_search_all_platforms_target(orpheus, platforms_list, search_type_str, query, gui_settings, session_id):
     """Run search on all given platforms and merge results; update UI on main thread."""
-    global search_process_active, app, output_queue
+    global search_process_active, app, output_queue, search_session_id
     original_stdout = sys.stdout
     original_stderr = sys.stderr
     dummy_stderr = DummyStderr()
@@ -12668,6 +13607,8 @@ def run_search_all_platforms_target(orpheus, platforms_list, search_type_str, qu
                 combined.append(r)
         def _update_ui():
             global search_process_active
+            if session_id != search_session_id:
+                return
             if '_clear_expand_long_loading_message' in globals() and callable(_clear_expand_long_loading_message):
                 _clear_expand_long_loading_message()
             if '_expand_loading_message_prefix' in globals():
@@ -12691,9 +13632,9 @@ def run_search_all_platforms_target(orpheus, platforms_list, search_type_str, qu
         sys.stderr = original_stderr
 
 
-def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui_settings):
+def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui_settings, session_id):
     """Runs the search using the provided global Orpheus instance."""
-    global search_process_active, app, output_queue, DEFAULT_SETTINGS
+    global search_process_active, app, output_queue, DEFAULT_SETTINGS, search_session_id
     local_DownloadTypeEnum = DownloadTypeEnum
 
     # Redirect stdout/stderr to QueueWriter to handle frozen apps and capture auth output
@@ -12752,6 +13693,8 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
 
         def _update_ui():
             global search_process_active
+            if session_id != search_session_id:
+                return
             if '_clear_expand_long_loading_message' in globals() and callable(_clear_expand_long_loading_message):
                 _clear_expand_long_loading_message()
             if '_expand_loading_message_prefix' in globals():
@@ -12781,7 +13724,7 @@ def run_search_thread_target(orpheus, platform_name, search_type_str, query, gui
 
 def start_search():
     """Validates input and starts the search process in a separate thread using the global Orpheus instance."""
-    global search_process_active, current_settings, orpheus_instance, search_entry, platform_var, type_var, installed_platform_keys
+    global search_process_active, current_settings, orpheus_instance, search_entry, platform_var, type_var, installed_platform_keys, search_session_id
 
     if orpheus_instance is None:
         show_centered_messagebox("Error", "Orpheus library not initialized. Cannot start search.", dialog_type="error")
@@ -12808,6 +13751,8 @@ def start_search():
         clear_search_ui()
         global search_stop_requested
         search_stop_requested = False
+        search_session_id += 1
+        session_id = search_session_id
         search_process_active = True
         set_ui_state_searching(True)
         if platform_name == "All":
@@ -12821,7 +13766,11 @@ def start_search():
             globals()["_expand_loading_time_estimate"] = None
             if 'app' in globals() and app and app.winfo_exists():
                 globals()["_expand_long_loading_after_id"] = app.after(7000, _show_expand_long_loading_message)
-            search_thread = threading.Thread(target=run_search_all_platforms_target, args=(orpheus_instance, platforms_list, search_type_str, query, current_settings), daemon=True)
+            search_thread = threading.Thread(
+                target=run_search_all_platforms_target,
+                args=(orpheus_instance, platforms_list, search_type_str, query, current_settings, session_id),
+                daemon=True,
+            )
         else:
             # Tidal Dolby Atmos search (with or without query) can take a while; show "Fetching all data..." after 8s
             # Now applied to ALL searches as per user request
@@ -12829,7 +13778,11 @@ def start_search():
             globals()["_expand_loading_time_estimate"] = None
             if 'app' in globals() and app and app.winfo_exists():
                 globals()["_expand_long_loading_after_id"] = app.after(7000, _show_expand_long_loading_message)
-            search_thread = threading.Thread(target=run_search_thread_target, args=(orpheus_instance, platform_name, search_type_str, query, current_settings), daemon=True)
+            search_thread = threading.Thread(
+                target=run_search_thread_target,
+                args=(orpheus_instance, platform_name, search_type_str, query, current_settings, session_id),
+                daemon=True,
+            )
         search_thread.start()
     except NameError as e:
         print(f"Error starting search (widgets not ready?): {e}")
@@ -13865,8 +14818,13 @@ def show_search_context_menu(event):
                         
                         btn_font = ("Segoe UI", 11)
                         
-                        # Use standard caps for Atmos/Hi-Res (matching GUI checkbox), small caps for others
-                        if "ATMOS" in label.upper() or "HI-RES" in label.upper():
+                        # Plain text for download formats; small caps only in search Additional column
+                        if (
+                            "ATMOS" in label.upper()
+                            or "HI-RES" in label.upper()
+                            or label.strip().upper() == "FLAC"
+                            or re.match(r"^(MP3|AAC|OGG|ALAC|24-bit FLAC|16-bit FLAC)\b", label, re.I)
+                        ):
                             btn_text = label
                         else:
                             btn_text = _to_small_caps(label)
@@ -14033,6 +14991,119 @@ def _hide_search_context_menu_on_click(event):
                 _hide_search_context_menu()
     except Exception:
         pass
+
+def _amazonmusic_region_for_url(result_data):
+    """Resolve Amazon Music TLD and territory for share/download URLs."""
+    country = result_data.get('media_region_country')
+    tld = result_data.get('media_region_domain_tld')
+    raw = result_data.get('raw_result')
+    if raw is not None and not isinstance(raw, dict):
+        ek = getattr(raw, 'extra_kwargs', None) or {}
+        if isinstance(ek, dict):
+            mr = ek.get('media_region')
+            if mr is not None:
+                country = country or getattr(mr, 'country', None)
+                tld = tld or getattr(mr, 'domain_tld', None)
+    modules_settings = {}
+    if 'current_settings' in globals() and current_settings:
+        modules_settings = (current_settings.get('modules') or {}).get('amazonmusic') or {}
+    if not country and modules_settings.get('country'):
+        country = str(modules_settings['country']).strip().upper()
+    continent = modules_settings.get('prefer_account_continent', 'NA')
+    default_by_continent = {'NA': ('com', 'US'), 'EU': ('co.uk', 'GB'), 'FE': ('co.jp', 'JP')}
+    default_tld, default_country = default_by_continent.get(continent, ('com', 'US'))
+    return (tld or default_tld), (country or default_country).upper()
+
+def _amazonmusic_cover_url_from_dict(doc):
+    """Extract cover image URL from Amazon Music album/playlist/search metadata."""
+    if not isinstance(doc, dict):
+        return ''
+    art = doc.get('artOriginal') or {}
+    if isinstance(art, dict) and art.get('artUrl'):
+        return str(art['artUrl'])
+    if doc.get('image'):
+        return str(doc['image'])
+    for key in ('cover_url', 'artwork_url'):
+        if doc.get(key):
+            return str(doc[key])
+    meta = doc.get('metadata')
+    if isinstance(meta, dict):
+        album_art = meta.get('albumArt') or {}
+        if isinstance(album_art, dict) and album_art.get('url'):
+            return str(album_art['url'])
+        sq = meta.get('fourSquareArt') or {}
+        if isinstance(sq, dict) and sq.get('url'):
+            return str(sq['url'])
+    return ''
+
+def _amazonmusic_search_document(result_data):
+    """Best-effort catalog search hit dict for URL extras (e.g. albumAsin on tracks)."""
+    raw = result_data.get('raw_result')
+    if isinstance(raw, dict) and (raw.get('asin') or raw.get('albumAsin') or raw.get('seriesAsin') or raw.get('title')):
+        return raw
+    if raw is not None and not isinstance(raw, dict):
+        ek = getattr(raw, 'extra_kwargs', None) or {}
+        if isinstance(ek, dict):
+            data = ek.get('data')
+            if isinstance(data, dict) and data:
+                rid = str(result_data.get('id') or getattr(raw, 'result_id', '') or '')
+                if rid:
+                    doc = data.get(f"{rid}_search") or data.get(rid)
+                    if isinstance(doc, dict):
+                        return doc
+                first = next(iter(data.values()), None)
+                if isinstance(first, dict):
+                    return first
+    return None
+
+def _amazonmusic_api_kwargs(item_data):
+    """Build media_region and data kwargs for Amazon Music get_*_info (expand / download)."""
+    kwargs = {}
+    try:
+        from modules.amazonmusic.models import AmazonRegion
+    except ImportError:
+        return kwargs
+
+    media_region = None
+    data = None
+    raw = item_data.get('raw_result')
+    if raw is not None and not isinstance(raw, dict):
+        ek = getattr(raw, 'extra_kwargs', None) or {}
+        if isinstance(ek, dict):
+            media_region = ek.get('media_region')
+            if isinstance(ek.get('data'), dict):
+                data = dict(ek['data'])
+    country = (item_data.get('media_region_country') or '').strip().upper()
+    if not country and isinstance(raw, dict):
+        country = (raw.get('musicTerritory') or raw.get('music_territory') or '').strip().upper()
+    if media_region is None and country:
+        try:
+            media_region = AmazonRegion.get_region_by_country(country)
+        except TypeError:
+            media_region = None
+    if media_region is None:
+        _tld, fallback_country = _amazonmusic_region_for_url(item_data)
+        if fallback_country:
+            try:
+                media_region = AmazonRegion.get_region_by_country(fallback_country)
+            except TypeError:
+                pass
+    if media_region is not None:
+        kwargs['media_region'] = media_region
+    if data is None:
+        doc = _amazonmusic_search_document(item_data)
+        res_id = str(item_data.get('id') or '')
+        if doc and res_id:
+            data = {f"{res_id}_search": doc}
+            # Only reuse cached payload when it is full catalog data (not a text-search hit).
+            meta = doc.get("metadata")
+            has_full_playlist = isinstance(meta, dict) and bool(meta.get("title"))
+            has_full_album = isinstance(doc.get("tracks"), list) and bool(doc["tracks"])
+            if has_full_playlist or has_full_album:
+                data[res_id] = doc
+    if data:
+        kwargs['data'] = data
+    return kwargs
 
 def build_url_from_result(result_data):
     platform = result_data.get('platform'); search_type = result_data.get('type'); item_id = result_data.get('id'); raw_result_obj = result_data.get('raw_result')
@@ -14224,6 +15295,38 @@ def build_url_from_result(result_data):
         if debug_mode:
             print(f"[URL Build - Apple Music] Constructed URL: {apple_music_url}")
         return apple_music_url
+
+    elif p_lower == "amazonmusic":
+        tld, territory = _amazonmusic_region_for_url(result_data)
+        doc = _amazonmusic_search_document(result_data)
+        path_by_type = {
+            "track": "tracks",
+            "album": "albums",
+            "playlist": "playlists",
+            "artist": "artists",
+        }
+        path_seg = path_by_type.get(t_lower)
+        if not path_seg:
+            if debug_mode:
+                print(f"[URL Build - Amazon Music] Unsupported type '{t_lower}'.")
+            return None
+        if t_lower == "track":
+            album_asin = None
+            if isinstance(doc, dict):
+                album_asin = doc.get("albumAsin")
+                if not album_asin:
+                    album_obj = doc.get("album")
+                    if isinstance(album_obj, dict):
+                        album_asin = album_obj.get("asin")
+            if album_asin:
+                url = f"https://music.amazon.{tld}/albums/{album_asin}?trackAsin={item_id}&musicTerritory={territory}"
+            else:
+                url = f"https://music.amazon.{tld}/{path_seg}/{item_id}?musicTerritory={territory}"
+        else:
+            url = f"https://music.amazon.{tld}/{path_seg}/{item_id}?musicTerritory={territory}"
+        if debug_mode:
+            print(f"[URL Build - Amazon Music] Constructed: {url}")
+        return url
     
     elif p_lower == "beatsource":
         # Beatsource requires slug in URL (e.g. /track/jacky/8124762); URL without slug returns 404
@@ -14425,6 +15528,10 @@ def _parse_duration_str_to_seconds(s):
 
 def _parse_additional_track_count(s):
     """Extract track count from Additional string (e.g. '50 tracks', '1 track', '8 tracks, Cat: X') for numeric sort. Returns (number, original_string) so we can sort by number then by string."""
+    if isinstance(s, dict):
+        s = ''
+    elif isinstance(s, (list, tuple)):
+        s = ' / '.join(str(x) for x in s if x is not None)
     if s is None or not str(s).strip():
         return (None, str(s) if s is not None else "")
     s = str(s).strip()
@@ -14469,13 +15576,38 @@ def _parse_additional_quality(s):
             return (score, True)
     return (None, False)
 
+def _normalize_additional_quality_label(s):
+    """Map ugly Amazon quality strings to short labels for display."""
+    if not s:
+        return s
+    text = str(s)
+    if re.search(r"\bopus\b", text, re.I) and re.search(r"none\s*bit|nonebit", text, re.I):
+        return "OPUS only"
+    # Legacy spatial template: "3D E-AC-3 JOC bit-48kHz" -> "3D E-AC-3 JOC"
+    text = re.sub(
+        r"\s*bit-?\s*\d+(?:\.\d+)?\s*khz\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
+    if _is_amazon_catalog_quality_token(text):
+        try:
+            from modules.amazonmusic.interface import ModuleInterface
+
+            mapped = ModuleInterface._amazon_catalog_quality_display_labels([text])
+            if mapped:
+                return mapped[0]
+        except ImportError:
+            pass
+    return text
+
 def _to_small_caps(s):
     """Selectively converts specific keywords (ATMOS, HI-RES) to a visually 'smaller' version using Unicode small caps."""
     if not s: return ""
     if isinstance(s, (list, tuple)):
         s = " / ".join(str(x) for x in s if x)
-    s = str(s)
-    
+    s = _normalize_additional_quality_label(str(s))
+
     # Mapping for small caps (a-z) and subscripts/small versions for numbers/symbols
     mapping = {
         'a': 'ᴀ', 'b': 'ʙ', 'c': 'ᴄ', 'd': 'ᴅ', 'e': 'ᴇ', 'f': 'ꜰ', 'g': 'ɢ', 'h': 'ʜ', 
@@ -14494,8 +15626,21 @@ def _to_small_caps(s):
             res += mapping.get(lower_char, char)
         return res
 
+    # MPEG-H spatial → "3D ᴍᴘᴇɢ-ʜ ᴀᴜᴅɪᴏ" (normal "3D", rest small caps)
+    if re.search(r"mpeg-h|mha1|mhm1", s, re.IGNORECASE):
+        return "3D" + transform(" MPEG-H Audio")
+
     # Targeted keywords (case-insensitive search)
-    keywords = ["ATMOS", "HI-RES", "360 Reality Audio", "AAC only", "Surround"]
+    keywords = [
+        "ATMOS",
+        "HI-RES",
+        "IMMERSIVE AUDIO",
+        "360 Reality Audio",
+        "FLAC",
+        "AAC only",
+        "OPUS only",
+        "Surround",
+    ]
     
     # Use case-insensitive regex to find and replace only the keywords
     pattern = re.compile("|".join(re.escape(k) for k in keywords), re.IGNORECASE)
@@ -14562,7 +15707,7 @@ def sort_results(column):
                     platform_str = item_data.get('platform', 'Unknown')
                     search_type_str = item_data.get('type', 'track')
                     is_track_search = search_type_str.lower() == "track"
-                    can_lazy_load_preview = (platform_str.lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic')) and is_track_search
+                    can_lazy_load_preview = (platform_str.lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic', 'amazonmusic')) and is_track_search
                     is_youtube_track = (platform_str.lower() == 'youtube') and is_track_search
                     is_album_playlist = item_data.get('is_album_playlist')
                     is_artist = item_data.get('is_artist')
@@ -14751,7 +15896,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         deezer_creds_frame = None
         qobuz_creds_frame = None
         other_creds_frame = None
-        _platforms_with_help = ("Apple Music", "Beatport", "Beatsource", "SoundCloud", "Spotify", "TIDAL", "YouTube")
+        _platforms_with_help = ("Amazon Music", "Apple Music", "Beatport", "Beatsource", "SoundCloud", "Spotify", "TIDAL", "YouTube")
         if platform_name == "Deezer":
             deezer_creds_frame = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
             deezer_creds_frame.pack(fill="x", expand=False, anchor="nw")
@@ -14782,6 +15927,17 @@ def _create_credential_tab_content(platform_name, tab_frame):
             'spotify_dll_path': 'Spotify.dll path (for FLAC)',
             'embed_spotify_lyrics': 'Embed Spotify lyrics',
             'username': 'Username',
+            'email': 'Email',
+            'password': 'Password',
+            'wvd_path': 'Widevine device file (.wvd)',
+            'force_non_spatial': 'Force non-spatial only',
+            'prefer_spatial_mha1': 'Prefer spatial MHA1 (360RA)',
+            'prefer_spatial_ac4': 'Prefer spatial AC-4 (Atmos)',
+            'prefer_removal_of_device_when_revoked': 'Remove device from cache when revoked',
+            'prefer_account_continent': 'Account continent',
+            'max_track_quality_to_use': 'Max track quality',
+            'quality_format': 'Quality display format',
+            'country': 'Country',
         }
 
         if platform_name == "Spotify":
@@ -14850,12 +16006,13 @@ def _create_credential_tab_content(platform_name, tab_frame):
             ent_pause.bind("<Button-3>", show_context_menu)
             ent_pause.bind("<FocusIn>", lambda e, w=ent_pause: handle_focus_in(w))
             ent_pause.bind("<FocusOut>", lambda e, w=ent_pause: handle_focus_out(w))
-            _sp_pause_tooltip = (
+            _sp_pause_tooltip_lib = "Delay in seconds between track downloads."
+            _sp_pause_tooltip_desk = (
                 "Delay in seconds between track downloads.\n"
                 "A random timing offset of about 25% is applied to each pause to reduce predictable request patterns."
             )
-            CTkToolTip(lbl_lib_pause, message=_sp_pause_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
-            CTkToolTip(ent_pause, message=_sp_pause_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+            CTkToolTip(lbl_lib_pause, message=_sp_pause_tooltip_lib, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+            CTkToolTip(ent_pause, message=_sp_pause_tooltip_lib, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
             lr += 1
 
             customtkinter.CTkLabel(lib_frame, text=label_mapping["client_id"]).grid(row=lr, column=0, sticky="w", padx=10, pady=_lib_mid)
@@ -14953,8 +16110,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
             desk_ent_pause.bind("<Button-3>", show_context_menu)
             desk_ent_pause.bind("<FocusIn>", lambda e, w=desk_ent_pause: handle_focus_in(w))
             desk_ent_pause.bind("<FocusOut>", lambda e, w=desk_ent_pause: handle_focus_out(w))
-            CTkToolTip(lbl_desk_pause, message=_sp_pause_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
-            CTkToolTip(desk_ent_pause, message=_sp_pause_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+            CTkToolTip(lbl_desk_pause, message=_sp_pause_tooltip_desk, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+            CTkToolTip(desk_ent_pause, message=_sp_pause_tooltip_desk, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
             dr += 1
 
             lbl_sp_dll = customtkinter.CTkLabel(desk_frame, text=label_mapping["spotify_dll_path"])
@@ -15023,8 +16180,161 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 desk_frame.grid_remove()
                 lib_frame.grid(row=0, column=0, columnspan=3, sticky="ew")
 
+        if platform_name == "Amazon Music":
+            am_creds = current_settings.get("credentials", {}).get("Amazon Music", {})
+            grid_parent.grid_columnconfigure(1, weight=1)
+            if platform_name not in settings_vars["credentials"]:
+                settings_vars["credentials"][platform_name] = {}
+            sv_am = settings_vars["credentials"]["Amazon Music"]
+
+            var_wvd = tkinter.StringVar(value=str(am_creds.get("wvd_path") or ""))
+            var_country = tkinter.StringVar(value=str(am_creds.get("country") or ""))
+            var_continent = tkinter.StringVar(value=str(am_creds.get("prefer_account_continent") or "NA"))
+            var_quality_fmt = tkinter.StringVar(value=str(am_creds.get("quality_format") or DEFAULT_SETTINGS["credentials"]["Amazon Music"]["quality_format"]))
+            var_max_q = tkinter.StringVar(value=_amazonmusic_quality_display(am_creds.get("max_track_quality_to_use", "")))
+            var_force_non_spatial = tkinter.BooleanVar(value=bool(am_creds.get("force_non_spatial", False)))
+            var_pref_mha1 = tkinter.BooleanVar(value=bool(am_creds.get("prefer_spatial_mha1", False)))
+            var_pref_ac4 = tkinter.BooleanVar(value=bool(am_creds.get("prefer_spatial_ac4", False)))
+
+            sv_am["wvd_path"] = var_wvd
+            sv_am["country"] = var_country
+            sv_am["prefer_account_continent"] = var_continent
+            sv_am["quality_format"] = var_quality_fmt
+            sv_am["max_track_quality_to_use"] = var_max_q
+            sv_am["force_non_spatial"] = var_force_non_spatial
+            sv_am["prefer_spatial_mha1"] = var_pref_mha1
+            sv_am["prefer_spatial_ac4"] = var_pref_ac4
+
+            ar = 0
+            _am_pad = (10, 5)
+
+            lbl_wvd = customtkinter.CTkLabel(grid_parent, text=label_mapping["wvd_path"])
+            lbl_wvd.grid(row=ar, column=0, sticky="nw", padx=10, pady=_am_pad)
+            wvd_container = customtkinter.CTkFrame(grid_parent, fg_color="transparent")
+            wvd_container.grid(row=ar, column=1, sticky="ew", padx=(10, 5), pady=_am_pad)
+            wvd_container.grid_columnconfigure(0, weight=1)
+            ent_wvd = customtkinter.CTkEntry(wvd_container, textvariable=var_wvd)
+            ent_wvd.grid(row=0, column=0, sticky="ew")
+
+            def _browse_amazon_wvd():
+                initial_dir = os.path.dirname(var_wvd.get()) if var_wvd.get() and os.path.exists(os.path.dirname(var_wvd.get())) else get_script_directory()
+                fp = tkinter.filedialog.askopenfilename(
+                    initialdir=initial_dir,
+                    filetypes=[("Widevine device", "*.wvd"), ("All files", "*.*")],
+                    title="Select Widevine device file (.wvd)",
+                )
+                if fp:
+                    var_wvd.set(fp)
+                    _auto_save_credential_change("Amazon Music", "wvd_path")
+
+            btn_wvd = customtkinter.CTkButton(
+                grid_parent, text="Browse", width=100, height=30, command=_browse_amazon_wvd,
+                fg_color=BUTTON_COLOR, hover_color=LINK_COLOR, border_width=0,
+            )
+            btn_wvd.grid(row=ar, column=2, sticky="ne", padx=(5, 5), pady=(9, 5))
+            _wvd_tip = "Path to your .wvd Widevine device file (required for downloads)."
+            CTkToolTip(lbl_wvd, message=_wvd_tip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+            CTkToolTip(ent_wvd, message=_wvd_tip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+            for w in (ent_wvd,):
+                w.bind("<Button-3>", show_context_menu)
+                w.bind("<FocusIn>", lambda e, w=w: handle_focus_in(w))
+                w.bind("<FocusOut>", lambda e, w=w: handle_focus_out(w))
+            ar += 1
+
+            lbl_continent = customtkinter.CTkLabel(grid_parent, text=label_mapping["prefer_account_continent"])
+            lbl_continent.grid(row=ar, column=0, sticky="w", padx=10, pady=5)
+
+            region_container = customtkinter.CTkFrame(grid_parent, fg_color="transparent")
+            region_container.grid(row=ar, column=1, columnspan=2, sticky="w", padx=10, pady=5)
+
+            continent_combo = customtkinter.CTkComboBox(
+                region_container, values=["NA", "EU", "FE"], variable=var_continent, width=100, state="readonly",
+                command=lambda _c: _auto_save_credential_change("Amazon Music", "prefer_account_continent"),
+            )
+            continent_combo.grid(row=0, column=0, sticky="w")
+
+            lbl_country = customtkinter.CTkLabel(region_container, text="Country")
+            lbl_country.grid(row=0, column=1, sticky="w", padx=(24, 8))
+            ent_country = customtkinter.CTkEntry(region_container, textvariable=var_country, width=72)
+            ent_country.grid(row=0, column=2, sticky="w")
+            _country_tip = "Two-letter country code for login (e.g. US, FR, UK)."
+            CTkToolTip(lbl_country, message=_country_tip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+            CTkToolTip(ent_country, message=_country_tip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
+            ar += 1
+
+            lbl_max_q = customtkinter.CTkLabel(grid_parent, text=label_mapping["max_track_quality_to_use"])
+            lbl_max_q.grid(row=ar, column=0, sticky="w", padx=10, pady=5)
+            quality_container = customtkinter.CTkFrame(grid_parent, fg_color="transparent")
+            quality_container.grid(row=ar, column=1, columnspan=2, sticky="w", padx=10, pady=5)
+            quality_combo = customtkinter.CTkComboBox(
+                quality_container,
+                values=AMAZON_MUSIC_QUALITY_OPTIONS,
+                variable=var_max_q,
+                width=200,
+                state="readonly",
+            )
+            quality_combo.grid(row=0, column=0, sticky="w")
+            CTkToolTip(
+                quality_combo,
+                message="Optional cap on quality. Empty uses global download_quality.\nSpatial options require proprietary_codecs in global settings.",
+                bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12,
+            )
+
+            def _sync_amazon_quality_combo_width(_event=None):
+                try:
+                    region_container.update_idletasks()
+                    target = region_container.winfo_reqwidth()
+                    if target > 1:
+                        # CTkComboBox borders are slightly narrower than the region row at equal width
+                        quality_combo.configure(width=target + 1)
+                except Exception:
+                    pass
+
+            region_container.bind("<Configure>", _sync_amazon_quality_combo_width)
+            grid_parent.after_idle(_sync_amazon_quality_combo_width)
+
+            def _on_amazon_quality_change(_choice):
+                stored = _amazonmusic_quality_store(var_max_q.get())
+                try:
+                    current_settings.setdefault("credentials", {}).setdefault("Amazon Music", {})["max_track_quality_to_use"] = stored
+                    save_settings(show_confirmation=False)
+                except Exception:
+                    pass
+
+            quality_combo.configure(command=_on_amazon_quality_change)
+            ar += 1
+
+            customtkinter.CTkLabel(grid_parent, text=label_mapping["quality_format"]).grid(row=ar, column=0, sticky="w", padx=10, pady=5)
+            ent_qfmt = customtkinter.CTkEntry(grid_parent, textvariable=var_quality_fmt)
+            ent_qfmt.grid(row=ar, column=1, sticky="ew", padx=(10, 5), pady=5)
+            ar += 1
+
+            chk_row = customtkinter.CTkFrame(grid_parent, fg_color="transparent")
+            chk_row.grid(row=ar, column=1, columnspan=2, sticky="nw", padx=10, pady=(3, 5))
+            _chk_specs = (
+                (label_mapping["force_non_spatial"], var_force_non_spatial, "force_non_spatial"),
+                (label_mapping["prefer_spatial_mha1"], var_pref_mha1, "prefer_spatial_mha1"),
+                (label_mapping["prefer_spatial_ac4"], var_pref_ac4, "prefer_spatial_ac4"),
+            )
+            for ci, (label_txt, var_ref, key_name) in enumerate(_chk_specs):
+                cb = customtkinter.CTkCheckBox(chk_row, text=label_txt, variable=var_ref)
+                cb.grid(row=0, column=ci, sticky="w", padx=(0, 16 if ci < len(_chk_specs) - 1 else 0))
+                cb.configure(command=lambda k=key_name: _auto_save_credential_change("Amazon Music", k))
+
+            for ent, key_name in (
+                (ent_country, "country"),
+                (ent_qfmt, "quality_format"),
+                (ent_wvd, "wvd_path"),
+            ):
+                ent.bind("<Button-3>", show_context_menu)
+                ent.bind("<FocusIn>", lambda e, w=ent: handle_focus_in(w))
+                ent.bind("<FocusOut>", lambda e, w=ent: handle_focus_out(w))
+                ent.bind("<KeyRelease>", lambda e, p="Amazon Music", k=key_name, w=ent: _auto_save_credential_change(p, k, w))
+
         for i, (key, value) in enumerate(default_platform_fields.items()):
             if platform_name == "Spotify":
+                continue
+            if platform_name == "Amazon Music":
                 continue
             if platform_name == "TIDAL" and key in ["prefer_ac4", "fix_mqa", "throttle"]:
                 continue
@@ -15512,13 +16822,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             left_header = customtkinter.CTkFrame(left_col, fg_color="transparent")
             left_header.pack(anchor="w", pady=(0, 9))
 
-            icon_label = customtkinter.CTkLabel(
-                left_header,
-                text="💡",
-                font=("Segoe UI", 20),
-                text_color=WARNING_COLOR,
-            )
-            icon_label.pack(side="left", padx=(5, 10))
+            _pack_setup_header_icon(left_header, "Spotify")
 
             title_label = customtkinter.CTkLabel(
                 left_header,
@@ -15526,7 +16830,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 16, "bold"),
                 text_color=WHITE_TEXT_COLOR,
             )
-            title_label.pack(side="left")
+            title_label.pack(side="left", anchor="center")
 
             left_col_desktop = customtkinter.CTkFrame(left_col, fg_color="transparent")
 
@@ -15802,13 +17106,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             left_header = customtkinter.CTkFrame(left_col, fg_color="transparent")
             left_header.pack(anchor="w", pady=(0, 15))
             
-            icon_label = customtkinter.CTkLabel(
-                left_header, 
-                text="💡", 
-                font=("Segoe UI", 20), 
-                text_color=WARNING_COLOR
-            )
-            icon_label.pack(side="left", padx=(5, 10))
+            _pack_setup_header_icon(left_header, "Apple Music")
             
             title_label = customtkinter.CTkLabel(
                 left_header, 
@@ -15816,7 +17114,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 16, "bold"), 
                 text_color=WHITE_TEXT_COLOR
             )
-            title_label.pack(side="left")
+            title_label.pack(side="left", anchor="center")
 
             # See demo button for "How to set up"
             am_demo_btn = customtkinter.CTkButton(
@@ -15904,34 +17202,26 @@ def _create_credential_tab_content(platform_name, tab_frame):
             right_header = customtkinter.CTkFrame(right_col, fg_color="transparent")
             right_header.pack(anchor="w", pady=(0, 0)) # Remove padding here as subtitle will be inside
             
-            icon_label_wrapper = customtkinter.CTkLabel(
-                right_header, 
-                text="💡", 
-                font=("Segoe UI", 20), 
-                text_color=WARNING_COLOR
-            )
-            icon_label_wrapper.pack(side="left", padx=(5, 10), anchor="n")
-            
-            # Text Frame for Title + Subtitle (aligned with icon)
-            wrapper_text_frame = customtkinter.CTkFrame(right_header, fg_color="transparent")
-            wrapper_text_frame.pack(side="left", anchor="w")
+            wrapper_title_row = customtkinter.CTkFrame(right_header, fg_color="transparent")
+            wrapper_title_row.pack(anchor="w")
+
+            _pack_setup_header_icon(wrapper_title_row, "docker")
 
             title_label_wrapper = customtkinter.CTkLabel(
-                wrapper_text_frame, 
-                text="How to set up wrapper", 
-                font=("Segoe UI", 16, "bold"), 
-                text_color=WHITE_TEXT_COLOR
+                wrapper_title_row,
+                text="How to set up wrapper",
+                font=("Segoe UI", 16, "bold"),
+                text_color=WHITE_TEXT_COLOR,
             )
-            title_label_wrapper.pack(anchor="w")
+            title_label_wrapper.pack(side="left", anchor="center")
 
-            # Optional text - now inside header text frame for closer spacing
             optional_label = customtkinter.CTkLabel(
-                wrapper_text_frame, 
-                text="(Optional: to download Dolby Atmos / ALAC)", 
-                font=("Segoe UI", 12), 
-                text_color=WHITE_TEXT_COLOR
+                right_header,
+                text="(Optional: to download Dolby Atmos / ALAC)",
+                font=("Segoe UI", 12),
+                text_color=WHITE_TEXT_COLOR,
             )
-            optional_label.pack(anchor="w")
+            optional_label.pack(anchor="w", padx=(_setup_header_title_indent(), 0), pady=(2, 0))
             
             # See demo button for "How to set up wrapper"
             wrapper_demo_urls = {
@@ -15962,8 +17252,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 12), 
                 text_color=GRAY_TEXT_COLOR
             )
-            # Use same padding from icon edge (5+20+10 = 35) to align with title text
-            desc_label.pack(anchor="w", padx=(35, 0), pady=(15, 0))
+            desc_label.pack(anchor="w", padx=(_setup_header_title_indent(), 0), pady=(15, 0))
             
             _add_clear_session_icon(help_frame, "Apple Music")
         
@@ -15976,35 +17265,28 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             # --- Header (Spans both columns) ---
             header_frame = customtkinter.CTkFrame(help_frame, fg_color="transparent")
-            header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=20, pady=(20, 10))
+            header_frame.grid(row=0, column=0, columnspan=2, sticky="w", padx=20, pady=(20, 10))
             
-            icon_label = customtkinter.CTkLabel(
-                header_frame, 
-                text="💡", 
-                font=("Segoe UI", 20), 
-                text_color=WARNING_COLOR
-            )
-            icon_label.pack(side="left", padx=(5, 10), anchor="n")
-            
-            # Text Frame for Title + Subtitle
-            header_text_frame = customtkinter.CTkFrame(header_frame, fg_color="transparent")
-            header_text_frame.pack(side="left", anchor="w")
-            
+            yt_title_row = customtkinter.CTkFrame(header_frame, fg_color="transparent")
+            yt_title_row.pack(anchor="w")
+
+            _pack_setup_header_icon(yt_title_row, "YouTube")
+
             title_label = customtkinter.CTkLabel(
-                header_text_frame, 
-                text="How to set up", 
-                font=("Segoe UI", 16, "bold"), 
-                text_color=WHITE_TEXT_COLOR
+                yt_title_row,
+                text="How to set up",
+                font=("Segoe UI", 16, "bold"),
+                text_color=WHITE_TEXT_COLOR,
             )
-            title_label.pack(anchor="w")
+            title_label.pack(side="left", anchor="center")
 
             subtitle_label = customtkinter.CTkLabel(
-                header_text_frame, 
-                text="(Recommended: to prevent 403 errors / for age-restricted content)", 
-                font=("Segoe UI", 12), 
-                text_color=WHITE_TEXT_COLOR
+                header_frame,
+                text="(Recommended: to prevent 403 errors / for age-restricted content)",
+                font=("Segoe UI", 12),
+                text_color=WHITE_TEXT_COLOR,
             )
-            subtitle_label.pack(anchor="w")
+            subtitle_label.pack(anchor="w", padx=(_setup_header_title_indent(), 0), pady=(2, 0))
 
             # --- Left Column: Steps 1 & 2 ---
             left_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
@@ -16207,10 +17489,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             left_header = customtkinter.CTkFrame(left_col, fg_color="transparent")
             left_header.pack(anchor="w", pady=(0, 15))
-            icon_label = customtkinter.CTkLabel(left_header, text="💡", font=("Segoe UI", 20), text_color=WARNING_COLOR)
-            icon_label.pack(side="left", padx=(5, 10))
+            _pack_setup_header_icon(left_header, "Deezer")
             title_label = customtkinter.CTkLabel(left_header, text="How to set up", font=("Segoe UI", 16, "bold"), text_color=WHITE_TEXT_COLOR)
-            title_label.pack(side="left")
+            title_label.pack(side="left", anchor="center")
             # See demo: same position as Qobuz ID/Token (top-right of help_frame when ARL)
             deezer_see_demo_btn = customtkinter.CTkButton(
                 help_frame,
@@ -16316,10 +17597,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
             left_col.grid(row=0, column=0, sticky="nsew", padx=20, pady=(20, 12))
             left_header = customtkinter.CTkFrame(left_col, fg_color="transparent")
             left_header.pack(anchor="w", pady=(0, 15))
-            icon_label = customtkinter.CTkLabel(left_header, text="💡", font=("Segoe UI", 20), text_color=WARNING_COLOR)
-            icon_label.pack(side="left", padx=(5, 10))
+            _pack_setup_header_icon(left_header, "Qobuz")
             title_label = customtkinter.CTkLabel(left_header, text="How to set up", font=("Segoe UI", 16, "bold"), text_color=WHITE_TEXT_COLOR)
-            title_label.pack(side="left")
+            title_label.pack(side="left", anchor="center")
 
             # Browser OAuth instructions (Two Independent Columns for optimal spacing)
             cols_container = customtkinter.CTkFrame(left_col, fg_color="transparent")
@@ -16401,13 +17681,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             left_header = customtkinter.CTkFrame(left_col, fg_color="transparent")
             left_header.pack(anchor="w", pady=(0, 15))
             
-            icon_label = customtkinter.CTkLabel(
-                left_header, 
-                text="💡", 
-                font=("Segoe UI", 20), 
-                text_color=WARNING_COLOR
-            )
-            icon_label.pack(side="left", padx=(5, 10))
+            _pack_setup_header_icon(left_header, "SoundCloud")
             
             title_label = customtkinter.CTkLabel(
                 left_header, 
@@ -16415,7 +17689,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 16, "bold"), 
                 text_color=WHITE_TEXT_COLOR
             )
-            title_label.pack(side="left")
+            title_label.pack(side="left", anchor="center")
             
             # Instructions
             # Step 1
@@ -16489,13 +17763,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             left_header = customtkinter.CTkFrame(left_col, fg_color="transparent")
             left_header.pack(anchor="w", pady=(0, 15))
             
-            icon_label = customtkinter.CTkLabel(
-                left_header, 
-                text="💡", 
-                font=("Segoe UI", 20), 
-                text_color=WARNING_COLOR
-            )
-            icon_label.pack(side="left", padx=(5, 10))
+            _pack_setup_header_icon(left_header, "TIDAL")
             
             title_label = customtkinter.CTkLabel(
                 left_header, 
@@ -16503,7 +17771,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 16, "bold"), 
                 text_color=WHITE_TEXT_COLOR
             )
-            title_label.pack(side="left")
+            title_label.pack(side="left", anchor="center")
             
             # Instructions
             # Step 1
@@ -16543,6 +17811,69 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             _add_clear_session_icon(help_frame, "TIDAL")
 
+        if platform_name == "Amazon Music":
+            help_frame = customtkinter.CTkFrame(tab_frame, fg_color=SURFACE_COLOR, corner_radius=5)
+            help_frame.pack(fill="both", expand=True, padx=3, pady=(10, 5), anchor="nw")
+            help_frame.grid_columnconfigure(0, weight=1)
+
+            left_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
+            left_col.grid(row=0, column=0, sticky="nsew", padx=20, pady=(16, 14))
+
+            left_header = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            left_header.pack(anchor="w", pady=(0, 8))
+            _pack_setup_header_icon(left_header, "Amazon Music")
+            customtkinter.CTkLabel(left_header, text="How to set up", font=("Segoe UI", 16, "bold"), text_color=WHITE_TEXT_COLOR).pack(side="left", anchor="center")
+
+            def _amazon_help_step(parent, num, text):
+                row = customtkinter.CTkFrame(parent, fg_color="transparent")
+                row.pack(anchor="w", pady=(0, 2))
+                customtkinter.CTkLabel(
+                    row, text=f"{num}.", font=("Segoe UI", 12, "bold"),
+                    text_color=WHITE_TEXT_COLOR, width=35,
+                ).pack(side="left", anchor="nw")
+                customtkinter.CTkLabel(
+                    row, text=text, font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR,
+                    justify="left", wraplength=HELP_CONTENT_WIDTH,
+                ).pack(side="left", anchor="nw")
+                return row
+
+            step1_frame = customtkinter.CTkFrame(left_col, fg_color="transparent")
+            step1_frame.pack(anchor="w", pady=(0, 2))
+            customtkinter.CTkLabel(
+                step1_frame, text="1.", font=("Segoe UI", 12, "bold"),
+                text_color=WHITE_TEXT_COLOR, width=35,
+            ).pack(side="left", anchor="nw")
+            step1_text = customtkinter.CTkFrame(step1_frame, fg_color="transparent")
+            step1_text.pack(side="left", anchor="nw")
+            customtkinter.CTkLabel(
+                step1_text, text="Active ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR,
+            ).pack(side="left")
+            amazon_unlimited_link = customtkinter.CTkLabel(
+                step1_text, text="Amazon Music Unlimited",
+                font=("Segoe UI", 12, "underline"), text_color=LINK_COLOR, cursor=HAND_CURSOR_LINK,
+            )
+            amazon_unlimited_link.pack(side="left")
+            amazon_unlimited_link.bind("<Button-1>", lambda e: _open_url("https://music.amazon.com"))
+            amazon_unlimited_link.bind("<Enter>", lambda e: amazon_unlimited_link.configure(text_color=LINK_HOVER_COLOR))
+            amazon_unlimited_link.bind("<Leave>", lambda e: amazon_unlimited_link.configure(text_color=LINK_COLOR))
+            customtkinter.CTkLabel(
+                step1_text, text=" subscription is required",
+                font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR,
+            ).pack(side="left")
+
+            _amazon_help_step(left_col, 2, "Click Browse & select your Widevine device file")
+            _amazon_help_step(left_col, 3, "Set Continent & Country — Save.")
+            _amazon_help_step(left_col, 4, "Search or download — a browser login opens on first use")
+            _amazon_help_step(left_col, 5, 'Paste the URL from the address bar after the "not found" page')
+
+            demo_btn = customtkinter.CTkButton(
+                help_frame, text="See demo", width=80, height=26, font=("Segoe UI", 11),
+                fg_color=BUTTON_COLOR, hover_color=LINK_COLOR,
+                command=lambda: _open_url("https://youtube.com"),
+            )
+            demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
+            _add_clear_session_icon(help_frame, "Amazon Music")
+
         # Add help text for Beatport module
         if platform_name == "Beatport":
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color=SURFACE_COLOR, corner_radius=5)
@@ -16557,13 +17888,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             left_header = customtkinter.CTkFrame(left_col, fg_color="transparent")
             left_header.pack(anchor="w", pady=(0, 15))
             
-            icon_label = customtkinter.CTkLabel(
-                left_header, 
-                text="💡", 
-                font=("Segoe UI", 20), 
-                text_color=WARNING_COLOR
-            )
-            icon_label.pack(side="left", padx=(5, 10))
+            _pack_setup_header_icon(left_header, "Beatport")
             
             title_label = customtkinter.CTkLabel(
                 left_header, 
@@ -16571,7 +17896,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 16, "bold"), 
                 text_color=WHITE_TEXT_COLOR
             )
-            title_label.pack(side="left")
+            title_label.pack(side="left", anchor="center")
             
             # Instructions
             # Step 1
@@ -16613,13 +17938,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             left_header = customtkinter.CTkFrame(left_col, fg_color="transparent")
             left_header.pack(anchor="w", pady=(0, 15))
             
-            icon_label = customtkinter.CTkLabel(
-                left_header, 
-                text="💡", 
-                font=("Segoe UI", 20), 
-                text_color=WARNING_COLOR
-            )
-            icon_label.pack(side="left", padx=(5, 10))
+            _pack_setup_header_icon(left_header, "Beatsource")
             
             title_label = customtkinter.CTkLabel(
                 left_header, 
@@ -16627,7 +17946,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 16, "bold"), 
                 text_color=WHITE_TEXT_COLOR
             )
-            title_label.pack(side="left")
+            title_label.pack(side="left", anchor="center")
             
             # Instructions
             # Step 1
@@ -16669,7 +17988,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
              # To ensure the frame has height if empty, we might need a dummy label or minsize.
              # However, if it's empty, a height=0 frame might not show.
              # Let's add a generic title if it's a new frame to give it context.
-             if platform_name not in ["Spotify", "Apple Music", "YouTube", "Deezer", "Qobuz", "SoundCloud", "TIDAL", "Beatport", "Beatsource"]:
+             if platform_name not in ["Spotify", "Apple Music", "Amazon Music", "YouTube", "Deezer", "Qobuz", "SoundCloud", "TIDAL", "Beatport", "Beatsource"]:
                  help_container = customtkinter.CTkFrame(help_frame, fg_color="transparent")
                  help_container.pack(anchor="w", padx=15, pady=12)
                  
@@ -16693,6 +18012,18 @@ def _create_credential_tab_content(platform_name, tab_frame):
         }
         if platform_name in SEE_DEMO_URLS:
             demo_url = SEE_DEMO_URLS[platform_name]
+            
+            def _on_demo_click():
+                if platform_name == "Spotify":
+                    try:
+                        use_dll = settings_vars.get("credentials", {}).get("Spotify", {}).get("use_spotify_dll").get()
+                    except Exception:
+                        use_dll = False
+                    url = "https://youtu.be/S1wVm79U-wk" if use_dll else "https://youtu.be/aJYDACfilRM"
+                else:
+                    url = demo_url
+                _open_url(url)
+
             demo_btn = customtkinter.CTkButton(
                 help_frame,
                 text="See demo",
@@ -16701,11 +18032,12 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR,
                 hover_color=LINK_COLOR,
-                command=lambda u=demo_url: _open_url(u)
+                command=_on_demo_click
             )
             # Use place for absolute positioning within the relative frame
             # x=-15, y=15 gives it some padding from the top-right corner
             demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
+
 
     except Exception as e:
         import traceback
@@ -16773,8 +18105,11 @@ def update_search_platform_dropdown():
         base_available_platforms = [pk for pk in installed_platform_keys if pk not in ["Musixmatch", "LRCLIB"]]
         configured_platforms = []
 
-        # Platforms where credentials are completely optional (work without any credentials)
-        platforms_with_optional_credentials = ["YouTube", "Apple Music", "Deezer", "Qobuz", "Spotify", "SoundCloud", "Beatport", "Beatsource", "LRCLIB"]
+        # Platforms shown even before credentials are filled (login happens on first search/download)
+        platforms_with_optional_credentials = [
+            "YouTube", "Apple Music", "Amazon Music", "Deezer", "Qobuz", "Spotify",
+            "SoundCloud", "Beatport", "Beatsource", "LRCLIB",
+        ]
 
         for platform_name_iter in base_available_platforms:
             # YouTube, Apple Music, Deezer (public API) always show - no credential check
@@ -17147,8 +18482,16 @@ def final_download_cleanup(success=False):
                         pause_seconds = 0
                     
                     if pause_seconds and pause_seconds > 0:
-                        jitter = pause_seconds * 0.25
-                        pause_actual = _random_pause.uniform(pause_seconds - jitter, pause_seconds + jitter)
+                        if 'spotify.com' in next_url:
+                            _sp_dll_raw = _sp_mod.get('use_spotify_dll', _sp_cred.get('use_spotify_dll', 'false'))
+                            _sp_use_dll = str(_sp_dll_raw).lower() in ('true', '1', 'yes')
+                        else:
+                            _sp_use_dll = False
+                        if _sp_use_dll:
+                            jitter = pause_seconds * 0.25
+                            pause_actual = _random_pause.uniform(pause_seconds - jitter, pause_seconds + jitter)
+                        else:
+                            pause_actual = pause_seconds
                         pause_ms = max(1, int(pause_actual * 1000))
                 except Exception as e:
                     print(f"[Warning] Could not read pause setting: {e}")
@@ -17432,7 +18775,7 @@ if __name__ == "__main__":
                     "play_sound_on_finish": True,
                 },
                 "artist_downloading": { "return_credited_albums": True, "separate_tracks_skip_downloaded": True },
-                "formatting": { "album_format": "{artist}/{name}", "playlist_format": "{name}", "track_filename_format": "{artist} - {name}", "single_full_path_format": "{artist} - {name}", "metadata_separator": ";", "split_metadata": True, "enable_zfill": True, "force_album_format": False },
+                "formatting": { "album_format": "{artist}/{name}", "playlist_format": "{name}", "track_filename_format": "{artist} - {name}", "single_full_path_format": "{artist} - {name}", "metadata_separator": ";", "split_metadata": True, "enable_zfill": True, "force_album_format": False, "use_playlist_position": False, "use_album_position": False },
                 "codecs": {
                     "proprietary_codecs": False,
                     "spatial_codecs": True
@@ -17487,6 +18830,24 @@ if __name__ == "__main__":
                     "use_spotify_dll": "false",
                 },
                 "TIDAL": { "tv_atmos_token": "4N3n6Q1x95LL5K7p", "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=", "mobile_atmos_hires_token": "km8T1xS355y7dd3H", "mobile_hires_token": "6BDSRdpK9hqEBTgU", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True, "throttle": True },
+                "Amazon Music": {
+                    "wvd_path": "",
+                    "force_non_spatial": False,
+                    "prefer_spatial_mha1": False,
+                    "prefer_spatial_ac4": False,
+                    "prefer_removal_of_device_when_revoked": True,
+                    "prefer_account_continent": "NA",
+                    "max_track_quality_to_use": "",
+                    "quality_format": "{sample_rate}kHz/{bit_depth}bit",
+                    "email": "",
+                    "password": "",
+                    "country": "",
+                    "prefer_aria2c": False,
+                    "trim_track_by_sample_rate": True,
+                    "use_own_master_keys": False,
+                    "master_keys": {},
+                    "force_login": False,
+                },
                 "LRCLIB": {},
                 "YouTube": { "cookies_path": "./config/youtube-cookies.txt", "download_pause_seconds": 5, "download_mode": "sequential" }
             }
@@ -18395,13 +19756,15 @@ if __name__ == "__main__":
  {release_year}, {explicit}""",
             "formatting.track_filename_format": """Filename format for tracks. Variables:
  {artist}, {artist_id}, {artist_initials}, {album_artist}, {name}, {album}
- {track_number}, {total_tracks}, {disc_number}, {total_discs}
+ {track_number}, {total_tracks}, {disc_number}, {total_discs}, {playlist_position}
  {id}, {album_id}, {label}, {catalog_number}, {isrc}, {release_year}, {explicit}, {quality}""",
             "formatting.single_full_path_format": """Full path format (folder + filename) for single tracks not part of an album download.\nUses same variables as Track Filename Format.""",
             "formatting.metadata_separator": "Character or string used to separate multiple values in metadata (e.g. artists, genres). Default is ;",
             "formatting.split_metadata": "Save multiple values (e.g., multiple artists) as separate tags instead of joining them with the separator.",
             "formatting.enable_zfill": "Pads track/disc numbers with leading zeros (e.g., 01, 02).",
             "formatting.force_album_format": "Use the album_format structure even for single track downloads.",
+            "formatting.use_playlist_position": "Use track's position in the playlist for {track_number} in filenames and tags (instead of the original album track number).\nUse {playlist_position} in filename template if you want playlist order without changing album track numbers.",
+            "formatting.use_album_position": "Use sequential album-wide track numbers for {track_number} in filenames and tags (1 through total album tracks), ignoring per-disc resets.\nLeave disabled to keep each disc numbered from 1 (recommended for multi-disc albums).",
             "codecs.proprietary_codecs": "Enable potentially proprietary codecs like MQA (if supported by module).",
             "codecs.spatial_codecs": "Enable spatial audio codecs like Dolby Atmos (if supported by module).",
             "module_defaults.lyrics": "Default provider for lyrics when the source platform does not return usable lyrics.\nUse 'default' to auto-pick the best available lyrics module.",
@@ -19603,7 +20966,8 @@ Unnecessary Lossless-to-Lossless""",
                         center_y = int(l_mid_y - (dialog_height // 2))
                     
                     dialog.geometry(f"{dialog_width}x{dialog_height}+{center_x}+{center_y}")
-                    
+
+                    _schedule_toplevel_window_chrome(dialog)
                     dialog.grab_set()
                     dialog.wait_window()
                     
@@ -19751,7 +21115,8 @@ Unnecessary Lossless-to-Lossless""",
                     
                     ok_btn = customtkinter.CTkButton(button_frame, text="OK", command=lambda: _destroy_dialog(dialog), width=100)
                     ok_btn.pack(side="right", padx=5)
-                    
+
+                    _schedule_toplevel_window_chrome(dialog)
                     dialog.grab_set()
                     dialog.wait_window()
 
