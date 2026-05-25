@@ -7604,21 +7604,15 @@ def _import_orpheus_modules():
         # Import orpheus.core first to patch resource_path
         import orpheus.core
         
-        # Patch resource_path
+        # Ensure modules can resolve bundled assets via orpheus.core.resource_path
         if hasattr(orpheus.core, 'resource_path'):
             _original_resource_path = orpheus.core.resource_path
             print("[Patch] Stored original orpheus.core.resource_path")
-
-            def patched_resource_path(relative_path):
-                """ Patched version to always return path relative to executable dir """
-                executable_dir = get_script_directory()
-                patched_path = os.path.join(executable_dir, relative_path)
-                return patched_path
-
-            orpheus.core.resource_path = patched_resource_path
+            orpheus.core.resource_path = resource_path
             print("[Patch] Patched orpheus.core.resource_path")
         else:
-            print("[Patch] WARNING: orpheus.core.resource_path not found for patching.")
+            orpheus.core.resource_path = resource_path
+            print("[Patch] Added orpheus.core.resource_path")
 
         # Import components
         from orpheus.core import Orpheus as _Orpheus, MediaIdentification as _MediaIdentification, ManualEnum as _ManualEnum, ModuleModes as _ModuleModes
