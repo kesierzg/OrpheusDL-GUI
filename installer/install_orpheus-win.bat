@@ -21,6 +21,8 @@ rmdir /S /Q temp_core
 
 echo [3/9] Installing core Python requirements...
 pip install --upgrade --ignore-installed -r requirements.txt
+echo       Cleaning stale unplayplay metadata...
+python -c "import shutil,site; from pathlib import Path; roots=[Path(p) for p in site.getsitepackages()]; roots+=[Path(site.getusersitepackages())] if site.ENABLE_USER_SITE else []; [shutil.rmtree(e, ignore_errors=True) or print('[cleanup] Removed', e) for r in roots if r.is_dir() for e in r.iterdir() if e.name.startswith('unplayplay-0.0.8')]"
 echo       Forcing unplayplay==0.0.9...
 pip uninstall -y unplayplay >nul 2>&1
 pip install --no-cache-dir --upgrade --force-reinstall unplayplay==0.0.9
@@ -87,6 +89,12 @@ if errorlevel 1 (
     )
 ) else (
     echo [OK] Spotify.dll downloaded.
+)
+
+echo [8b/10] Downloading Shaka Packager (Amazon Music)...
+python installer\bootstrap_extras.py --shaka
+if errorlevel 1 (
+    echo [WARN] Shaka Packager download failed. Amazon Music may not work until it is installed manually.
 )
 
 echo [9/10] Launching GUI for first-run settings generation...

@@ -39,6 +39,8 @@ pip install --upgrade pip wheel setuptools
 
 echo "[6/18] Installing core requirements..."
 pip install -r requirements.txt
+echo "[6/18] Cleaning stale unplayplay metadata..."
+python3 -c "import shutil,site; from pathlib import Path; roots=[Path(p) for p in site.getsitepackages()]; roots+=[Path(site.getusersitepackages())] if site.ENABLE_USER_SITE else []; [shutil.rmtree(e, ignore_errors=True) or print('[cleanup] Removed', e) for r in roots if r.is_dir() for e in r.iterdir() if e.name.startswith('unplayplay-0.0.8')]"
 echo "[6/18] Forcing unplayplay==0.0.9..."
 pip uninstall -y unplayplay >/dev/null 2>&1 || true
 pip install --no-cache-dir --upgrade --force-reinstall "unplayplay==0.0.9"
@@ -106,6 +108,9 @@ if [ ! -f "Spotify.dll" ]; then
 else
     echo "Spotify.dll already present, skipping download"
 fi
+
+echo "[10b/18] Downloading Shaka Packager (Amazon Music)..."
+python3 installer/bootstrap_extras.py --shaka || echo "[WARN] Shaka Packager download failed."
 
 echo "[11/18] Installing build dependencies..."
 pip install pyinstaller

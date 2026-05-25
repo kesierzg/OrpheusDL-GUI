@@ -9,8 +9,6 @@ import platform
 import shutil
 import subprocess
 import sys
-import urllib.request
-import stat
 import re
 from pathlib import Path
 
@@ -20,36 +18,10 @@ INSTALLER_DIR = Path(__file__).parent
 BUILD_DIR = PROJECT_ROOT / "build"
 DIST_DIR = PROJECT_ROOT / "dist"
 
+if str(INSTALLER_DIR) not in sys.path:
+    sys.path.insert(0, str(INSTALLER_DIR))
 
-SHAKA_PACKAGER_ASSETS = {
-    "Windows": ("packager-win-x64.exe", "packager-win-x64.exe"),
-    "Darwin": ("packager-osx-x64", "packager-osx-x64"),
-    "Linux": ("packager-linux-x64", "packager-linux-x64"),
-}
-
-
-def ensure_shaka_packager():
-    """Download Shaka Packager for the current OS if missing from project root."""
-    asset = SHAKA_PACKAGER_ASSETS.get(platform.system())
-    if not asset:
-        print("[Shaka] Unknown platform; skipping Shaka Packager download")
-        return False
-    filename, url_name = asset
-    dest = PROJECT_ROOT / filename
-    if dest.is_file():
-        print(f"[Shaka] Found {filename}")
-        return True
-    url = f"https://github.com/shaka-project/shaka-packager/releases/latest/download/{url_name}"
-    print(f"[Shaka] Downloading {filename} from GitHub releases...")
-    try:
-        urllib.request.urlretrieve(url, dest)
-        if platform.system() != "Windows":
-            dest.chmod(dest.stat().st_mode | stat.S_IEXEC)
-        print(f"[Shaka] Saved to {dest}")
-        return True
-    except Exception as exc:
-        print(f"[Shaka] WARNING: Could not download Shaka Packager: {exc}")
-        return False
+from bootstrap_extras import ensure_shaka_packager
 
 
 AVAILABLE_MODULES = [

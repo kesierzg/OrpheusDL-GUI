@@ -18,6 +18,8 @@ rm -rf temp_core
 
 echo "[3/9] Installing core Python requirements..."
 pip3 install --upgrade --ignore-installed -r requirements.txt
+echo "      Cleaning stale unplayplay metadata..."
+python3 -c "import shutil,site; from pathlib import Path; roots=[Path(p) for p in site.getsitepackages()]; roots+=[Path(site.getusersitepackages())] if site.ENABLE_USER_SITE else []; [shutil.rmtree(e, ignore_errors=True) or print('[cleanup] Removed', e) for r in roots if r.is_dir() for e in r.iterdir() if e.name.startswith('unplayplay-0.0.8')]"
 echo "      Forcing unplayplay==0.0.9..."
 pip3 uninstall -y unplayplay >/dev/null 2>&1 || true
 pip3 install --no-cache-dir --upgrade --force-reinstall "unplayplay==0.0.9"
@@ -80,6 +82,9 @@ else
 fi
 
 echo "      Note: Make sure FFmpeg is installed (e.g., via Homebrew: brew install ffmpeg)"
+
+echo "[8b/10] Downloading Shaka Packager (Amazon Music)..."
+python3 installer/bootstrap_extras.py --shaka || echo "[WARN] Shaka Packager download failed."
 
 echo "[9/10] Launching GUI for first-run settings generation..."
 echo "      Please close the GUI window after it fully opens."
