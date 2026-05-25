@@ -68,6 +68,7 @@ clone_module () {
     fi
 }
 
+clone_module https://github.com/bascurtiz/orpheusdl-amazonmusic modules/amazonmusic
 clone_module https://github.com/bascurtiz/orpheusdl-applemusic modules/applemusic
 clone_module https://github.com/bascurtiz/orpheusdl-beatport modules/beatport
 clone_module https://github.com/bascurtiz/orpheusdl-beatsource modules/beatsource

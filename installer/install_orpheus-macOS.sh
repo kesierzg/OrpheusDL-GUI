@@ -44,6 +44,7 @@ mkdir -p modules
 
 # macOS specific fix for Apple Music
 pip3 install --upgrade certifi
+git clone https://github.com/bascurtiz/orpheusdl-amazonmusic modules/amazonmusic
 git clone https://github.com/bascurtiz/orpheusdl-applemusic modules/applemusic
 git clone https://github.com/bascurtiz/orpheusdl-beatport modules/beatport
 git clone https://github.com/bascurtiz/orpheusdl-beatsource modules/beatsource

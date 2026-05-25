@@ -47,6 +47,7 @@ echo [4/10] Preparing initial config directory...
 if not exist "config" mkdir "config"
 
 echo [5/10] Cloning modules...
+git clone https://github.com/bascurtiz/orpheusdl-amazonmusic modules/amazonmusic
 git clone https://github.com/bascurtiz/orpheusdl-applemusic modules/applemusic
 git clone https://github.com/bascurtiz/orpheusdl-beatport modules/beatport
 git clone https://github.com/bascurtiz/orpheusdl-beatsource modules/beatsource
@@ -66,7 +67,7 @@ rmdir /S /Q temp_gui
 pip install -r requirements-gui.txt
 
 echo [7/10] Downloading and extracting Deno...
-curl -L -o deno.zip https://github.com/denoland/deno/releases/download/v2.7.14/deno-x86_64-pc-windows-msvc.zip
+curl -L -o deno.zip https://github.com/denoland/deno/releases/download/v2.8.0/deno-x86_64-pc-windows-msvc.zip
 tar -xf deno.zip
 del deno.zip
 

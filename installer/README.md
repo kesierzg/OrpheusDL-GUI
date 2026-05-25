@@ -65,6 +65,7 @@ If you encounter `dlopen(): error loading libfuse.so.2` when running the AppImag
 
 During installation, users can select which music platform modules to install:
 
+- Amazon Music
 - Apple Music
 - Beatport
 - Beatsource
