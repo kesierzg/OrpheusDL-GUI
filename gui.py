@@ -13254,6 +13254,42 @@ def _build_additional_string(result, search_type_str, raw_result):
 
     return ' / '.join(final_list) or ''
 
+
+def _format_search_error(platform_name: str, exc: Exception) -> str:
+    """User-facing search failure message (config, auth, Amazon Music setup, etc.)."""
+    from utils.module_settings import format_module_config_error
+
+    orpheus_key = (platform_name or "").lower().replace(" ", "")
+    err_str = format_module_config_error(orpheus_key, exc, service_name=platform_name)
+    err_lower = err_str.lower()
+
+    if "user authentication is required" in err_lower or '"code":401' in err_str.replace(" ", ""):
+        if platform_name.lower() == 'qobuz':
+            return (
+                f"API Access Error ({platform_name}): Guest search failed or is restricted. "
+                "Try logging in or checking your App ID in settings."
+            )
+        return (
+            f"Authentication Error ({platform_name}): The login token is invalid or has expired. "
+            "Please check settings."
+        )
+    if err_str.startswith("Amazon Music:") or "amazon music:" in err_lower:
+        return err_str
+    if "amazon music is not set up" in err_lower:
+        return err_str
+    if isinstance(exc, PermissionError) and orpheus_key == 'amazonmusic':
+        return (
+            "Amazon Music: Widevine device file (.wvd) is missing or invalid.\n"
+            "Set wvd_path in Settings > Amazon Music."
+        )
+    if "GUEST_ACCESS_DENIED" in err_str:
+        return (
+            f"API Access Error ({platform_name}): Guest search is restricted or the App ID is invalid. "
+            "Try logging in or checking your credentials."
+        )
+    return f"Error during search ({platform_name}): {err_str}"
+
+
 def _run_single_platform_search(orpheus, platform_name, search_type_str, query, search_limit, output_queue=None):
     """Run search on one platform. Returns (list of formatted result dicts, error_message or None)."""
     local_DownloadTypeEnum = DownloadTypeEnum
@@ -13291,20 +13327,7 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             
             search_results = module_instance.search(query_type, search_query, limit=search_limit)
         except Exception as e:
-            err_str = str(e)
-            err_lower = err_str.lower()
-            if "user authentication is required" in err_lower or '"code":401' in err_str.replace(" ", ""):
-                if platform_name.lower() == 'qobuz':
-                    return [], f"API Access Error ({platform_name}): Guest search failed or is restricted. Try logging in or checking your App ID in settings."
-                return [], f"Authentication Error ({platform_name}): The login token is invalid or has expired. Please check settings."
-            if err_str.startswith("Amazon Music:") or "amazon music:" in err_lower:
-                return [], err_str
-            if isinstance(e, PermissionError) and orpheus_platform == 'amazonmusic':
-                return [], (
-                    "Amazon Music: Widevine device file (.wvd) is missing or invalid.\n"
-                    "Set wvd_path in Settings → Amazon Music."
-                )
-            return [], f"Error during search ({platform_name}): {err_str}"
+            return [], _format_search_error(platform_name, e)
         formatted_results = []
         for result in search_results:
             raw_result = None
@@ -13431,23 +13454,7 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             module_instance = orpheus.load_module(orpheus_platform)
         search_results = module_instance.search(query_type, query, limit=search_limit)
     except Exception as e:
-        err_str = str(e)
-        err_lower = err_str.lower()
-        if "GUEST_ACCESS_DENIED" in err_str:
-            return [], f"API Access Error ({platform_name}): Guest search is restricted or the App ID is invalid. Try logging in or checking your credentials."
-        if "user authentication is required" in err_lower or '"code":401' in err_str.replace(" ", ""):
-            # If it's a 401 but NOT a guest access issue, it's likely a dead token.
-            if platform_name.lower() == 'qobuz':
-                 return [], f"API Access Error ({platform_name}): Guest search failed or is restricted. Try logging in or checking your App ID in settings."
-            return [], f"Authentication Error ({platform_name}): The login token is invalid or has expired. Please check settings."
-        if err_str.startswith("Amazon Music:") or "amazon music:" in err_lower:
-            return [], err_str
-        if isinstance(e, PermissionError) and orpheus_platform == 'amazonmusic':
-            return [], (
-                "Amazon Music: Widevine device file (.wvd) is missing or invalid.\n"
-                "Set wvd_path in Settings → Amazon Music."
-            )
-        return [], f"Error during search ({platform_name}): {err_str}"
+        return [], _format_search_error(platform_name, e)
 
     formatted_results = []
     for result in search_results:
