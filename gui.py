@@ -11825,6 +11825,7 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
     download_exception_occurred = False
     start_time = datetime.datetime.now()
     media_type = None
+    am_q_prev = None
     yield_to_gui()
 
     try:
@@ -12054,7 +12055,18 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
             downloader.service = orpheus.load_module(module_name)
             downloader.service_name = module_name
             downloader.download_mode = media_type
-            
+
+            if module_name == 'amazonmusic' and search_result_data:
+                if not hasattr(downloader, 'extra_kwargs') or downloader.extra_kwargs is None:
+                    downloader.extra_kwargs = {}
+                am_kwargs = _amazonmusic_api_kwargs(search_result_data)
+                if am_kwargs:
+                    downloader.extra_kwargs.update(am_kwargs)
+                am_q = (search_result_data.get('extra_kwargs') or {}).get('max_track_quality_to_use')
+                if am_q:
+                    am_q_prev = downloader.service.settings.get('max_track_quality_to_use', '')
+                    downloader.service.settings['max_track_quality_to_use'] = str(am_q).upper()
+
             # Dynamically map global quality to Apple Music codec since the module lacks a distinct GUI option
             if module_name in ('applemusic', 'apple music'):
                 if not hasattr(downloader, 'extra_kwargs') or downloader.extra_kwargs is None:
@@ -12302,6 +12314,12 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                 safe_tb_str = str(tb_str_generic).encode('ascii', 'replace').decode('ascii')
                 print(f"\nUNEXPECTED ERROR during download thread.\nType: {safe_error_type}\nDetails: {safe_error_repr}\nTraceback:\n{safe_tb_str}")
     finally:
+        if am_q_prev is not None:
+            try:
+                if 'downloader' in locals() and getattr(downloader, 'service', None):
+                    downloader.service.settings['max_track_quality_to_use'] = am_q_prev
+            except Exception:
+                pass
         if 'temp_log_handler' in locals():
             try:
                 logging.getLogger().removeHandler(temp_log_handler)
@@ -14127,8 +14145,16 @@ def _select_quality_and_download(quality_value):
         selected_items = get_selected_items_data()
         platform_name = ""
         if selected_items:
-            platform_name = selected_items[0].get('platform', '').lower()
-            
+            platform_name = selected_items[0].get('platform', '').lower().replace(' ', '')
+
+        if platform_name == 'amazonmusic':
+            for item in selected_items:
+                if 'extra_kwargs' not in item:
+                    item['extra_kwargs'] = {}
+                item['extra_kwargs']['max_track_quality_to_use'] = str(quality_value or '').upper()
+            download_selected()
+            return
+
         if platform_name in ('applemusic', 'apple music'):
             # Determine correct AM codec based on selected quality
             if quality_value == 'atmos':
@@ -14646,6 +14672,11 @@ def show_search_context_menu(event):
                 ("MP3 128", "low")
             ]
         }
+
+        platform_key = platform_name.lower().replace(' ', '') if platform_name else ''
+        if platform_key == 'amazonmusic':
+            am_ctx_options = _amazonmusic_context_menu_options(selected_items)
+            platform_button_configs['amazonmusic'] = list(am_ctx_options) if am_ctx_options else []
         
         # Define available qualities per platform
         # Ensure all options in button configs are marked as available
@@ -14815,15 +14846,22 @@ def show_search_context_menu(event):
             'youtube': ['hifi', 'high', 'low'],
             'beatport': ['lossless', 'high', 'low'],
             'beatsource': ['lossless', 'high', 'low'],
+            'amazonmusic': [code for _, code in platform_button_configs.get('amazonmusic', [])],
             # Other platforms support all default qualities
         }
         
         # Get button configuration for this platform
-        button_config = platform_button_configs.get(platform_name, platform_button_configs['default'])
+        button_config = platform_button_configs.get(
+            platform_key,
+            platform_button_configs.get(platform_name, platform_button_configs['default']),
+        )
         
         # Get available qualities for this platform (default: all available for default config)
         default_qualities = [v for _, v in platform_button_configs['default']]
-        available_qualities = platform_available_qualities.get(platform_name, default_qualities)
+        available_qualities = platform_available_qualities.get(
+            platform_key,
+            platform_available_qualities.get(platform_name, default_qualities),
+        )
         
         # Determine if we need to show the 4th button (for TIDAL)
         needs_4_buttons = len(button_config) > 3
@@ -14852,7 +14890,9 @@ def show_search_context_menu(event):
                         btn_font = ("Segoe UI", 11)
                         
                         # Plain text for download formats; small caps only in search Additional column
-                        if (
+                        if platform_key == "amazonmusic":
+                            btn_text = _amazonmusic_context_menu_button_text(label)
+                        elif (
                             "ATMOS" in label.upper()
                             or "HI-RES" in label.upper()
                             or label.strip().upper() == "FLAC"
@@ -15137,6 +15177,235 @@ def _amazonmusic_api_kwargs(item_data):
     if data:
         kwargs['data'] = data
     return kwargs
+
+
+def _amazonmusic_context_menu_button_text(label: str) -> str:
+    """Amazon Music context menu: match Qobuz — plain HI-RES/ATMOS with icons; FLAC/OPUS normal."""
+    text = str(label or "").strip()
+    if not text:
+        return text
+    upper = text.upper()
+    if "ATMOS" in upper or "◗" in text or "IMMERSIVE" in upper or ("360" in upper and "REALITY" in upper):
+        return text
+    if "HI-RES" in upper or "🅷" in text:
+        return "🅷 HI-RES"
+    if re.fullmatch(r"FLAC", text, re.I):
+        return "FLAC"
+    if re.fullmatch(r"OPUS", text, re.I):
+        return "OPUS"
+    if re.search(r"\d+(?:\.\d+)?\s*kHz\s*/\s*\d+\s*bit", text, re.I):
+        return text
+    return text
+
+
+def _amazonmusic_context_menu_canonical(label: str, store_key: str) -> tuple[str, str]:
+    """Map a tier label + MPD key to (menu_label, max_track_quality_to_use)."""
+    from modules.amazonmusic.interface import ModuleInterface
+
+    sk = str(store_key or "").upper()
+    raw = str(label or sk).strip()
+    if not raw:
+        return ("", sk)
+
+    manifest = ModuleInterface._amazon_manifest_label_for_display(raw)
+    if ModuleInterface._is_spatial_quality_display(raw, raw) or ModuleInterface._is_spatial_quality_display(manifest, manifest):
+        spatial = ModuleInterface._amazon_spatial_display_label(raw, sk)
+        if "360" in spatial:
+            return ("360 Reality Audio", sk if "RA360" in sk else "SPATIAL_RA360")
+        if "IMMERSIVE" in spatial.upper():
+            return ("IMMERSIVE AUDIO", sk if sk.startswith("SPATIAL") else "SPATIAL_ATMOS")
+        return ("◗◖ ATMOS", sk if sk.startswith("SPATIAL") else "SPATIAL_ATMOS")
+
+    parsed = ModuleInterface._parse_khz_bit_display_label(manifest) or ModuleInterface._parse_khz_bit_display_label(raw)
+    if parsed:
+        sr_khz, bit_depth = parsed
+        if ModuleInterface._is_hi_res_lossless(sr_khz, bit_depth):
+            return ("🅷 HI-RES", sk if sk.startswith("UHD") else "UHD")
+        return ("FLAC", sk if sk.startswith("HD") else "HD")
+
+    if "HI-RES" in manifest.upper() or "🅷" in manifest:
+        return ("🅷 HI-RES", sk if sk.startswith("UHD") else "UHD")
+    if manifest.upper() == "FLAC" or raw.upper() == "FLAC":
+        return ("FLAC", sk if sk.startswith("HD") else "HD")
+    if re.search(r"\bopus\b", manifest, re.I) or re.search(r"\bopus\b", raw, re.I):
+        return ("OPUS", "SD")
+    if sk.startswith("UHD"):
+        return ("🅷 HI-RES", sk)
+    if sk.startswith("HD"):
+        return ("FLAC", sk)
+    if sk.startswith("SPATIAL"):
+        return (_amazonmusic_context_menu_button_text(manifest or raw), sk)
+    return (manifest or raw, sk)
+
+
+def _amazonmusic_context_menu_sort_key(menu_label: str) -> tuple[int, str]:
+    """Fixed tier order: Atmos → Immersive → 360 → HI-RES → FLAC → Opus → MP3/AAC/OGG."""
+    text = str(menu_label or "")
+    upper = text.upper()
+    if "ATMOS" in upper or "◗" in text:
+        return (0, text)
+    if "IMMERSIVE" in upper:
+        return (1, text)
+    if "360" in upper and "REALITY" in upper:
+        return (2, text)
+    if "HI-RES" in upper or "🅷" in text:
+        return (3, text)
+    if re.fullmatch(r"FLAC", text.strip(), re.I) or upper == "FLAC":
+        return (4, text)
+    if "OPUS" in upper:
+        return (5, text)
+    if "MP3" in upper:
+        return (6, text)
+    if "AAC" in upper or "MP4" in upper:
+        return (7, text)
+    if "OGG" in upper:
+        return (8, text)
+    return (9, text)
+
+
+def _amazonmusic_option_from_additional_part(part: str) -> tuple[str, str] | None:
+    """Map one Additional-column token to (menu_label, max_track_quality_to_use)."""
+    from modules.amazonmusic.interface import ModuleInterface
+
+    part = str(part or "").strip()
+    if not part:
+        return None
+    pl = part.lower()
+    if re.search(r"\d+\s*tracks?", pl):
+        return None
+
+    parsed = ModuleInterface._parse_khz_bit_display_label(part)
+    if parsed:
+        sr_khz, bit_depth = parsed
+        if ModuleInterface._is_hi_res_lossless(sr_khz, bit_depth):
+            return ("🅷 HI-RES", "UHD")
+        return ("FLAC", "HD")
+
+    if "atmos" in pl or "◗" in part:
+        return ("◗◖ ATMOS", "SPATIAL_ATMOS")
+    if "immersive" in pl and "audio" in pl:
+        return ("IMMERSIVE AUDIO", "SPATIAL_ATMOS")
+    if ("reality" in pl or "ra360" in pl) and re.search(r"\b360\b", pl):
+        return ("360 Reality Audio", "SPATIAL_RA360")
+    if "hi-res" in pl or "🅷" in part or "ʜɪ" in pl:
+        return ("🅷 HI-RES", "UHD")
+    if re.search(r"\bopus\b", pl):
+        return ("OPUS", "SD")
+    if part.upper() == "FLAC":
+        return ("FLAC", "HD")
+
+    manifest = ModuleInterface._amazon_manifest_label_for_display(part)
+    if manifest and manifest.strip() and manifest != part:
+        return _amazonmusic_option_from_additional_part(manifest)
+    return None
+
+
+def _amazonmusic_additional_parts(additional: str) -> list[str]:
+    """Split Additional into quality tokens without breaking kHz/bit slashes (44.1kHz/16bit)."""
+    text = str(additional or "").strip()
+    if not text:
+        return []
+    # Join format from _build_additional_string is " / " between tokens only.
+    if " / " in text:
+        return [p.strip() for p in text.split(" / ") if p.strip()]
+    return [text]
+
+
+def _amazonmusic_supplement_stereo_downgrades(merged: dict[str, str]) -> None:
+    """Additional shows the max tier only; add FLAC when top tier is spatial or hi-res."""
+    if "FLAC" in merged or not merged:
+        return
+    labels_upper = " ".join(merged.keys()).upper()
+    has_spatial = (
+        "ATMOS" in labels_upper
+        or "◗" in labels_upper
+        or "IMMERSIVE" in labels_upper
+        or ("360" in labels_upper and "REALITY" in labels_upper)
+    )
+    has_hi_res = "HI-RES" in labels_upper or "🅷" in labels_upper
+    if has_spatial or has_hi_res:
+        merged["FLAC"] = "HD"
+
+
+def _amazonmusic_context_menu_from_additional(additional: str) -> list[tuple[str, str]]:
+    """Build menu tiers from the search Additional column (max tier + common downgrades)."""
+    merged: dict[str, str] = {}
+    for part in _amazonmusic_additional_parts(additional):
+        opt = _amazonmusic_option_from_additional_part(part)
+        if opt:
+            menu_label, sk = opt
+            merged.setdefault(menu_label, sk)
+    _amazonmusic_supplement_stereo_downgrades(merged)
+    return [(label, sk) for label, sk in merged.items()]
+
+
+def _amazonmusic_context_menu_options(selected_items: list) -> list[tuple[str, str]]:
+    """Build download tiers from Additional column; fall back to MPD mapping only when empty."""
+    try:
+        from modules.amazonmusic.interface import ModuleInterface
+        from utils.models import codec_data
+    except ImportError:
+        return []
+
+    module_instance = None
+    if "orpheus_instance" in globals() and orpheus_instance:
+        try:
+            module_instance = orpheus_instance.load_module("amazonmusic")
+        except Exception:
+            module_instance = None
+
+    merged: dict[str, str] = {}
+
+    def _merge_options(opts: list[tuple[str, str]]) -> None:
+        for menu_label, sk in opts:
+            if menu_label and sk:
+                merged.setdefault(menu_label, sk)
+
+    for item in selected_items or []:
+        addl = str(item.get("additional") or "").strip()
+        if addl:
+            _merge_options(_amazonmusic_context_menu_from_additional(addl))
+            continue
+
+        am_kwargs = _amazonmusic_api_kwargs(item)
+        data = am_kwargs.get("data") if isinstance(am_kwargs.get("data"), dict) else {}
+        tid = str(item.get("id") or "")
+        qmap = data.get(f"{tid}_quality_mapping") if tid else None
+        if qmap and module_instance:
+            quality_format = str(module_instance.settings.get("quality_format", ""))
+            qmap_opts: list[tuple[str, str]] = []
+            for _qe, quality_name, tracks in ModuleInterface._iter_over_tracks_to_quality_map(qmap):
+                if not tracks:
+                    continue
+                best = tracks[0]
+                try:
+                    label = module_instance._format_quality_display(
+                        {
+                            "official_quality_name": best.official_quality_name,
+                            "codec_pretty_name": codec_data[best.codec].pretty_name,
+                            "bit_depth": best.bit_depth,
+                            "sample_rate": best.sample_rate,
+                        },
+                        quality_format,
+                    )
+                except Exception:
+                    label = quality_name
+                menu_label, sk = _amazonmusic_context_menu_canonical(label, quality_name)
+                if menu_label and sk:
+                    qmap_opts.append((menu_label, sk))
+            _merge_options(qmap_opts)
+
+    # Always show OPUS as a fallback quality tier for Amazon Music.
+    # OPUS availability is common even when the manifest probe surfaces FLAC/HI-RES/Atmos only.
+    if merged and not any("OPUS" in str(k).upper() for k in merged.keys()):
+        merged["OPUS"] = "SD"
+
+    if not merged:
+        return []
+    options = [(label, sk) for label, sk in merged.items()]
+    options.sort(key=lambda x: _amazonmusic_context_menu_sort_key(x[0]))
+    return options
+
 
 def build_url_from_result(result_data):
     platform = result_data.get('platform'); search_type = result_data.get('type'); item_id = result_data.get('id'); raw_result_obj = result_data.get('raw_result')
