@@ -180,6 +180,21 @@ def build_pyinstaller():
         shutil.copytree(src_config, dist_config)
         print(f"Copied config to {dist_config}")
 
+    # Do not ship a build-machine absolute ffmpeg_path (e.g. C:\orpheusdl\ffmpeg.exe).
+    settings_file = dist_config / "settings.json"
+    if settings_file.is_file():
+        try:
+            import json
+            data = json.loads(settings_file.read_text(encoding="utf-8"))
+            advanced = data.setdefault("global", {}).setdefault("advanced", {})
+            ffmpeg_path = advanced.get("ffmpeg_path", "ffmpeg")
+            if isinstance(ffmpeg_path, str) and ffmpeg_path.strip().lower() != "ffmpeg":
+                advanced["ffmpeg_path"] = "ffmpeg"
+                settings_file.write_text(json.dumps(data, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
+                print("[FFmpeg] Reset dist/config/settings.json ffmpeg_path to portable default 'ffmpeg'")
+        except Exception as e:
+            print(f"[WARN] Could not sanitize dist settings ffmpeg_path: {e}")
+
     print("PyInstaller build complete")
 
 

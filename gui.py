@@ -84,7 +84,14 @@ os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 from utils.vendor_bootstrap import bootstrap_vendor_paths
 bootstrap_vendor_paths()
 
-from utils.utils import find_system_ffmpeg, get_clean_env, ensure_shaka_packager_in_data_dir, resolve_shaka_packager
+from utils.utils import (
+    find_system_ffmpeg,
+    locate_ffmpeg,
+    is_missing_executable_error,
+    get_clean_env,
+    ensure_shaka_packager_in_data_dir,
+    resolve_shaka_packager,
+)
 try:
     from utils.sleep import keep_awake, allow_sleep
 except Exception as _sleep_import_error:
@@ -760,39 +767,69 @@ def _simple_slugify(text):
     text = text.strip('-')
     return text if text else None
 
+def _ffmpeg_search_directories():
+    """Directories to search for a bundled ffmpeg executable."""
+    dirs = []
+    try:
+        script_dir = get_script_directory()
+        if script_dir:
+            dirs.append(script_dir)
+    except Exception:
+        pass
+    try:
+        data_dir = get_data_directory()
+        if data_dir:
+            dirs.append(data_dir)
+    except Exception:
+        pass
+    if getattr(sys, 'frozen', False):
+        dirs.append(os.path.dirname(os.path.abspath(sys.executable)))
+    dirs.append(os.getcwd())
+    return [d for d in dirs if d]
+
+
 def _get_ffmpeg_path():
     """Get the path to ffmpeg executable."""
-    def is_valid_ffmpeg(path):
-        return os.path.isfile(path) and os.access(path, os.X_OK)
+    configured = "ffmpeg"
+    if 'current_settings' in globals() and current_settings:
+        configured = current_settings.get("globals", {}).get("advanced", {}).get("ffmpeg_path", "ffmpeg")
+    resolved = locate_ffmpeg(configured, extra_search_dirs=_ffmpeg_search_directories())
+    return resolved or 'ffmpeg'
 
-    # Check bundled ffmpeg first (for frozen apps)
-    if getattr(sys, 'frozen', False):
-        app_dir = os.path.dirname(sys.executable)
-        bundled = os.path.join(app_dir, 'ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg')
-        if is_valid_ffmpeg(bundled):
-            return bundled
-        
-        if platform.system() == 'Darwin':
-            app_support_ffmpeg = os.path.expanduser("~/Library/Application Support/OrpheusDL GUI/ffmpeg")
-            if is_valid_ffmpeg(app_support_ffmpeg):
-                return app_support_ffmpeg
-    
-    # Check script directory
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    local_ffmpeg = os.path.join(script_dir, 'ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg')
-    if is_valid_ffmpeg(local_ffmpeg):
-        return local_ffmpeg
-    
-    # Try using the robust finder from utils
-    try:
-        found, system_ffmpeg = find_system_ffmpeg()
-        if found:
-            return system_ffmpeg
-    except:
-        pass
-    
-    # Fall back to PATH
-    return 'ffmpeg'
+
+def _repair_ffmpeg_path_in_settings(settings, persist_to_file=False):
+    """
+    Fix a stale ffmpeg_path (e.g. C:\\orpheusdl\\ffmpeg.exe after install to Program Files).
+    Returns (resolved_path_or_none, was_changed).
+    """
+    global CONFIG_FILE_PATH
+    if "globals" not in settings:
+        return None, False
+    if "advanced" not in settings["globals"]:
+        settings["globals"]["advanced"] = {}
+    adv = settings["globals"]["advanced"]
+    configured = adv.get("ffmpeg_path", "ffmpeg")
+    resolved = locate_ffmpeg(configured, extra_search_dirs=_ffmpeg_search_directories())
+    new_value = resolved if resolved else "ffmpeg"
+    was_changed = (configured or "ffmpeg") != new_value
+    if was_changed:
+        adv["ffmpeg_path"] = new_value
+        print(f"[FFmpeg] Updated FFmpeg path setting: '{configured}' -> '{new_value}'")
+    if was_changed and persist_to_file and CONFIG_FILE_PATH and os.path.isfile(CONFIG_FILE_PATH):
+        try:
+            with open(CONFIG_FILE_PATH, 'r', encoding='utf-8') as f:
+                file_settings = json.load(f)
+            if "global" not in file_settings:
+                file_settings["global"] = {}
+            if "advanced" not in file_settings["global"]:
+                file_settings["global"]["advanced"] = {}
+            file_settings["global"]["advanced"]["ffmpeg_path"] = new_value
+            with open(CONFIG_FILE_PATH, 'w', encoding='utf-8') as f:
+                json.dump(file_settings, f, indent=4, ensure_ascii=False)
+            print(f"[FFmpeg] Saved repaired FFmpeg path to {CONFIG_FILE_PATH}")
+        except Exception as e:
+            print(f"[FFmpeg] Could not persist repaired FFmpeg path: {e}")
+    return resolved, was_changed
 
 def _audio_debug():
     """Return True if Advanced debug_mode is on (so [Audio] messages can be printed)."""
@@ -7568,6 +7605,16 @@ def copy_bundled_resources_to_data_dir(data_dir):
                     print(f"[Resource Copy] Failed to copy Shaka Packager: {e}")
                 break
 
+        bundled_mp4decrypt = os.path.join(bundle_path, 'mp4decrypt.exe')
+        if platform.system() == 'Windows' and os.path.isfile(bundled_mp4decrypt):
+            dest_mp4decrypt = os.path.join(data_dir, 'mp4decrypt.exe')
+            try:
+                if not os.path.isfile(dest_mp4decrypt) or os.path.getsize(dest_mp4decrypt) < os.path.getsize(bundled_mp4decrypt):
+                    shutil.copy2(bundled_mp4decrypt, dest_mp4decrypt)
+                    print(f"[Resource Copy] Copied mp4decrypt to {dest_mp4decrypt}")
+            except Exception as e:
+                print(f"[Resource Copy] Failed to copy mp4decrypt: {e}")
+
         # On Windows, prepend app dir to PATH so bundled deno.exe is findable by yt-dlp
         app_dir = get_script_directory()
         if app_dir and app_dir not in os.environ.get('PATH', '').split(os.pathsep):
@@ -7876,25 +7923,8 @@ def load_settings():
                 else:
                     default_ffmpeg_path = "ffmpeg"  # Will use PATH, show error if not found
                     print(f"[FFmpeg] FFmpeg not found - install with: sudo apt install ffmpeg")
-            else:
-                # On Windows, check for bundled ffmpeg
-                ffmpeg_name = "ffmpeg.exe"
-                search_paths = []
-                data_dir = get_data_directory()
-                if data_dir:
-                    search_paths.append(os.path.join(data_dir, ffmpeg_name))
-                app_dir = get_script_directory()
-                if app_dir:
-                    search_paths.append(os.path.join(app_dir, ffmpeg_name))
-                if hasattr(sys, '_MEIPASS'):
-                    search_paths.append(os.path.join(sys._MEIPASS, ffmpeg_name))
-                search_paths.append(os.path.join(os.getcwd(), ffmpeg_name))
-                
-                for ffmpeg_path in search_paths:
-                    if os.path.isfile(ffmpeg_path):
-                        default_ffmpeg_path = ffmpeg_path
-                        print(f"[FFmpeg] Using bundled FFmpeg for default settings: {ffmpeg_path}")
-                        break
+            # Windows: keep "ffmpeg" in settings.json so installs are not tied to a build-machine path.
+            # Runtime auto-detection resolves the app-directory copy after install.
             
             # Create default settings structure for Orpheus format
             default_orpheus_settings = {
@@ -8099,44 +8129,7 @@ def load_settings():
             "modules": {}
         }
 
-    # Auto-detect bundled FFmpeg if ffmpeg_path is default "ffmpeg"
-    ffmpeg_path_setting = settings.get("globals", {}).get("advanced", {}).get("ffmpeg_path", "ffmpeg")
-    if ffmpeg_path_setting and ffmpeg_path_setting.lower() == "ffmpeg":
-        ffmpeg_name = "ffmpeg.exe" if platform.system() == "Windows" else "ffmpeg"
-        found_ffmpeg = None
-        
-        # Check multiple locations for ffmpeg
-        search_paths = []
-        
-        # 1. Data directory (where we copy ffmpeg on macOS)
-        data_dir = get_data_directory()
-        if data_dir:
-            search_paths.append(os.path.join(data_dir, ffmpeg_name))
-        
-        # 2. Script/app directory
-        app_dir = get_script_directory()
-        if app_dir:
-            search_paths.append(os.path.join(app_dir, ffmpeg_name))
-        
-        # 3. PyInstaller bundle directory
-        if hasattr(sys, '_MEIPASS'):
-            search_paths.append(os.path.join(sys._MEIPASS, ffmpeg_name))
-        
-        # 4. Current working directory
-        search_paths.append(os.path.join(os.getcwd(), ffmpeg_name))
-        
-        for ffmpeg_path in search_paths:
-            if os.path.isfile(ffmpeg_path):
-                found_ffmpeg = ffmpeg_path
-                break
-        
-        if found_ffmpeg:
-            print(f"[FFmpeg] Found bundled FFmpeg at: {found_ffmpeg}")
-            if "advanced" not in settings["globals"]:
-                settings["globals"]["advanced"] = {}
-            settings["globals"]["advanced"]["ffmpeg_path"] = found_ffmpeg
-        else:
-            print(f"[FFmpeg] No bundled FFmpeg found. Searched: {search_paths}")
+    _repair_ffmpeg_path_in_settings(settings, persist_to_file=True)
 
     current_settings = settings
     return settings
@@ -8203,13 +8196,13 @@ def initialize_orpheus():
             return False
     global current_settings
     ffmpeg_path_setting = current_settings.get("globals", {}).get("advanced", {}).get("ffmpeg_path", "ffmpeg").strip()
-    if ffmpeg_path_setting and ffmpeg_path_setting.lower() != "ffmpeg":
-        if os.path.isfile(ffmpeg_path_setting):
-            ffmpeg_dir = os.path.dirname(ffmpeg_path_setting)
-            if ffmpeg_dir:
-                current_path = os.environ.get("PATH", "")
-                if ffmpeg_dir not in current_path.split(os.pathsep):
-                    os.environ["PATH"] = ffmpeg_dir + os.pathsep + current_path
+    resolved_ffmpeg = locate_ffmpeg(ffmpeg_path_setting, extra_search_dirs=_ffmpeg_search_directories())
+    if resolved_ffmpeg:
+        ffmpeg_dir = os.path.dirname(resolved_ffmpeg)
+        if ffmpeg_dir:
+            current_path = os.environ.get("PATH", "")
+            if ffmpeg_dir not in current_path.split(os.pathsep):
+                os.environ["PATH"] = ffmpeg_dir + os.pathsep + current_path
 
     if orpheus_instance is None:
         try:
@@ -10915,6 +10908,13 @@ class QueueWriter(io.TextIOBase):
                 if "soundcloud --> HLS_UNEXPECTED_ERROR_IN_TRY_BLOCK" in line:
                     line = re.sub(r'.*soundcloud --> HLS_UNEXPECTED_ERROR_IN_TRY_BLOCK.*', 
                                   '       SoundCloud streaming error (FFmpeg required for HLS streams)', line)
+                if "Download failed:" in line and is_missing_executable_error(line):
+                    line = re.sub(
+                        r'Download failed:.*',
+                        '       Download failed: FFmpeg not found or misconfigured (required for this download). '
+                        'Install FFmpeg or set Settings > Global > Advanced > FFmpeg Path.',
+                        line
+                    )
                 if "FFmpeg is not installed or working! Using fallback, may have errors" in line:
                     buffer_context = (self.buffer + msg).lower()
                     
@@ -20648,8 +20648,8 @@ Unnecessary Lossless-to-Lossless""",
         if platform.system() in ('Windows', 'Darwin', 'Linux'):
             # Moved check to background thread to avoid blocking the main UI thread during initialization
             def _run_ffmpeg_check_and_show_warning():
-                _f_found, _ = find_system_ffmpeg()
-                if not _f_found:
+                configured = current_settings.get("globals", {}).get("advanced", {}).get("ffmpeg_path", "ffmpeg")
+                if not locate_ffmpeg(configured, extra_search_dirs=_ffmpeg_search_directories()):
                     try:
                         app.after(1000, _show_ffmpeg_install_message)
                     except:
