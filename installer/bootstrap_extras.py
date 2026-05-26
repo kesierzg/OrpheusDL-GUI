@@ -54,7 +54,7 @@ def cleanup_stale_unplayplay_metadata() -> bool:
 
 
 def ensure_shaka_packager(project_root: Path | None = None) -> bool:
-    """Download Shaka Packager for the current OS if missing from project root."""
+    """Download Shaka Packager (latest release) for the current OS if missing from project root."""
     root = project_root or PROJECT_ROOT
     asset = SHAKA_PACKAGER_ASSETS.get(platform.system())
     if not asset:
