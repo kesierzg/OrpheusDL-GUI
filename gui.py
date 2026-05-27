@@ -12508,7 +12508,19 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
     """Starts the download in a separate thread for a single URL."""
     global download_process_active, current_settings, orpheus_instance, stop_event
     global spotify_pre_download_warning_acknowledged
-    
+
+    try:
+        from utils.utils import resolve_platform_share_url
+        expanded_url = resolve_platform_share_url(url_to_download)
+        if expanded_url and expanded_url != url_to_download:
+            print(f"|GRAY|Expanded share link to: {expanded_url}|RESET|")
+            url_to_download = expanded_url
+            if 'url_entry' in globals() and url_entry and url_entry.winfo_exists():
+                url_entry.delete(0, "end")
+                url_entry.insert(0, expanded_url)
+    except Exception as expand_e:
+        print(f"[Warning] Could not expand share link ({url_to_download}): {expand_e}")
+
     if orpheus_instance is None:
         print("Download cancelled: Orpheus instance is None.")
         try:
