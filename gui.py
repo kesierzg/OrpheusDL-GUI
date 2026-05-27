@@ -4997,6 +4997,8 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                         for entry in track_entries:
                             if not entry.get('additional'):
                                 entry['additional'] = '🅷 HI-RES'
+                if item_type == 'album' and platform_name == 'amazonmusic' and track_entries:
+                    _amazonmusic_refresh_parent_album_additional(item_data, track_entries)
             except Exception as e:
                 expand_error = e
                 # Spotify 429 rate limit: show popup recommending right-click → Open Link
@@ -13187,7 +13189,7 @@ def _amazon_catalog_quality_displayed(addl_list) -> bool:
     """True when Amazon search already has display quality (manifest or mapped catalog)."""
     for q in addl_list or []:
         qs = str(q).strip()
-        if qs in ("FLAC", "IMMERSIVE AUDIO", "360 Reality Audio"):
+        if qs in ("FLAC", "IMMERSIVE AUDIO", "360 Reality Audio", "3D MPEG-H Audio"):
             return True
         if "🅷" in qs or "◗◖" in qs:
             return True
@@ -13202,6 +13204,9 @@ def _is_amazon_catalog_quality_token(q) -> bool:
     qs = str(q or "").strip()
     if not qs or re.search(r"\d+(?:\.\d+)?\s*kHz", qs, re.I):
         return False
+    # Full search Additional rows are compound: "9 tracks / ATMOS / HI-RES"
+    if " / " in qs or re.search(r"\d+\s*tracks?", qs, re.I):
+        return False
     ql = qs.lower()
     if ql in (
         "hd",
@@ -13210,6 +13215,7 @@ def _is_amazon_catalog_quality_token(q) -> bool:
         "dolby atmos",
         "immersive audio",
         "360 reality audio",
+        "3d mpeg-h audio",
     ):
         return True
     return ("atmos" in ql and "khz" not in ql) or (
@@ -13288,6 +13294,7 @@ def _build_additional_string(result, search_type_str, raw_result):
 
     if not _amazon_manifest_quality_in_addl(addl_list):
         addl_list = _apply_amazonmusic_catalog_quality_display(addl_list)
+    addl_list = _amazonmusic_expand_quality_addl_list(addl_list, raw_result)
 
     final_list = []
     if final_tc_str:
@@ -15195,7 +15202,11 @@ def _amazonmusic_context_menu_button_text(label: str) -> str:
     if not text:
         return text
     upper = text.upper()
-    if "ATMOS" in upper or "◗" in text or "IMMERSIVE" in upper or ("360" in upper and "REALITY" in upper):
+    if (
+        "ATMOS" in upper
+        or "◗" in text
+        or ("360" in upper and "REALITY" in upper)
+    ):
         return text
     if "HI-RES" in upper or "🅷" in text:
         return "🅷 HI-RES"
@@ -15220,16 +15231,19 @@ def _amazonmusic_context_menu_canonical(label: str, store_key: str) -> tuple[str
     manifest = ModuleInterface._amazon_manifest_label_for_display(raw)
     if ModuleInterface._is_spatial_quality_display(raw, raw) or ModuleInterface._is_spatial_quality_display(manifest, manifest):
         spatial = ModuleInterface._amazon_spatial_display_label(raw, sk)
-        if "360" in spatial:
-            return ("360 Reality Audio", sk if "RA360" in sk else "SPATIAL_RA360")
-        if "IMMERSIVE" in spatial.upper():
-            return ("IMMERSIVE AUDIO", sk if sk.startswith("SPATIAL") else "SPATIAL_ATMOS")
+        if re.search(
+            r"mpeg-h|mha1|mhm1|immersive|ra360|\b360\b", spatial, re.IGNORECASE
+        ):
+            return ("3D MPEG-H Audio", sk if "RA360" in sk else "SPATIAL_RA360")
         return ("◗◖ ATMOS", sk if sk.startswith("SPATIAL") else "SPATIAL_ATMOS")
 
     parsed = ModuleInterface._parse_khz_bit_display_label(manifest) or ModuleInterface._parse_khz_bit_display_label(raw)
     if parsed:
         sr_khz, bit_depth = parsed
-        if ModuleInterface._is_hi_res_lossless(sr_khz, bit_depth):
+        if (
+            ModuleInterface._is_hi_res_lossless(sr_khz, bit_depth)
+            or ModuleInterface._is_amazon_uhd_lossless(sr_khz, bit_depth)
+        ):
             return ("🅷 HI-RES", sk if sk.startswith("UHD") else "UHD")
         return ("FLAC", sk if sk.startswith("HD") else "HD")
 
@@ -15249,15 +15263,15 @@ def _amazonmusic_context_menu_canonical(label: str, store_key: str) -> tuple[str
 
 
 def _amazonmusic_context_menu_sort_key(menu_label: str) -> tuple[int, str]:
-    """Fixed tier order: Atmos → Immersive → 360 → HI-RES → FLAC → Opus → MP3/AAC/OGG."""
+    """Fixed tier order: Atmos → 360 → HI-RES → FLAC → Opus → MP3/AAC/OGG."""
     text = str(menu_label or "")
     upper = text.upper()
     if "ATMOS" in upper or "◗" in text:
         return (0, text)
-    if "IMMERSIVE" in upper:
+    if "MPEG-H" in upper or ("3D" in upper and "MPEG" in upper):
         return (1, text)
     if "360" in upper and "REALITY" in upper:
-        return (2, text)
+        return (1, text)
     if "HI-RES" in upper or "🅷" in text:
         return (3, text)
     if re.fullmatch(r"FLAC", text.strip(), re.I) or upper == "FLAC":
@@ -15287,16 +15301,23 @@ def _amazonmusic_option_from_additional_part(part: str) -> tuple[str, str] | Non
     parsed = ModuleInterface._parse_khz_bit_display_label(part)
     if parsed:
         sr_khz, bit_depth = parsed
-        if ModuleInterface._is_hi_res_lossless(sr_khz, bit_depth):
+        if (
+            ModuleInterface._is_hi_res_lossless(sr_khz, bit_depth)
+            or ModuleInterface._is_amazon_uhd_lossless(sr_khz, bit_depth)
+        ):
             return ("🅷 HI-RES", "UHD")
         return ("FLAC", "HD")
 
     if "atmos" in pl or "◗" in part:
         return ("◗◖ ATMOS", "SPATIAL_ATMOS")
+    if "mpeg-h" in pl or ("3d" in pl and "mpeg" in pl):
+        return ("3D MPEG-H Audio", "SPATIAL_RA360")
+    if ("reality" in pl or "ra360" in pl or "immersive" in pl) and re.search(
+        r"\b360\b", pl
+    ):
+        return ("3D MPEG-H Audio", "SPATIAL_RA360")
     if "immersive" in pl and "audio" in pl:
-        return ("IMMERSIVE AUDIO", "SPATIAL_ATMOS")
-    if ("reality" in pl or "ra360" in pl) and re.search(r"\b360\b", pl):
-        return ("360 Reality Audio", "SPATIAL_RA360")
+        return ("3D MPEG-H Audio", "SPATIAL_RA360")
     if "hi-res" in pl or "🅷" in part or "ʜɪ" in pl:
         return ("🅷 HI-RES", "UHD")
     if re.search(r"\bopus\b", pl):
@@ -15329,7 +15350,7 @@ def _amazonmusic_supplement_stereo_downgrades(merged: dict[str, str]) -> None:
     has_spatial = (
         "ATMOS" in labels_upper
         or "◗" in labels_upper
-        or "IMMERSIVE" in labels_upper
+        or "MPEG-H" in labels_upper
         or ("360" in labels_upper and "REALITY" in labels_upper)
     )
     has_hi_res = "HI-RES" in labels_upper or "🅷" in labels_upper
@@ -15888,11 +15909,142 @@ def _parse_additional_quality(s):
             return (score, True)
     return (None, False)
 
+def _amazonmusic_quality_parts_have_hires(parts: list) -> bool:
+    for part in parts or []:
+        text = str(part or "")
+        low = text.lower()
+        if "hi-res" in low or "🅷" in text:
+            return True
+        if re.search(r"\d+(?:\.\d+)?\s*kHz", text, re.I):
+            parsed = None
+            try:
+                from modules.amazonmusic.interface import ModuleInterface
+
+                parsed = ModuleInterface._parse_khz_bit_display_label(text)
+            except ImportError:
+                parsed = None
+            if parsed:
+                sr_khz, bit_depth = parsed
+                try:
+                    from modules.amazonmusic.interface import ModuleInterface
+
+                    if ModuleInterface._is_hi_res_lossless(sr_khz, bit_depth) or ModuleInterface._is_amazon_uhd_lossless(
+                        sr_khz, bit_depth
+                    ):
+                        return True
+                except ImportError:
+                    if float(sr_khz) >= 48.0 and int(bit_depth) >= 24:
+                        return True
+    return False
+
+
+def _amazonmusic_expand_quality_addl_list(addl_list: list, raw_result) -> list:
+    """Keep ATMOS and HI-RES badges together; never collapse to one tier."""
+    parts: list[str] = []
+    seen: set[str] = set()
+    for item in addl_list or []:
+        text = str(item or "").strip()
+        if not text or text.lower() in seen:
+            continue
+        seen.add(text.lower())
+        parts.append(text)
+
+    has_atmos = any(
+        "atmos" in str(p).lower() or "◗" in str(p) or "immersive" in str(p).lower()
+        for p in parts
+    )
+    if has_atmos and not _amazonmusic_quality_parts_have_hires(parts):
+        try:
+            from modules.amazonmusic.interface import ModuleInterface
+
+            entities: list[dict] = []
+            if isinstance(raw_result, dict):
+                entities.append(raw_result)
+                data = raw_result.get("data")
+                if isinstance(data, dict):
+                    for value in data.values():
+                        if isinstance(value, dict):
+                            entities.append(value)
+            for entity in entities:
+                tags = ModuleInterface._catalog_quality_tags_from_entity_and_tracks(entity)
+                for display in ModuleInterface._amazon_catalog_quality_display_labels(tags):
+                    disp = str(display).strip()
+                    if not disp:
+                        continue
+                    if "◗" in disp or (
+                        "atmos" in disp.lower() and "mpeg-h" not in disp.lower()
+                    ):
+                        if disp.lower() not in seen:
+                            seen.add(disp.lower())
+                            if not any(
+                                "atmos" in str(p).lower() or "◗" in str(p) for p in parts
+                            ):
+                                parts.insert(0, disp)
+                        continue
+                    if "mpeg-h" in disp.lower() or "spatial_ra360" in disp.lower():
+                        continue
+                    low = disp.lower()
+                    if low in seen:
+                        continue
+                    seen.add(low)
+                    parts.append(disp)
+        except ImportError:
+            pass
+
+    return parts
+
+
+def _amazonmusic_refresh_parent_album_additional(item_data: dict, track_entries: list) -> None:
+    """If expanded tracks include hi-res, show ATMOS + HI-RES on the parent album row too."""
+    if not item_data or not track_entries:
+        return
+    raw_addl = item_data.get("additional", "")
+    if isinstance(raw_addl, (list, tuple)):
+        parts = [str(p).strip() for p in raw_addl if p and str(p).strip()]
+    elif raw_addl:
+        parts = _amazonmusic_additional_parts(str(raw_addl))
+    else:
+        parts = []
+    if not any("atmos" in str(p).lower() or "◗" in str(p) for p in parts):
+        return
+    if _amazonmusic_quality_parts_have_hires(parts):
+        return
+    track_labels = [
+        str(entry.get("additional") or "").strip()
+        for entry in track_entries
+        if entry.get("additional")
+    ]
+    if not _amazonmusic_quality_parts_have_hires(track_labels):
+        return
+    parts.append("🅷 HI-RES")
+    item_data["additional"] = " / ".join(parts)
+    tree_iid = item_data.get("tree_iid")
+    if (
+        "tree" in globals()
+        and tree
+        and tree.winfo_exists()
+        and tree_iid
+        and tree.exists(tree_iid)
+    ):
+        try:
+            values = list(tree.item(tree_iid, "values"))
+            if len(values) >= 7:
+                values[6] = _to_small_caps(item_data["additional"])
+                tree.item(tree_iid, values=tuple(values))
+        except Exception:
+            pass
+
+
 def _normalize_additional_quality_label(s):
     """Map ugly Amazon quality strings to short labels for display."""
     if not s:
         return s
-    text = str(s)
+    text = str(s).strip()
+    if " / " in text:
+        return " / ".join(
+            _normalize_additional_quality_label(part)
+            for part in _amazonmusic_additional_parts(text)
+        )
     if re.search(r"\bopus\b", text, re.I) and re.search(r"none\s*bit|nonebit", text, re.I):
         return "OPUS only"
     # Legacy spatial template: "3D E-AC-3 JOC bit-48kHz" -> "3D E-AC-3 JOC"
@@ -15918,7 +16070,10 @@ def _to_small_caps(s):
     if not s: return ""
     if isinstance(s, (list, tuple)):
         s = " / ".join(str(x) for x in s if x)
-    s = _normalize_additional_quality_label(str(s))
+    text = str(s).strip()
+    if " / " in text:
+        return " / ".join(_to_small_caps(part) for part in _amazonmusic_additional_parts(text))
+    s = _normalize_additional_quality_label(text)
 
     # Mapping for small caps (a-z) and subscripts/small versions for numbers/symbols
     mapping = {
@@ -15946,7 +16101,7 @@ def _to_small_caps(s):
     keywords = [
         "ATMOS",
         "HI-RES",
-        "IMMERSIVE AUDIO",
+        "3D MPEG-H Audio",
         "360 Reality Audio",
         "FLAC",
         "AAC only",
