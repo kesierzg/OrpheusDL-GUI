@@ -5313,6 +5313,12 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                 if not hasattr(module_instance, 'get_artist_info'):
                     schedule_done()
                     return
+                # Respect global toggle for credited albums during artist expansion.
+                get_credited_albums = bool(
+                    (((current_settings or {}).get("globals") or {}).get("artist_downloading") or {}).get(
+                        "return_credited_albums", True
+                    )
+                )
                 # SoundCloud requires data dict (id -> entity) for get_artist_info
                 if platform_name == 'soundcloud':
                     raw = item_data.get('raw_result')
@@ -5328,7 +5334,7 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                         if str(res_id).isdigit():
                             data[int(res_id)] = raw
                     # Module now handles empty data (fetches user name from API)
-                    info = module_instance.get_artist_info(res_id, True, data)
+                    info = module_instance.get_artist_info(res_id, get_credited_albums, data)
                 else:
                     # Intercept module's print to show page progress in GUI loading label
                     _original_mod_print_a = getattr(module_instance, 'print', None)
@@ -5345,7 +5351,11 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                         module_instance.print = _artist_progress_print
                     try:
                         artist_kwargs = _amazonmusic_api_kwargs(item_data) if platform_name == 'amazonmusic' else {}
-                        info = module_instance.get_artist_info(res_id, get_credited_albums=True, **artist_kwargs)
+                        info = module_instance.get_artist_info(
+                            res_id,
+                            get_credited_albums=get_credited_albums,
+                            **artist_kwargs
+                        )
                     finally:
                         if _original_mod_print_a:
                             module_instance.print = _original_mod_print_a
