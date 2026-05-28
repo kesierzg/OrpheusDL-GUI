@@ -1,4 +1,5 @@
 CTkToolTip
 customtkinter
+tkinterdnd2
 packaging
 pywinstyles

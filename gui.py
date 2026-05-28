@@ -160,6 +160,23 @@ try:
     import pywinstyles
 except ImportError:
     pywinstyles = None
+
+_TKINTERDND_AVAILABLE = False
+DND_FILES = None
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES
+    _TKINTERDND_AVAILABLE = True
+except ImportError:
+    TkinterDnD = None
+
+if _TKINTERDND_AVAILABLE:
+    class OrpheusCTk(customtkinter.CTk, TkinterDnD.DnDWrapper):
+        """Root window with tkinterdnd2 enabled for file drag-and-drop."""
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.TkdndVersion = TkinterDnD._require(self)
+else:
+    OrpheusCTk = customtkinter.CTk
 if sys.platform == "win32":
     try:
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -10673,6 +10690,112 @@ def browse_output_path(path_variable):
     directory = tkinter.filedialog.askdirectory(initialdir=path_variable.get())
     if directory: path_variable.set(directory)
 
+def _normalize_dropped_path(raw):
+    """Convert a dropped path or file:// URI to a native filesystem path."""
+    from urllib.parse import unquote, urlparse
+
+    raw = (raw or "").strip().strip('"').strip("'")
+    if not raw:
+        return ""
+    if raw.lower().startswith("file:"):
+        parsed = urlparse(raw)
+        path = unquote(parsed.path)
+        if sys.platform == "win32":
+            if len(path) >= 3 and path[0] == "/" and path[2] == ":":
+                path = path[1:]
+            elif parsed.netloc and len(parsed.netloc) == 1 and parsed.netloc.isalpha():
+                path = f"{parsed.netloc.upper()}:{path}"
+        return os.path.normpath(path)
+    return os.path.normpath(os.path.expanduser(raw))
+
+
+def _parse_dropped_paths(drop_data):
+    """Parse tkinterdnd2 <<Drop>> event.data into normalized filesystem paths."""
+    if not drop_data:
+        return []
+    drop_data = drop_data.strip()
+    paths = []
+    if "{" in drop_data:
+        i = 0
+        while i < len(drop_data):
+            if drop_data[i] == "{":
+                j = drop_data.find("}", i)
+                if j == -1:
+                    paths.append(drop_data[i:].strip())
+                    break
+                paths.append(drop_data[i + 1 : j])
+                i = j + 1
+            elif drop_data[i].isspace():
+                i += 1
+            else:
+                tail = drop_data[i:].strip()
+                if tail:
+                    paths.append(tail)
+                break
+    else:
+        paths = [drop_data] if drop_data else []
+    return [p for p in (_normalize_dropped_path(raw) for raw in paths) if p]
+
+
+def _set_url_entry_path(path):
+    global url_entry
+    try:
+        if "url_entry" not in globals() or not url_entry or not url_entry.winfo_exists():
+            return
+        url_entry.delete(0, tkinter.END)
+        url_entry.insert(0, path)
+    except Exception as e:
+        print(f"[DnD] Failed to set URL entry path: {e}")
+
+
+def _on_url_entry_file_drop(event=None, dropped_paths=None):
+    """Handle a text file dropped onto the Download tab input field."""
+    paths = dropped_paths
+    if paths is None and event is not None:
+        paths = _parse_dropped_paths(getattr(event, "data", "") or "")
+    if not paths:
+        return
+    path = paths[0]
+    if os.path.isdir(path):
+        show_centered_messagebox("Info", "Please drop a text file, not a folder.", dialog_type="warning")
+        return
+    if not os.path.isfile(path):
+        show_centered_messagebox("Info", f"File not found:\n{path}", dialog_type="warning")
+        return
+    _set_url_entry_path(path)
+    print(f"Dropped file loaded: {path}")
+
+
+def _setup_url_entry_drag_drop(entry_widget):
+    """Enable drag-and-drop of text files onto the Download input field."""
+    if not entry_widget:
+        return
+
+    def _on_drop(event):
+        _on_url_entry_file_drop(event=event)
+
+    if _TKINTERDND_AVAILABLE:
+        try:
+            entry_widget.drop_target_register(DND_FILES)
+            entry_widget.dnd_bind("<<Drop>>", _on_drop)
+            print("[DnD] File drag-and-drop enabled on Download input (tkinterdnd2)")
+            return
+        except Exception as e:
+            print(f"[DnD] tkinterdnd2 setup failed: {e}")
+
+    if sys.platform == "win32" and pywinstyles is not None:
+        try:
+            def _win_drop(files):
+                if not files:
+                    return
+                _on_url_entry_file_drop(dropped_paths=[_normalize_dropped_path(f) for f in files])
+
+            pywinstyles.apply_dnd(entry_widget, _win_drop)
+            print("[DnD] File drag-and-drop enabled on Download input (pywinstyles)")
+        except Exception as e:
+            print(f"[DnD] pywinstyles drop setup failed: {e}")
+
+
 def clear_url_entry():
     global url_entry
     try:
@@ -19470,11 +19593,12 @@ if __name__ == "__main__":
             print(f"[DEBUG] Before GUI setup: output_path = {current_settings.get('globals', {}).get('general', {}).get('output_path')}")
         customtkinter.set_appearance_mode("dark")
         
-        # Pass className directly to constructor to set WM_CLASS correctly on Linux
+        # Pass className directly to constructor to set WM_CLASS correctly on Linux.
+        # OrpheusCTk mixes in tkinterdnd2 when available (file drag-and-drop on Download input).
         if platform.system() == "Linux":
-            app = customtkinter.CTk(className="orpheusdl_gui")
+            app = OrpheusCTk(className="orpheusdl_gui")
         else:
-            app = customtkinter.CTk()
+            app = OrpheusCTk()
             
         # Use alpha to hide window instead of withdraw, as withdraw can cause issues on some systems
         app.attributes('-alpha', 0)
@@ -19768,12 +19892,13 @@ if __name__ == "__main__":
         download_tab.grid_columnconfigure(1, weight=1); download_tab.grid_rowconfigure(2, weight=1)
         url_frame = customtkinter.CTkFrame(download_tab, fg_color="transparent"); url_frame.grid(row=0, column=0, columnspan=4, sticky="ew", padx=10, pady=(15,5)); url_frame.grid_columnconfigure(1, weight=1)
         url_label = customtkinter.CTkLabel(url_frame, text="Input"); url_label.grid(row=0, column=0, sticky="w", padx=5)
-        url_entry = customtkinter.CTkEntry(url_frame, placeholder_text="Enter URL or text-file (e.g. urls.txt)...", height=30, placeholder_text_color=GRAY_TEXT_COLOR); url_entry.grid(row=0, column=1, sticky="ew", padx=5)
+        url_entry = customtkinter.CTkEntry(url_frame, placeholder_text="Enter URL, drag 'nd drop a text file, or paste path here (e.g. urls.txt)...", height=30, placeholder_text_color=GRAY_TEXT_COLOR); url_entry.grid(row=0, column=1, sticky="ew", padx=5)
         globals()['url_entry'] = url_entry
         url_entry.bind("<Return>", lambda event: start_download_thread()); url_entry.bind("<Button-3>", show_context_menu); url_entry.bind("<Button-2>", show_context_menu); url_entry.bind("<Control-Button-1>", show_context_menu)
         url_entry.bind("<Control-c>", _handle_ctrl_c_copy); url_entry.bind("<Control-C>", _handle_ctrl_c_copy)
         url_entry.bind("<FocusIn>", lambda e, w=url_entry: handle_focus_in(w))
         url_entry.bind("<FocusOut>", lambda e, w=url_entry: handle_focus_out(w))
+        _setup_url_entry_drag_drop(url_entry)
         clear_url_button = customtkinter.CTkButton(url_frame, text="Clear", width=100, height=30, command=clear_url_entry, fg_color=UI_ELEMENT_BG_COLOR, hover_color=LINK_COLOR); clear_url_button.grid(row=0, column=2, sticky="e", padx=5)
         download_button = customtkinter.CTkButton(url_frame, text="Download", width=100, height=30, command=start_download_thread, fg_color=UI_ELEMENT_BG_COLOR, hover_color=LINK_COLOR, state="disabled"); download_button.grid(row=0, column=3, sticky="e", padx=5)
         path_frame = customtkinter.CTkFrame(download_tab, fg_color="transparent"); path_frame.grid(row=1, column=0, columnspan=4, sticky="ew", padx=10, pady=5); path_frame.grid_columnconfigure(1, weight=1)

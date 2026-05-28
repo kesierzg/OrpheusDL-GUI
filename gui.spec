@@ -27,6 +27,7 @@ cap_datas, cap_binaries, cap_hiddenimports = collect_all('capstone')
 voti_datas, voti_binaries, voti_hiddenimports = collect_all('votify')
 dc_datas, dc_binaries, dc_hiddenimports = collect_all('dataclass-click')
 iq_datas, iq_binaries, iq_hiddenimports = collect_all('inquirerpy')
+_tkdnd_datas, _tkdnd_binaries, _tkdnd_hiddenimports = collect_all('tkinterdnd2')
 
 print(f"[PyInstaller] Collected unplayplay, unicorn, capstone, and votify assets")
 
@@ -199,8 +200,8 @@ else:
 a = Analysis(
     ['gui.py'],
     pathex=['.', os.path.join(SPEC_DIR, 'vendor', 'librespot')],
-    binaries=additional_binaries + ffmpeg_binaries + up_binaries + uni_binaries + cap_binaries + voti_binaries + dc_binaries + iq_binaries,
-    datas=additional_datas + ffmpeg_datas + up_datas + uni_datas + cap_datas + voti_datas + dc_datas + iq_datas,
+    binaries=additional_binaries + ffmpeg_binaries + up_binaries + uni_binaries + cap_binaries + voti_binaries + dc_binaries + iq_binaries + _tkdnd_binaries,
+    datas=additional_datas + ffmpeg_datas + up_datas + uni_datas + cap_datas + voti_datas + dc_datas + iq_datas + _tkdnd_datas,
     hiddenimports=[
         'certifi',
         'colorama',
@@ -242,6 +243,7 @@ a = Analysis(
         'httpx',
         'async_lru',
         'pywinstyles',
+        'tkinterdnd2',
         'packaging',
         'unplayplay',               # Spotify Desktop API
         'unicorn',                  # Dependency for unplayplay
@@ -265,7 +267,7 @@ a = Analysis(
         'zeroconf',                 # Dependency for librespot
         'ifaddr',                   # Dependency for zeroconf
         'pyogg',                    # Dependency for librespot
-    ] + ffmpeg_hiddenimports + up_hiddenimports + uni_hiddenimports + cap_hiddenimports + voti_hiddenimports + dc_hiddenimports + iq_hiddenimports + collect_submodules('unplayplay') + collect_submodules('votify') + _librespot_hiddenimports + _librespot_player_hi,
+    ] + ffmpeg_hiddenimports + up_hiddenimports + uni_hiddenimports + cap_hiddenimports + voti_hiddenimports + dc_hiddenimports + iq_hiddenimports + _tkdnd_hiddenimports + collect_submodules('unplayplay') + collect_submodules('votify') + _librespot_hiddenimports + _librespot_player_hi,
     excludes=['torch', 'cuda', 'pytorch', 'matplotlib', 'pandas', 'numpy'],
     hookspath=['.'],
     hooksconfig={},
