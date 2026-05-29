@@ -10789,6 +10789,7 @@ def _on_url_entry_file_drop(event=None, dropped_paths=None):
     if paths is None and event is not None:
         paths = _parse_dropped_paths(getattr(event, "data", "") or "")
     if not paths:
+        print("[DnD] Drop ignored: no usable file path parsed from drop data")
         return
     path = paths[0]
     if os.path.isdir(path):
@@ -10807,6 +10808,10 @@ def _setup_url_entry_drag_drop(entry_widget):
         return
 
     def _on_drop(event):
+        try:
+            print(f"[DnD] Drop event received: data={getattr(event, 'data', None)!r}")
+        except Exception:
+            pass
         _on_url_entry_file_drop(event=event)
 
     if _TKINTERDND_AVAILABLE:
