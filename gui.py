@@ -10810,13 +10810,38 @@ def _setup_url_entry_drag_drop(entry_widget):
         _on_url_entry_file_drop(event=event)
 
     if _TKINTERDND_AVAILABLE:
+        # CTkEntry is a frame wrapping an inner tk Entry that fills the widget
+        # (sticky="nswe"). On Linux/X11 the drop is delivered to the window
+        # physically under the cursor (the inner entry), so registering only the
+        # outer frame means drops over the visible text never fire. Register the
+        # frame AND its child widgets so the drop is caught regardless of target.
+        targets = [entry_widget]
+        inner = getattr(entry_widget, "_entry", None)
+        if inner is not None:
+            targets.append(inner)
         try:
-            entry_widget.drop_target_register(DND_FILES)
-            entry_widget.dnd_bind("<<Drop>>", _on_drop)
+            targets.extend(entry_widget.winfo_children())
+        except Exception:
+            pass
+
+        registered = False
+        seen_targets = set()
+        for target in targets:
+            if target is None or id(target) in seen_targets:
+                continue
+            seen_targets.add(id(target))
+            if not hasattr(target, "drop_target_register"):
+                continue
+            try:
+                target.drop_target_register(DND_FILES)
+                target.dnd_bind("<<Drop>>", _on_drop)
+                registered = True
+            except Exception as e:
+                print(f"[DnD] tkinterdnd2 register failed on {target}: {e}")
+        if registered:
             print("[DnD] File drag-and-drop enabled on Download input (tkinterdnd2)")
             return
-        except Exception as e:
-            print(f"[DnD] tkinterdnd2 setup failed: {e}")
+        print("[DnD] tkinterdnd2 available but no drop target could be registered")
 
     if sys.platform == "win32" and pywinstyles is not None:
         try:
