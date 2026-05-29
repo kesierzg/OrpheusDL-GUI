@@ -9168,12 +9168,16 @@ def show_centered_messagebox(title, message, dialog_type="info", parent=None):
              print("ERROR: Cannot show messagebox, main app window not available.")
              return
 
-    dialog = customtkinter.CTkToplevel(parent); dialog.title(title); dialog.geometry("450x150"); dialog.resizable(False, False); dialog.attributes("-topmost", True); dialog.transient(parent)
-    dialog.update_idletasks()
-    parent_width = parent.winfo_width(); parent_height = parent.winfo_height(); parent_x = parent.winfo_x(); parent_y = parent.winfo_y(); dialog_width = dialog.winfo_width(); dialog_height = dialog.winfo_height()
-    center_x = parent_x + (parent_width // 2) - (dialog_width // 2); center_y = parent_y + (parent_height // 2) - (dialog_height // 2); dialog.geometry(f"+{center_x}+{center_y}")
+    dialog = customtkinter.CTkToplevel(parent); dialog.title(title); dialog.resizable(False, False); dialog.attributes("-topmost", True); dialog.transient(parent)
     message_label = customtkinter.CTkLabel(dialog, text=message, wraplength=400, justify="left"); message_label.pack(pady=(20, 10), padx=20, expand=True, fill="both")
     ok_button = customtkinter.CTkButton(dialog, text="OK", command=lambda: _destroy_dialog(dialog), width=100); ok_button.pack(pady=(0, 20)); ok_button.focus_set(); dialog.bind("<Return>", lambda event: ok_button.invoke())
+    # Size the dialog to fit the message so longer text isn't clipped.
+    dialog.update_idletasks()
+    dialog_width = max(450, message_label.winfo_reqwidth() + 40)
+    dialog_height = max(150, message_label.winfo_reqheight() + ok_button.winfo_reqheight() + 70)
+    parent_width = parent.winfo_width(); parent_height = parent.winfo_height(); parent_x = parent.winfo_x(); parent_y = parent.winfo_y()
+    center_x = parent_x + (parent_width // 2) - (dialog_width // 2); center_y = parent_y + (parent_height // 2) - (dialog_height // 2)
+    dialog.geometry(f"{dialog_width}x{dialog_height}+{center_x}+{center_y}")
     dialog.grab_set()
     _schedule_toplevel_window_chrome(dialog)
     dialog.wait_window()
@@ -10789,7 +10793,6 @@ def _on_url_entry_file_drop(event=None, dropped_paths=None):
     if paths is None and event is not None:
         paths = _parse_dropped_paths(getattr(event, "data", "") or "")
     if not paths:
-        print("[DnD] Drop ignored: no usable file path parsed from drop data")
         return
     path = paths[0]
     if os.path.isdir(path):
@@ -10808,45 +10811,16 @@ def _setup_url_entry_drag_drop(entry_widget):
         return
 
     def _on_drop(event):
-        try:
-            print(f"[DnD] Drop event received: data={getattr(event, 'data', None)!r}")
-        except Exception:
-            pass
         _on_url_entry_file_drop(event=event)
 
     if _TKINTERDND_AVAILABLE:
-        # CTkEntry is a frame wrapping an inner tk Entry that fills the widget
-        # (sticky="nswe"). On Linux/X11 the drop is delivered to the window
-        # physically under the cursor (the inner entry), so registering only the
-        # outer frame means drops over the visible text never fire. Register the
-        # frame AND its child widgets so the drop is caught regardless of target.
-        targets = [entry_widget]
-        inner = getattr(entry_widget, "_entry", None)
-        if inner is not None:
-            targets.append(inner)
         try:
-            targets.extend(entry_widget.winfo_children())
-        except Exception:
-            pass
-
-        registered = False
-        seen_targets = set()
-        for target in targets:
-            if target is None or id(target) in seen_targets:
-                continue
-            seen_targets.add(id(target))
-            if not hasattr(target, "drop_target_register"):
-                continue
-            try:
-                target.drop_target_register(DND_FILES)
-                target.dnd_bind("<<Drop>>", _on_drop)
-                registered = True
-            except Exception as e:
-                print(f"[DnD] tkinterdnd2 register failed on {target}: {e}")
-        if registered:
+            entry_widget.drop_target_register(DND_FILES)
+            entry_widget.dnd_bind("<<Drop>>", _on_drop)
             print("[DnD] File drag-and-drop enabled on Download input (tkinterdnd2)")
             return
-        print("[DnD] tkinterdnd2 available but no drop target could be registered")
+        except Exception as e:
+            print(f"[DnD] tkinterdnd2 setup failed: {e}")
 
     if sys.platform == "win32" and pywinstyles is not None:
         try:
