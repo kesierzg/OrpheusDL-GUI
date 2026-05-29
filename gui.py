@@ -4782,7 +4782,7 @@ def _insert_album_playlist_children(parent_iid, parent_data, track_entries):
             values = (
                 preview_icon, entry.get('number', ''),
                 entry.get('title', ''), entry.get('artist', ''),
-                entry.get('duration', ''), entry.get('year', ''), _to_small_caps(entry.get('additional', '')), entry.get('explicit', ''),
+                entry.get('duration', ''), entry.get('year', ''), _format_additional_column(entry.get('additional', ''), platform_str), entry.get('explicit', ''),
                 entry.get('id', '')
             )
             row_tag = "oddrow" if (int(entry.get('number', 0) or 0) % 2 == 1) else "evenrow"
@@ -4991,6 +4991,29 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                                 )
                                 if per_track_q:
                                     entry['additional'] = per_track_q
+                            except Exception:
+                                pass
+                        # Playlist tracks have no quality_mapping (no MPD probe); derive the
+                        # per-track quality cheaply from catalog contentEncoding flags.
+                        if not entry.get('additional') and hasattr(
+                            module_instance, '_quality_labels_from_entity'
+                        ):
+                            try:
+                                _src = track if isinstance(track, dict) else {}
+                                _flag_tags = list(
+                                    module_instance._quality_labels_from_entity(_src)
+                                )
+                                _nested = _src.get('metadata') if isinstance(_src, dict) else None
+                                if isinstance(_nested, dict):
+                                    for _t in module_instance._quality_labels_from_entity(_nested):
+                                        if _t not in _flag_tags:
+                                            _flag_tags.append(_t)
+                                if _flag_tags:
+                                    _labels = module_instance._amazon_catalog_quality_display_labels(
+                                        _flag_tags
+                                    )
+                                    if _labels:
+                                        entry['additional'] = ' / '.join(_labels)
                             except Exception:
                                 pass
                     track_entries.append(entry)
@@ -5542,8 +5565,20 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                                 module_instance, 'artist_album_display_meta'
                             ):
                                 try:
+                                    am_search_hit = None
+                                    if album_data_dict:
+                                        _asin = str(
+                                            album_dict.get('asin')
+                                            or album_dict.get('id')
+                                            or album
+                                            or ''
+                                        )
+                                        if _asin:
+                                            _doc = album_data_dict.get(f"{_asin}_search")
+                                            if isinstance(_doc, dict):
+                                                am_search_hit = _doc
                                     am_row = module_instance.artist_album_display_meta(
-                                        album_dict, media_region
+                                        album_dict, media_region, am_search_hit
                                     )
                                     year = am_row.get('year') or ''
                                     additional = am_row.get('additional') or ''
@@ -5701,7 +5736,7 @@ def _show_artist_albums_view(artist_item_data, album_entries, context_kind="Arti
                 item_data.get('artist', ''),
                 item_data.get('duration', ''),
                 item_data.get('year', ''),
-                _to_small_caps(item_data.get('additional', '')),
+                _format_additional_column(item_data.get('additional', ''), platform_str),
                 item_data.get('explicit', ''),
                 item_data.get('id', '')
             )
@@ -5816,7 +5851,7 @@ def _show_album_track_list_view(album_item_data, track_entries):
                 item_data.get('artist', ''),
                 item_data.get('duration', ''),
                 item_data.get('year', ''),
-                _to_small_caps(item_data.get('additional', '')),
+                _format_additional_column(item_data.get('additional', ''), platform_str),
                 item_data.get('explicit', ''),
                 item_data.get('id', '')
             )
@@ -5964,7 +5999,7 @@ def _back_to_search_results():
                     preview_icon = PREVIEW_STOP_ICON if (_currently_playing_preview_iid == tree_iid) else PREVIEW_PLAY_ICON
                 else:
                     preview_icon = PREVIEW_UNAVAILABLE
-                values = (preview_icon, item_data.get('number', ''), item_data.get('title', ''), item_data.get('artist', ''), item_data.get('duration', ''), item_data.get('year', ''), _to_small_caps(item_data.get('additional', '')), item_data.get('explicit', ''), item_data.get('id', ''))
+                values = (preview_icon, item_data.get('number', ''), item_data.get('title', ''), item_data.get('artist', ''), item_data.get('duration', ''), item_data.get('year', ''), _format_additional_column(item_data.get('additional', ''), platform_str), item_data.get('explicit', ''), item_data.get('id', ''))
                 row_tag = "oddrow" if (idx % 2 == 0) else "evenrow"
                 is_playing = _currently_playing_preview_iid == tree_iid
                 tags = (row_tag, "playing") if (is_playing and preview_url) else (row_tag,)
@@ -13235,7 +13270,7 @@ def display_results(results):
                         result_entry["artist"],
                         "",
                         "",
-                        _to_small_caps(additional_str),
+                        _format_additional_column(additional_str, row_platform),
                         explicit,
                         res_id
                     )
@@ -13247,7 +13282,7 @@ def display_results(results):
                         artist_str,
                         duration_str,
                         year,
-                        _to_small_caps(additional_str),
+                        _format_additional_column(additional_str, row_platform),
                         explicit,
                         res_id
                     )
@@ -13377,7 +13412,84 @@ def _apply_amazonmusic_catalog_quality_display(addl_list: list) -> list:
         display = []
     return rest + display
 
-def _build_additional_string(result, search_type_str, raw_result):
+def _amazonmusic_additional_for_display(additional: str) -> str:
+    """Amazon Music Additional column: hide FLAC (default lossless); order tiers
+    the same as the context menu (360RA → Atmos → HI-RES → … ), track count first."""
+    text = str(additional or "").strip()
+    if not text:
+        return text
+    parts = _amazonmusic_additional_parts(text)
+    filtered = [p for p in parts if p.strip().upper() != "FLAC"]
+
+    def _order_key(idx_part):
+        idx, part = idx_part
+        p = str(part).strip()
+        if re.search(r"\d+\s*tracks?", p, re.I):
+            return (-1, idx)  # track count always first
+        rank, _ = _amazonmusic_context_menu_sort_key(p)
+        return (rank, idx)
+
+    ordered = [p for _, p in sorted(enumerate(filtered), key=_order_key)]
+    return " / ".join(ordered)
+
+
+def _format_additional_column(additional, platform=None) -> str:
+    """Format Additional column text for the treeview (platform-aware)."""
+    text = str(additional or "")
+    pk = (platform or "").lower().replace(" ", "")
+    if pk == "amazonmusic":
+        text = _amazonmusic_additional_for_display(text)
+    return _to_small_caps(text)
+
+
+def _amazonmusic_has_quality_badge(parts: list) -> bool:
+    """True when Additional already carries a non-track-count quality label."""
+    for part in parts or []:
+        text = str(part or "").strip()
+        if not text or re.search(r"\d+\s*tracks?", text, re.I):
+            continue
+        low = text.lower()
+        if text.upper() == "FLAC" or re.search(r"opus\s+only", low):
+            return True
+        if _amazon_manifest_quality_in_addl([text]) or _amazon_catalog_quality_displayed([text]):
+            return True
+        if "🅷" in text or "◗◖" in text:
+            return True
+    return False
+
+
+def _amazonmusic_finalize_additional_parts(
+    final_list: list,
+    addl_list: list,
+    platform=None,
+    search_type_str=None,
+) -> list:
+    """Album rows: append OPUS only when no HD/lossless/spatial badge is present.
+
+    Playlists are track-based / mixed quality and rarely carry album-level catalog
+    flags, so we never infer 'OPUS only' for them (it would be misleading). A real
+    'OPUS only' badge from a manifest probe is still preserved via the badge check.
+    """
+    pk = (platform or "").lower().replace(" ", "")
+    if pk != "amazonmusic":
+        return final_list
+    low_type = (str(search_type_str) or "").lower()
+    if "album" not in low_type or "playlist" in low_type:
+        return final_list
+    if _amazonmusic_has_quality_badge(final_list):
+        return final_list
+    for q in addl_list or []:
+        ql = str(q).strip().lower()
+        if ql in ("hd", "uhd", "ultra hd", "dolby atmos", "immersive audio", "360 reality audio"):
+            return final_list
+        if _is_amazon_catalog_quality_token(str(q).strip()):
+            return final_list
+    out = list(final_list)
+    out.append("OPUS only")
+    return out
+
+
+def _build_additional_string(result, search_type_str, raw_result, platform=None):
     """Unified helper to build the Additional/Quality string with track counts for playlists and albums."""
     # Explicit type check to avoid NameError and handle cases like "track (ATMOS)"
     _low_type = (str(search_type_str) or "").lower()
@@ -13448,6 +13560,9 @@ def _build_additional_string(result, search_type_str, raw_result):
         seen_quality.add(qs)
         final_list.append(qs)
 
+    final_list = _amazonmusic_finalize_additional_parts(
+        final_list, addl_list, platform=platform, search_type_str=search_type_str
+    )
     return ' / '.join(final_list) or ''
 
 
@@ -13538,7 +13653,7 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
                         raw_result = next(iter(data.values()))
             if raw_result is None:
                 raw_result = result
-            quality_str = _build_additional_string(result, base_type, raw_result)
+            quality_str = _build_additional_string(result, base_type, raw_result, platform_name)
             # For Tidal playlists in Atmos mode, ensure quality_str includes "Dolby Atmos"
             if platform_name.strip().lower() == 'tidal' and base_type == 'playlist':
                 if 'atmos' not in quality_str.lower() and '◗◖' not in quality_str:
@@ -13601,7 +13716,7 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             media_type = extra_kwargs.get('media_type')
             result_type = (media_type.name.lower() if media_type and hasattr(media_type, 'name') else content_type.rstrip('s'))
             raw_result = extra_kwargs.get('raw_result', result)
-            quality_str = _build_additional_string(result, content_type, raw_result)
+            quality_str = _build_additional_string(result, content_type, raw_result, platform_name)
             # Playlists don't have audioModes; only filter by Atmos for tracks/albums
             if content_type == 'playlists':
                 if 'ATMOS' not in quality_str.upper() and '◗◖' not in quality_str:
@@ -13687,7 +13802,7 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
                 raw_duration_seconds = None
         _name = str(getattr(result, 'name', '') or '')
         _artists_str = ', '.join([str(a) for a in getattr(result, 'artists', []) or []]) or ''
-        quality_str = _build_additional_string(result, search_type_str, raw_result)
+        quality_str = _build_additional_string(result, search_type_str, raw_result, platform_name)
         formatted_result = {
             'id': str(getattr(result, 'result_id', '')),
             'title': _name,
@@ -15337,6 +15452,8 @@ def _amazonmusic_context_menu_button_text(label: str) -> str:
     if not text:
         return text
     upper = text.upper()
+    if re.search(r"mpeg-h|mha1|mhm1", text, re.I) or ("MPEG" in upper and "3D" in upper):
+        return "360RA"
     if (
         "ATMOS" in upper
         or "◗" in text
@@ -15398,15 +15515,15 @@ def _amazonmusic_context_menu_canonical(label: str, store_key: str) -> tuple[str
 
 
 def _amazonmusic_context_menu_sort_key(menu_label: str) -> tuple[int, str]:
-    """Fixed tier order: Atmos → 360 → HI-RES → FLAC → Opus → MP3/AAC/OGG."""
+    """Fixed tier order: 360RA → Atmos → HI-RES → FLAC → Opus → MP3/AAC/OGG."""
     text = str(menu_label or "")
     upper = text.upper()
-    if "ATMOS" in upper or "◗" in text:
+    if "MPEG-H" in upper or ("3D" in upper and "MPEG" in upper) or "360RA" in upper:
         return (0, text)
-    if "MPEG-H" in upper or ("3D" in upper and "MPEG" in upper):
+    if "ATMOS" in upper or "◗" in text:
         return (1, text)
     if "360" in upper and "REALITY" in upper:
-        return (1, text)
+        return (2, text)
     if "HI-RES" in upper or "🅷" in text:
         return (3, text)
     if re.fullmatch(r"FLAC", text.strip(), re.I) or upper == "FLAC":
@@ -15505,8 +15622,32 @@ def _amazonmusic_context_menu_from_additional(additional: str) -> list[tuple[str
     return [(label, sk) for label, sk in merged.items()]
 
 
+def _amazonmusic_context_menu_from_catalog_item(item: dict) -> list[tuple[str, str]]:
+    """Build menu tiers from album/playlist catalog metadata (artist discography, expand)."""
+    try:
+        from modules.amazonmusic.interface import ModuleInterface
+    except ImportError:
+        return []
+    raw = item.get("raw_result")
+    if not isinstance(raw, dict):
+        raw = _amazonmusic_search_document(item)
+    if not isinstance(raw, dict):
+        return []
+    tags = ModuleInterface._catalog_quality_tags_from_entity_and_tracks(raw)
+    if not tags:
+        return []
+    merged: dict[str, str] = {}
+    for label in ModuleInterface._amazon_catalog_quality_display_labels(tags):
+        opt = _amazonmusic_option_from_additional_part(label)
+        if opt:
+            menu_label, sk = opt
+            merged.setdefault(menu_label, sk)
+    _amazonmusic_supplement_stereo_downgrades(merged)
+    return [(label, sk) for label, sk in merged.items()]
+
+
 def _amazonmusic_context_menu_options(selected_items: list) -> list[tuple[str, str]]:
-    """Build download tiers from Additional column; fall back to MPD mapping only when empty."""
+    """Build download tiers from Additional, catalog metadata, or MPD mapping."""
     try:
         from modules.amazonmusic.interface import ModuleInterface
         from utils.models import codec_data
@@ -15528,38 +15669,57 @@ def _amazonmusic_context_menu_options(selected_items: list) -> list[tuple[str, s
                 merged.setdefault(menu_label, sk)
 
     for item in selected_items or []:
+        item_opts: dict[str, str] = {}
+
+        def _merge_item(opts: list[tuple[str, str]]) -> None:
+            for menu_label, sk in opts:
+                if menu_label and sk:
+                    item_opts.setdefault(menu_label, sk)
+
         addl = str(item.get("additional") or "").strip()
         if addl:
-            _merge_options(_amazonmusic_context_menu_from_additional(addl))
-            continue
+            _merge_item(_amazonmusic_context_menu_from_additional(addl))
 
-        am_kwargs = _amazonmusic_api_kwargs(item)
-        data = am_kwargs.get("data") if isinstance(am_kwargs.get("data"), dict) else {}
-        tid = str(item.get("id") or "")
-        qmap = data.get(f"{tid}_quality_mapping") if tid else None
-        if qmap and module_instance:
-            quality_format = str(module_instance.settings.get("quality_format", ""))
-            qmap_opts: list[tuple[str, str]] = []
-            for _qe, quality_name, tracks in ModuleInterface._iter_over_tracks_to_quality_map(qmap):
-                if not tracks:
-                    continue
-                best = tracks[0]
-                try:
-                    label = module_instance._format_quality_display(
-                        {
-                            "official_quality_name": best.official_quality_name,
-                            "codec_pretty_name": codec_data[best.codec].pretty_name,
-                            "bit_depth": best.bit_depth,
-                            "sample_rate": best.sample_rate,
-                        },
-                        quality_format,
-                    )
-                except Exception:
-                    label = quality_name
-                menu_label, sk = _amazonmusic_context_menu_canonical(label, quality_name)
-                if menu_label and sk:
-                    qmap_opts.append((menu_label, sk))
-            _merge_options(qmap_opts)
+        if not item_opts:
+            _merge_item(_amazonmusic_context_menu_from_catalog_item(item))
+
+        if not item_opts:
+            am_kwargs = _amazonmusic_api_kwargs(item)
+            data = am_kwargs.get("data") if isinstance(am_kwargs.get("data"), dict) else {}
+            tid = str(item.get("id") or "")
+            qmap = data.get(f"{tid}_quality_mapping") if tid else None
+            if qmap and module_instance:
+                quality_format = str(module_instance.settings.get("quality_format", ""))
+                qmap_opts: list[tuple[str, str]] = []
+                for _qe, quality_name, tracks in ModuleInterface._iter_over_tracks_to_quality_map(qmap):
+                    if not tracks:
+                        continue
+                    best = tracks[0]
+                    try:
+                        label = module_instance._format_quality_display(
+                            {
+                                "official_quality_name": best.official_quality_name,
+                                "codec_pretty_name": codec_data[best.codec].pretty_name,
+                                "bit_depth": best.bit_depth,
+                                "sample_rate": best.sample_rate,
+                            },
+                            quality_format,
+                        )
+                    except Exception:
+                        label = quality_name
+                    menu_label, sk = _amazonmusic_context_menu_canonical(label, quality_name)
+                    if menu_label and sk:
+                        qmap_opts.append((menu_label, sk))
+                _merge_item(qmap_opts)
+
+        # Artist discography rows often only show "N tracks" in Additional.
+        if not item_opts and str(item.get("type") or "").lower() in (
+            "album",
+            "playlist",
+        ):
+            _merge_item([("FLAC", "HD"), ("OPUS", "SD")])
+
+        _merge_options([(label, sk) for label, sk in item_opts.items()])
 
     # Always show OPUS as a fallback quality tier for Amazon Music.
     # OPUS availability is common even when the manifest probe surfaces FLAC/HI-RES/Atmos only.
@@ -16164,7 +16324,9 @@ def _amazonmusic_refresh_parent_album_additional(item_data: dict, track_entries:
         try:
             values = list(tree.item(tree_iid, "values"))
             if len(values) >= 7:
-                values[6] = _to_small_caps(item_data["additional"])
+                values[6] = _format_additional_column(
+                    item_data["additional"], item_data.get("platform")
+                )
                 tree.item(tree_iid, values=tuple(values))
         except Exception:
             pass
@@ -16228,9 +16390,9 @@ def _to_small_caps(s):
             res += mapping.get(lower_char, char)
         return res
 
-    # MPEG-H spatial → "3D ᴍᴘᴇɢ-ʜ ᴀᴜᴅɪᴏ" (normal "3D", rest small caps)
+    # MPEG-H spatial → "360ʀᴀ" (small caps)
     if re.search(r"mpeg-h|mha1|mhm1", s, re.IGNORECASE):
-        return "3D" + transform(" MPEG-H Audio")
+        return transform("360RA")
 
     # Targeted keywords (case-insensitive search)
     keywords = [
@@ -16320,8 +16482,7 @@ def sort_results(column):
                     else:
                         preview_icon = PREVIEW_UNAVAILABLE
                     additional_val = item_data.get('additional', '')
-                    # Apply small caps to Additional column for smaller visual effect
-                    display_additional = _to_small_caps(additional_val)
+                    display_additional = _format_additional_column(additional_val, platform_str)
                     
                     values = ( preview_icon, item_data.get('number', ''), item_data.get('title', ''), item_data.get('artist', ''), item_data.get('duration', ''), item_data.get('year', ''), display_additional, item_data.get('explicit', ''), item_data.get('id', '') )
                     row_tag = "oddrow" if (idx % 2 == 0) else "evenrow"
