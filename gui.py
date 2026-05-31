@@ -1329,12 +1329,24 @@ def _show_amazonmusic_oauth_dialog(oauth_url: str, application_name: str) -> str
             return False
         return False
 
+    def _context_menu_is_open():
+        """Our right-click context menu is a separate Toplevel; don't treat it as focus loss."""
+        if globals().get("_context_menu_visible"):
+            return True
+        try:
+            menu = globals().get("_context_menu")
+            return bool(menu and menu.winfo_exists() and menu.winfo_viewable())
+        except Exception:
+            return False
+
     def _hide_oauth_dialog_if_focus_left():
         if not dialog.winfo_exists():
             return
         if not _oauth_ui.get("allow_withdraw"):
             return
         if _focus_still_in_dialog():
+            return
+        if _context_menu_is_open():
             return
         try:
             if dialog.winfo_viewable():
@@ -9776,7 +9788,7 @@ def _get_ctk_input_parent(widget):
     return None
 
 def show_context_menu(event):
-    global _context_menu, _target_widget, _hide_menu_binding_id, app
+    global _context_menu, _target_widget, _hide_menu_binding_id, app, _context_menu_visible
     _create_menu();
     if not _context_menu: print("Context menu: Failed to create menu frame."); return
     hide_context_menu()
@@ -9853,6 +9865,9 @@ def show_context_menu(event):
         x = event.x_root + 2
         y = event.y_root + 2
         _context_menu.geometry(f"+{x}+{y}")
+        # Set synchronously so focus-out handlers (e.g. Amazon OAuth dialog) know the
+        # context menu — a separate Toplevel — is taking focus, not a real focus loss.
+        _context_menu_visible = True
 
         if platform.system() == "Darwin":
             # macOS: defer deiconify/lift to avoid blocking the right-click event handler
@@ -9911,7 +9926,7 @@ def show_context_menu(event):
     except Exception as e: print(f"Context menu: Error configuring/displaying menu: {e}")
 
 def hide_context_menu(event=None):
-    global _context_menu, _target_widget, _hide_menu_binding_id, app
+    global _context_menu, _target_widget, _hide_menu_binding_id, app, _context_menu_visible
     if 'app' not in globals() or not app: return
     if event and _context_menu and _context_menu.winfo_exists():
          x_root, y_root = app.winfo_pointerxy()
@@ -9931,6 +9946,7 @@ def hide_context_menu(event=None):
                      if is_inside: return
                  except (tkinter.TclError, AttributeError): pass
                  
+    _context_menu_visible = False
     if _context_menu and _context_menu.winfo_exists():
         _context_menu.withdraw()
         # macOS focus fix: ensure focus returns to main window after withdrawing overrideredirect toplevel
