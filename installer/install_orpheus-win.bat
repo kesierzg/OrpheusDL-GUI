@@ -91,8 +91,8 @@ if errorlevel 1 (
     echo [OK] Spotify.dll downloaded.
 )
 
-echo [8b/10] Downloading Shaka Packager (Amazon Music)...
-python installer\bootstrap_extras.py --shaka
+echo [8b/10] Downloading Shaka Packager + mp4decrypt fallback (Amazon Music)...
+python installer\bootstrap_extras.py --shaka --mp4decrypt
 if errorlevel 1 (
     echo [WARN] Shaka Packager download failed. Amazon Music may not work until it is installed manually.
 )

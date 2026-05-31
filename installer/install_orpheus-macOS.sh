@@ -83,8 +83,8 @@ fi
 
 echo "      Note: Make sure FFmpeg is installed (e.g., via Homebrew: brew install ffmpeg)"
 
-echo "[8b/10] Downloading Shaka Packager (Amazon Music)..."
-python3 installer/bootstrap_extras.py --shaka || echo "[WARN] Shaka Packager download failed."
+echo "[8b/10] Downloading Shaka Packager + mp4decrypt fallback (Amazon Music)..."
+python3 installer/bootstrap_extras.py --shaka --mp4decrypt || echo "[WARN] Shaka Packager download failed."
 
 echo "[9/10] Launching GUI for first-run settings generation..."
 echo "      Please close the GUI window after it fully opens."

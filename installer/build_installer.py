@@ -21,7 +21,7 @@ DIST_DIR = PROJECT_ROOT / "dist"
 if str(INSTALLER_DIR) not in sys.path:
     sys.path.insert(0, str(INSTALLER_DIR))
 
-from bootstrap_extras import ensure_shaka_packager
+from bootstrap_extras import ensure_shaka_packager, ensure_mp4decrypt
 
 
 AVAILABLE_MODULES = [
@@ -144,6 +144,8 @@ def build_pyinstaller():
     print("\n=== PyInstaller build ===")
 
     ensure_shaka_packager()
+    # DRM decryption fallback (e.g. when Shaka Packager is too new for an older host libc++).
+    ensure_mp4decrypt()
 
     print("Installing librespot to vendor/librespot...")
     run_command([
@@ -668,6 +670,7 @@ Source: "..\\..\\ffprobe.exe"; DestDir: "{{app}}"; Components: ffmpeg; Flags: ig
 Source: "..\\..\\deno.exe"; DestDir: "{{app}}"; Components: deno; Flags: ignoreversion skipifsourcedoesntexist
 
 Source: "..\\..\\packager-win-x64.exe"; DestDir: "{{app}}"; Components: main; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\\..\\mp4decrypt.exe"; DestDir: "{{app}}"; Components: main; Flags: ignoreversion skipifsourcedoesntexist
 
 {module_files}
 

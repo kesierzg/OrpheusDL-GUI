@@ -197,6 +197,21 @@ for _shaka_name in _shaka_candidates:
 else:
     print("[PyInstaller] WARNING: Shaka Packager not found — Amazon Music downloads may fail until it is placed next to the app")
 
+# Bento4 mp4decrypt — DRM decryption fallback when Shaka Packager is unusable (e.g. the
+# bundled macOS Shaka build is too new for an older host's libc++ and SIGABRTs on launch).
+# Provide it at build time via installer/bootstrap_extras.py --mp4decrypt.
+if platform.system() == 'Windows':
+    _mp4decrypt_name = 'mp4decrypt.exe'
+else:
+    _mp4decrypt_name = 'mp4decrypt'
+_mp4decrypt_path = os.path.join(SPEC_DIR, _mp4decrypt_name)
+if os.path.isfile(_mp4decrypt_path):
+    additional_binaries.append((_mp4decrypt_path, '.'))
+    additional_datas.append((_mp4decrypt_path, '.'))
+    print(f"[PyInstaller] Bundling mp4decrypt fallback: {_mp4decrypt_name}")
+else:
+    print("[PyInstaller] NOTE: mp4decrypt not found — Amazon Music has no decrypt fallback if Shaka Packager fails (run installer/bootstrap_extras.py --mp4decrypt to fetch it)")
+
 a = Analysis(
     ['gui.py'],
     pathex=['.', os.path.join(SPEC_DIR, 'vendor', 'librespot')],

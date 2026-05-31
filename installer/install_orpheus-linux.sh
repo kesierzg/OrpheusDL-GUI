@@ -109,8 +109,8 @@ else
     echo "Spotify.dll already present, skipping download"
 fi
 
-echo "[10b/18] Downloading Shaka Packager (Amazon Music)..."
-python3 installer/bootstrap_extras.py --shaka || echo "[WARN] Shaka Packager download failed."
+echo "[10b/18] Downloading Shaka Packager + mp4decrypt fallback (Amazon Music)..."
+python3 installer/bootstrap_extras.py --shaka --mp4decrypt || echo "[WARN] Shaka Packager download failed."
 
 echo "[11/18] Installing build dependencies..."
 pip install pyinstaller

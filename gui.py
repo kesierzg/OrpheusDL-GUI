@@ -1339,6 +1339,23 @@ def _show_amazonmusic_oauth_dialog(oauth_url: str, application_name: str) -> str
         except Exception:
             return False
 
+    def _pointer_over_dialog():
+        """True when the mouse is over the dialog — the user is interacting with it.
+
+        macOS Tk reports focus_get()==None right after the right-click context menu
+        closes, which would otherwise withdraw the dialog mid-interaction (e.g. just
+        after pasting, before the user can click Confirm).
+        """
+        try:
+            px, py = dialog.winfo_pointerxy()
+            x = dialog.winfo_rootx()
+            y = dialog.winfo_rooty()
+            w = dialog.winfo_width()
+            h = dialog.winfo_height()
+            return x <= px < x + w and y <= py < y + h
+        except Exception:
+            return False
+
     def _hide_oauth_dialog_if_focus_left():
         if not dialog.winfo_exists():
             return
@@ -1347,6 +1364,8 @@ def _show_amazonmusic_oauth_dialog(oauth_url: str, application_name: str) -> str
         if _focus_still_in_dialog():
             return
         if _context_menu_is_open():
+            return
+        if _pointer_over_dialog():
             return
         try:
             if dialog.winfo_viewable():
