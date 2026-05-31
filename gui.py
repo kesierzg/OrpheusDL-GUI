@@ -914,14 +914,20 @@ def play_audio(source):
     is_soundcloud_stream = 'sndcdn.com' in source_lower
     is_stream = is_hls_stream or is_soundcloud_stream
 
-    # Amazon Music previews are local files decrypted via Shaka Packager / mp4decrypt
-    # (fragmented MP4/M4A). macOS afplay only decodes the first fragment of these
-    # (~1 second of audio, then it stops / goes silent), so remux them to WAV with
-    # ffmpeg first — same approach already used for streams above.
+    # Amazon Music previews are local files decrypted via Shaka Packager / mp4decrypt.
+    # The lowest-quality stream we fetch for previews is Opus (low bitrate), but the
+    # decrypted output can also be a fragmented MP4/M4A. macOS afplay can't decode Opus
+    # (and only decodes the first fragment of fragmented MP4), so it stops after
+    # ~1 second / goes silent. Remux these to WAV with ffmpeg first — the same approach
+    # already used for streams above (and for SoundCloud previews on macOS).
     is_local_file = not source.startswith(('http://', 'https://'))
-    is_container_audio = source_lower.endswith(('.m4a', '.mp4', '.aac', '.m4b', '.mov'))
+    # Formats afplay can't reliably play on macOS 15+ (Opus/Ogg/WebM/FLAC are unsupported,
+    # fragmented MP4/M4A only decode the first fragment).
+    afplay_unsupported = source_lower.endswith(
+        ('.m4a', '.mp4', '.aac', '.m4b', '.mov', '.opus', '.ogg', '.oga', '.webm', '.flac')
+    )
     needs_remux_for_native_player = (
-        system == "Darwin" and is_local_file and is_container_audio
+        system == "Darwin" and is_local_file and afplay_unsupported
     )
 
     # For streams, convert to WAV using ffmpeg first (limited to 30 seconds) on Windows.
