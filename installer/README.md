@@ -57,9 +57,19 @@ Supported formats:
 
 #### Troubleshooting
 
-If you encounter `dlopen(): error loading libfuse.so.2` when running the AppImage on Ubuntu 22.04+:
-1.  **Install libfuse2:** `sudo apt install libfuse2`
-2.  **Or use the .deb package:** The `.deb` package does not require FUSE.
+**Running the AppImage requires FUSE 2 (`libfuse.so.2`).**
+
+AppImage (type 2) needs FUSE 2 to mount and run. Older distros shipped it by default, but newer
+ones ship FUSE 3 only (e.g. Ubuntu 25.10+, Kubuntu 26.04, recent Fedora), so end users must
+install the FUSE 2 compatibility package. Symptom: `dlopen(): error loading libfuse.so.2` (or the
+GUI not starting at all).
+
+- **Debian/Ubuntu/Kubuntu/Mint:** `sudo apt install libfuse2`
+- **Fedora/RHEL:** `sudo dnf install fuse-libs`
+- **Arch:** `sudo pacman -S fuse2`
+- **Alternative:** use the `.deb`/`.rpm` package instead — these do not require FUSE.
+- **Alternative:** run the AppImage without FUSE by extracting it:
+  `./OrpheusDL_GUI-x86_64.AppImage --appimage-extract-and-run`
 
 ## Module Selection
 

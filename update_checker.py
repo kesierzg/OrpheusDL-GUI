@@ -1,9 +1,38 @@
 # update_checker.py
+import os
+import platform
+import subprocess
 import requests
 import threading
 # import tkinter.messagebox <<< Keep commented
 import webbrowser
 from packaging.version import parse as parse_version # Requires 'packaging' package
+
+
+def _open_release_url(url):
+    """Open a URL in the default browser.
+
+    On Linux/macOS, spawn the launcher with a cleaned environment so the browser
+    doesn't inherit the AppImage/PyInstaller LD_LIBRARY_PATH/DYLD_LIBRARY_PATH
+    (which can stop the browser from launching). Falls back to webbrowser."""
+    try:
+        env = None
+        try:
+            from utils.utils import get_clean_env
+            env = get_clean_env()
+        except Exception:
+            env = None
+        system = platform.system()
+        if system == "Windows":
+            os.startfile(url)
+            return
+        launcher = ["open", url] if system == "Darwin" else ["xdg-open", url]
+        subprocess.run(launcher, check=False, env=env)
+    except Exception:
+        try:
+            webbrowser.open(url, new=2)
+        except Exception:
+            pass
 
 # <<< Remove this import >>>
 # from gui_utils import show_centered_messagebox
@@ -96,7 +125,7 @@ def show_centered_messagebox(title, message, dialog_type="info", parent=None, ur
         if url:
             def open_release_page():
                 try:
-                    webbrowser.open(url, new=2)
+                    _open_release_url(url)
                 except:
                     pass
                 dialog.destroy()

@@ -146,11 +146,17 @@ def _open_url(url):
     `os.startfile` on Windows, and `xdg-open` on Linux."""
     try:
         if platform.system() == "Darwin":
-            subprocess.run(['open', url], check=False)
+            # Use a clean env so the browser launcher doesn't inherit the bundle's
+            # DYLD_LIBRARY_PATH (PyInstaller/.app), which can break it.
+            subprocess.run(['open', url], check=False, env=get_clean_env())
         elif platform.system() == "Windows":
             os.startfile(url)
         else:
-            subprocess.run(['xdg-open', url], check=False)
+            # On Linux (especially AppImage / PyInstaller), xdg-open inherits the
+            # bundle's LD_LIBRARY_PATH and launches the browser with it, causing the
+            # browser to fail to start so links never open. get_clean_env() restores
+            # the original (pre-bundle) library paths.
+            subprocess.run(['xdg-open', url], check=False, env=get_clean_env())
     except Exception as e:
         print(f"[URL] Error opening {url}: {e}")
 
@@ -907,10 +913,20 @@ def play_audio(source):
     is_hls_stream = '.m3u8' in source_lower or 'hls' in source_lower
     is_soundcloud_stream = 'sndcdn.com' in source_lower
     is_stream = is_hls_stream or is_soundcloud_stream
-    
+
+    # Amazon Music previews are local files decrypted via Shaka Packager / mp4decrypt
+    # (fragmented MP4/M4A). macOS afplay only decodes the first fragment of these
+    # (~1 second of audio, then it stops / goes silent), so remux them to WAV with
+    # ffmpeg first — same approach already used for streams above.
+    is_local_file = not source.startswith(('http://', 'https://'))
+    is_container_audio = source_lower.endswith(('.m4a', '.mp4', '.aac', '.m4b', '.mov'))
+    needs_remux_for_native_player = (
+        system == "Darwin" and is_local_file and is_container_audio
+    )
+
     # For streams, convert to WAV using ffmpeg first (limited to 30 seconds) on Windows.
     # We now also do this for macOS and Linux because native players (afplay) can sometimes fail to play M4A streams correctly without conversion.
-    if is_stream:
+    if is_stream or needs_remux_for_native_player:
         try:
             import tempfile
             ffmpeg_path = _get_ffmpeg_path()
@@ -1402,6 +1418,8 @@ def _show_amazonmusic_oauth_dialog(oauth_url: str, application_name: str) -> str
     url_entry = customtkinter.CTkEntry(content, textvariable=url_var, placeholder_text="Paste URL from browser after login")
     url_entry.pack(fill="x", pady=(4, 12))
     url_entry.bind("<Button-3>", show_context_menu)
+    url_entry.bind("<Button-2>", show_context_menu)
+    url_entry.bind("<Control-Button-1>", show_context_menu)
 
     _countdown_state = {"remaining": AMAZON_MUSIC_OAUTH_OPEN_DELAY_SEC, "opened": False, "timer_id": None}
 
@@ -1517,6 +1535,29 @@ current_batch_output_path = None
 _current_download_context = None
 spotify_pre_download_warning_acknowledged = False
 _pause_countdown_line_start = None
+
+# Spotify Desktop / .dll batch pacing (votify-style "safe mode"): between most queued
+# items we wait a short interval; every 3rd Spotify item we apply the full pause
+# (download_pause_seconds) to avoid account suspensions. Counter is reset per batch.
+SPOTIFY_DLL_WAIT_INTERVAL = 15.0  # seconds between Spotify .dll batch items
+SPOTIFY_DLL_PAUSE_EVERY = 3       # full pause every N Spotify .dll items
+_spotify_dll_batch_counter = 0
+
+
+def _reset_spotify_dll_batch_counter():
+    global _spotify_dll_batch_counter
+    _spotify_dll_batch_counter = 0
+
+
+def _next_spotify_dll_batch_pause(big_pause_seconds):
+    """votify-style pacing for the Spotify .dll batch queue: a short interval between
+    items, with the full pause every Nth item. Returns the pause in seconds (±25% jitter)."""
+    global _spotify_dll_batch_counter
+    import random as _r
+    _spotify_dll_batch_counter += 1
+    base = big_pause_seconds if (_spotify_dll_batch_counter % SPOTIFY_DLL_PAUSE_EVERY == 0) else SPOTIFY_DLL_WAIT_INTERVAL
+    jitter = base * 0.25
+    return _r.uniform(max(0.0, base - jitter), base + jitter)
 
 _queue_log_handler_instance = None
 
@@ -12567,8 +12608,8 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                                 else:
                                     _sp_use_dll = False
                                 if _sp_use_dll:
-                                    jitter = pause_seconds * 0.25
-                                    pause_actual = _random_pause.uniform(pause_seconds - jitter, pause_seconds + jitter)
+                                    # votify-style: short interval between items, full pause every 3rd
+                                    pause_actual = _next_spotify_dll_batch_pause(pause_seconds)
                                 else:
                                     pause_actual = pause_seconds
                                 pause_ms = max(1, int(pause_actual * 1000))
@@ -12927,6 +12968,7 @@ def start_download_thread(search_result_data=None):
                 current_batch_output_path = None
                 return
             file_download_queue.extend(urls_in_file)
+            _reset_spotify_dll_batch_counter()
             print(f"Added {len(file_download_queue)} URLs to the download queue.")
             if file_download_queue:
                 first_url = file_download_queue.pop(0)
@@ -16121,6 +16163,7 @@ def download_selected():
                 current_batch_output_path = None
             file_download_queue.clear()
             file_download_queue.extend(urls_to_download)
+            _reset_spotify_dll_batch_counter()
             if file_download_queue:
                 first_url = file_download_queue.pop(0)
                 print(f"Starting batch download with first URL: {first_url}")
@@ -18701,7 +18744,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             demo_btn = customtkinter.CTkButton(
                 help_frame, text="See demo", width=80, height=26, font=("Segoe UI", 11),
                 fg_color=BUTTON_COLOR, hover_color=LINK_COLOR,
-                command=lambda: _open_url("https://youtube.com"),
+                command=lambda: _open_url("https://youtu.be/54DHt7q7HmU"),
             )
             demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
             _add_clear_session_icon(help_frame, "Amazon Music")
@@ -19320,8 +19363,8 @@ def final_download_cleanup(success=False):
                         else:
                             _sp_use_dll = False
                         if _sp_use_dll:
-                            jitter = pause_seconds * 0.25
-                            pause_actual = _random_pause.uniform(pause_seconds - jitter, pause_seconds + jitter)
+                            # votify-style: short interval between items, full pause every 3rd
+                            pause_actual = _next_spotify_dll_batch_pause(pause_seconds)
                         else:
                             pause_actual = pause_seconds
                         pause_ms = max(1, int(pause_actual * 1000))
@@ -21307,13 +21350,13 @@ Unnecessary Lossless-to-Lossless""",
         
         # GitHub Button
         github_url = "https://github.com/bascurtiz/OrpheusDL-GUI"
-        github_command = lambda u=github_url: os.startfile(u) if platform.system() == "Windows" else subprocess.Popen(["open", u]) if platform.system() == "Darwin" else subprocess.Popen(["xdg-open", u])
+        github_command = lambda u=github_url: _open_url(u)
         github_button = customtkinter.CTkButton(links_frame, text="GitHub", command=github_command, width=100, height=30, fg_color=UI_ELEMENT_BG_COLOR, hover_color=LINK_COLOR)
         github_button.pack(side="left", padx=2)
         
         # Website Button
         site_url = "https://orpheusdl-gui.x10.mx"
-        site_command = lambda u=site_url: os.startfile(u) if platform.system() == "Windows" else subprocess.Popen(["open", u]) if platform.system() == "Darwin" else subprocess.Popen(["xdg-open", u])
+        site_command = lambda u=site_url: _open_url(u)
         site_button = customtkinter.CTkButton(links_frame, text="Website", command=site_command, width=100, height=30, fg_color=UI_ELEMENT_BG_COLOR, hover_color=LINK_COLOR)
         site_button.pack(side="left", padx=2)
         section_header_font = ("Segoe UI", 11)
@@ -21338,10 +21381,10 @@ Unnecessary Lossless-to-Lossless""",
         modules_frame = customtkinter.CTkFrame(modules_center_wrapper, fg_color="transparent")
         modules_frame.pack(anchor="center", padx=20)
         module_buttons_data = [
+            ("Amazon Music", "https://github.com/bascurtiz/OrpheusDL-amazonmusic"),
             ("Apple Music", "https://github.com/bascurtiz/orpheusdl-applemusic"),
             ("Beatport", "https://github.com/bascurtiz/orpheusdl-beatport"),
             ("Beatsource", "https://github.com/bascurtiz/orpheusdl-beatsource"),
-            ("Bugs", "https://github.com/Dniel97/orpheusdl-bugsmusic"),
             ("Deezer", "https://github.com/bascurtiz/OrpheusDL-deezer"),            
             ("Genius", "https://github.com/Dniel97/orpheusdl-genius"),
             ("Idagio", "https://github.com/Dniel97/orpheusdl-idagio"),
@@ -21366,7 +21409,7 @@ Unnecessary Lossless-to-Lossless""",
             for index, (name, url) in enumerate(module_buttons_data):
                 row = index // cols
                 col = index % cols
-                command = lambda u=url: (subprocess.Popen(["open", u]) if platform.system() == "Darwin" else subprocess.Popen(["xdg-open", u]) if platform.system() == "Linux" else os.startfile(u))
+                command = lambda u=url: _open_url(u)
                 button = customtkinter.CTkButton(
                     modules_frame,
                     text=name,
