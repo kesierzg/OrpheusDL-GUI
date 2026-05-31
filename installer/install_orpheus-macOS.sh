@@ -44,8 +44,8 @@ mkdir -p config
 echo "[5/10] Cloning modules..."
 mkdir -p modules
 
-# macOS specific fix for Apple Music
-pip3 install --upgrade certifi
+# macOS specific fix for Apple Music (skip broken uninstall when RECORD metadata is missing)
+pip3 install --upgrade --ignore-installed certifi || pip3 install --force-reinstall --no-deps certifi
 git clone https://github.com/bascurtiz/orpheusdl-amazonmusic modules/amazonmusic
 git clone https://github.com/bascurtiz/orpheusdl-applemusic modules/applemusic
 git clone https://github.com/bascurtiz/orpheusdl-beatport modules/beatport
