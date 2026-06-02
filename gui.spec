@@ -17,19 +17,9 @@ MODULES_SRC = os.path.join(SPEC_DIR, 'modules')
 ffmpeg_datas, ffmpeg_binaries, ffmpeg_hiddenimports = collect_all('ffmpeg')
 print(f"[PyInstaller] Collected ffmpeg submodules: {ffmpeg_hiddenimports}")
 
-# Collect unplayplay and its complex dependencies (unicorn, capstone)
-# These are required for the Spotify Desktop API (lossless/flac downloads)
-up_datas, up_binaries, up_hiddenimports = collect_all('unplayplay')
-uni_datas, uni_binaries, uni_hiddenimports = collect_all('unicorn')
-cap_datas, cap_binaries, cap_hiddenimports = collect_all('capstone')
-
-# Collect votify and its missing dependencies
-voti_datas, voti_binaries, voti_hiddenimports = collect_all('votify')
 dc_datas, dc_binaries, dc_hiddenimports = collect_all('dataclass-click')
 iq_datas, iq_binaries, iq_hiddenimports = collect_all('inquirerpy')
 _tkdnd_datas, _tkdnd_binaries, _tkdnd_hiddenimports = collect_all('tkinterdnd2')
-
-print(f"[PyInstaller] Collected unplayplay, unicorn, capstone, and votify assets")
 
 # Collect additional data files based on what exists in the source directory
 additional_datas = [
@@ -37,29 +27,9 @@ additional_datas = [
     ('icon.icns', '.'),
     ('icon.png', '.'),
     ('update_checker.py', '.'),
-    ('key_emu_prod.py', '.'),
-    ('runtime_prod.py', '.'),
-    ('modules/spotify/decrypt_worker.py', 'modules/spotify'),
-
 ]
 
-# Spotify.dll 1.2.88.472 PlayPlay: SEH metadata from cycyrild/another-unplayplay (key_emu_prod.py)
-# — required for lossless/FLAC when using that client. ~18 MB (mostly runtimefunction.json).
-# If missing, copy from https://github.com/cycyrild/another-unplayplay (src/unplayplay/generated/)
-_ANOTHER_UP = os.path.join(SPEC_DIR, 'vendor', 'another_unplayplay')
-_n_bundled = 0
-if os.path.isdir(_ANOTHER_UP):
-    for _n in ('throwinfo.json', 'runtimefunction.json'):
-        _json_path = os.path.join(_ANOTHER_UP, _n)
-        if os.path.isfile(_json_path):
-            additional_datas.append((_json_path, 'vendor/another_unplayplay'))
-            _n_bundled += 1
-    if _n_bundled:
-        print(f"[PyInstaller] vendor/another_unplayplay: bundled {_n_bundled} SEH JSON file(s) (Spotify 1.2.88 PlayPlay)")
-else:
-    print("[PyInstaller] WARNING: vendor/another_unplayplay/ missing — Spotify 1.2.88 lossless keygen may not work in the frozen app")
-
-# Vendored librespot-python (Spotify OAuth/stream path when not using Spotify.dll)
+# Vendored librespot-python (Spotify OAuth/stream path)
 _librespot_vendor_root = os.path.join(SPEC_DIR, "vendor", "librespot")
 _librespot_files = 0
 if os.path.isdir(_librespot_vendor_root):
@@ -106,16 +76,6 @@ if os.path.isdir(_librespot_vendor_root):
                 _librespot_player_hi = ["librespot_player"]
     finally:
         sys.path[:] = _spath_saved
-
-# Keep Windows as single source of truth via installer/build_installer.py.
-# macOS/Linux installers do not copy Spotify.dll externally, so bundle it in frozen app there.
-if platform.system() != 'Windows':
-    _spotify_dll = os.path.join(SPEC_DIR, "Spotify.dll")
-    if os.path.isfile(_spotify_dll):
-        additional_datas.append((_spotify_dll, "."))
-        print("[PyInstaller] Bundling Spotify.dll for non-Windows frozen builds (macOS/Linux)")
-    else:
-        print("[PyInstaller] WARNING: Spotify.dll not found at repo root — non-Windows lossless may fail without it")
 
 # Include platforms folder (platform icons)
 PLATFORMS_DIR = os.path.join(SPEC_DIR, 'platforms')
@@ -215,8 +175,8 @@ else:
 a = Analysis(
     ['gui.py'],
     pathex=['.', os.path.join(SPEC_DIR, 'vendor', 'librespot')],
-    binaries=additional_binaries + ffmpeg_binaries + up_binaries + uni_binaries + cap_binaries + voti_binaries + dc_binaries + iq_binaries + _tkdnd_binaries,
-    datas=additional_datas + ffmpeg_datas + up_datas + uni_datas + cap_datas + voti_datas + dc_datas + iq_datas + _tkdnd_datas,
+    binaries=additional_binaries + ffmpeg_binaries + dc_binaries + iq_binaries + _tkdnd_binaries,
+    datas=additional_datas + ffmpeg_datas + dc_datas + iq_datas + _tkdnd_datas,
     hiddenimports=[
         'certifi',
         'colorama',
@@ -260,21 +220,15 @@ a = Analysis(
         'pywinstyles',
         'tkinterdnd2',
         'packaging',
-        'unplayplay',               # Spotify Desktop API
-        'unicorn',                  # Dependency for unplayplay
-        'capstone',                 # Dependency for unplayplay
-        'pefile',                   # Dependency for unplayplay
-        'pydantic',                 # Dependency for unplayplay
         'base62',                   # Spotify ID conversion (module name is 'base62')
         'google.protobuf',          # Required for Spotify proto files
-        'Crypto',                   # Generic Crypto (pycryptodome) mapping for unplayplay/votify
+        'Crypto',                   # Generic Crypto (pycryptodome)
         'Crypto.Cipher',
         'Crypto.Cipher.AES',
         'Crypto.Util',
         'Crypto.Util.Counter',
-        'votify',                   # Missing dependency for Spotify Desktop API
-        'dataclass-click',          # Dependency for votify
-        'inquirerpy',                # Dependency for votify
+        'dataclass-click',
+        'inquirerpy',
         'click',
         'pfzy',                     # Dependency for inquirerpy
         'prompt_toolkit',            # Dependency for inquirerpy
@@ -282,7 +236,7 @@ a = Analysis(
         'zeroconf',                 # Dependency for librespot
         'ifaddr',                   # Dependency for zeroconf
         'pyogg',                    # Dependency for librespot
-    ] + ffmpeg_hiddenimports + up_hiddenimports + uni_hiddenimports + cap_hiddenimports + voti_hiddenimports + dc_hiddenimports + iq_hiddenimports + _tkdnd_hiddenimports + collect_submodules('unplayplay') + collect_submodules('votify') + _librespot_hiddenimports + _librespot_player_hi,
+    ] + ffmpeg_hiddenimports + dc_hiddenimports + iq_hiddenimports + _tkdnd_hiddenimports + _librespot_hiddenimports + _librespot_player_hi,
     excludes=['torch', 'cuda', 'pytorch', 'matplotlib', 'pandas', 'numpy'],
     hookspath=['.'],
     hooksconfig={},
@@ -366,36 +320,4 @@ else:
         icon='icon.ico',
         # this will default to onefile, or add `onefile=True` explicitly
     )
-
-# ==============================================================================
-# POST-BUILD HOOK: Automatically disable CFG on Windows for Unicorn Emulator Fix
-# ==============================================================================
-if platform.system() == 'Windows':
-    try:
-        import pefile
-        # DISTPATH is provided by PyInstaller during spec evaluation
-        target_exe = os.path.join(os.path.abspath(DISTPATH), 'OrpheusDL_GUI.exe')
-        
-        if os.path.exists(target_exe):
-            print(f"[Post-Build] Inspecting {target_exe} for CFG flags...")
-            pe = pefile.PE(target_exe)
-            
-            IMAGE_DLLCHARACTERISTICS_GUARD_CF = 0x4000
-            
-            if pe.OPTIONAL_HEADER.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_GUARD_CF:
-                print("[Post-Build] CFG is enabled. Patching to ensure Spotify decrypter stability...")
-                pe.OPTIONAL_HEADER.DllCharacteristics &= ~IMAGE_DLLCHARACTERISTICS_GUARD_CF
-                
-                # Write to temp and replace to prevent Windows locks
-                temp_path = target_exe + ".patched"
-                pe.write(temp_path)
-                pe.close()
-                os.replace(temp_path, target_exe)
-                print("[Post-Build] Successfully disabled CFG on the output executable!")
-            else:
-                pe.close()
-                print("[Post-Build] CFG is already disabled. No patch needed.")
-    except Exception as e:
-        print(f"[Post-Build] Warning: Could not auto-patch CFG - {e}")
-# ==============================================================================
 

@@ -60,21 +60,6 @@ else:
 if application_path not in sys.path:
     sys.path.insert(0, application_path)
 
-# ============================================================================
-# Spotify Decryption Worker Mode (Bypass Core)
-# ============================================================================
-if "--spotify-decrypt-worker" in sys.argv:
-    try:
-        from modules.spotify.decrypt_worker import run_worker
-        # Find index of flag and pass following arguments
-        idx = sys.argv.index("--spotify-decrypt-worker")
-        run_worker(sys.argv[idx+1:])
-    except Exception as e:
-        import json
-        print(json.dumps({"error": str(e)}))
-    sys.exit(0)
-# ============================================================================
-
 gamdl_parent_path = os.path.join(application_path, 'modules', 'applemusic', 'gamdl')
 if os.path.isdir(gamdl_parent_path) and gamdl_parent_path not in sys.path:
     sys.path.insert(0, gamdl_parent_path)
@@ -1572,29 +1557,6 @@ current_batch_output_path = None
 _current_download_context = None
 spotify_pre_download_warning_acknowledged = False
 _pause_countdown_line_start = None
-
-# Spotify Desktop / .dll batch pacing (votify-style "safe mode"): between most queued
-# items we wait a short interval; every 3rd Spotify item we apply the full pause
-# (download_pause_seconds) to avoid account suspensions. Counter is reset per batch.
-SPOTIFY_DLL_WAIT_INTERVAL = 15.0  # seconds between Spotify .dll batch items
-SPOTIFY_DLL_PAUSE_EVERY = 3       # full pause every N Spotify .dll items
-_spotify_dll_batch_counter = 0
-
-
-def _reset_spotify_dll_batch_counter():
-    global _spotify_dll_batch_counter
-    _spotify_dll_batch_counter = 0
-
-
-def _next_spotify_dll_batch_pause(big_pause_seconds):
-    """votify-style pacing for the Spotify .dll batch queue: a short interval between
-    items, with the full pause every Nth item. Returns the pause in seconds (±25% jitter)."""
-    global _spotify_dll_batch_counter
-    import random as _r
-    _spotify_dll_batch_counter += 1
-    base = big_pause_seconds if (_spotify_dll_batch_counter % SPOTIFY_DLL_PAUSE_EVERY == 0) else SPOTIFY_DLL_WAIT_INTERVAL
-    jitter = base * 0.25
-    return _r.uniform(max(0.0, base - jitter), base + jitter)
 
 _queue_log_handler_instance = None
 
@@ -7444,97 +7406,6 @@ def _show_spotify_pre_download_warning() -> bool:
     return result[0]
 
 
-def _show_spotify_dll_instructions():
-    """Shows specialized instructions for Spotify.dll missing with clickable path."""
-    global app
-    dialog_width = 560
-    dialog_height = 220
-
-    dialog = customtkinter.CTkToplevel(app)
-    dialog.title("Missing Spotify.dll")
-    dialog.geometry(f"{dialog_width}x{dialog_height}")
-    dialog.resizable(False, False)
-    dialog.attributes("-topmost", True)
-    dialog.transient(app)
-
-    # Center dialog (DPI-aware)
-    _center_dialog_on_app(dialog, dialog_width, dialog_height)
-    
-    main_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
-    main_frame.pack(fill="both", expand=True, padx=30, pady=25)
-
-    # Instruction (Centered)
-    customtkinter.CTkLabel(
-        main_frame, 
-        text="Spotify.dll is required for Lossless downloads.",
-        font=("Segoe UI", 13, "bold"),
-        text_color=WHITE_TEXT_COLOR,
-        wraplength=500,
-        justify="center"
-    ).pack(pady=(0, 15), fill="x")
-
-    # Link line (Centered group)
-    link_container = customtkinter.CTkFrame(main_frame, fg_color="transparent")
-    link_container.pack(fill="x")
-    
-    # Inner frame to keep the pieces Together but allow the whole line to be centered
-    link_inner = customtkinter.CTkFrame(link_container, fg_color="transparent")
-    link_inner.pack(anchor="center")
-    
-    customtkinter.CTkLabel(link_inner, text="Please download it and place it in the ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-    
-    def open_app_folder():
-        try:
-            target_dir = get_data_directory() or application_path
-            if platform.system() == "Windows":
-                os.startfile(target_dir)
-            elif platform.system() == "Darwin":
-                subprocess.run(["open", target_dir])
-            else:
-                subprocess.run(["xdg-open", target_dir])
-        except Exception: pass
-
-    folder_link = customtkinter.CTkLabel(
-        link_inner, 
-        text="same folder", 
-        font=("Segoe UI", 12, "underline"), 
-        text_color=LINK_COLOR, 
-        cursor=HAND_CURSOR_LINK
-    )
-    folder_link.pack(side="left")
-    folder_link.bind("<Button-1>", lambda e: open_app_folder())
-    folder_link.bind("<Enter>", lambda e: folder_link.configure(text_color=LINK_HOVER_COLOR))
-    folder_link.bind("<Leave>", lambda e: folder_link.configure(text_color=LINK_COLOR))
-    
-    customtkinter.CTkLabel(link_inner, text=" used by this app.", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-
-    # Buttons (Centered)
-    mega_url = "https://orpheusdl-gui.x10.mx/Spotify.dll"
-    
-    download_btn = customtkinter.CTkButton(
-        main_frame, 
-        text="Download", 
-        width=100, 
-        height=30,
-        command=lambda: _open_url(mega_url)
-    )
-    download_btn.pack(pady=(25, 0))
-
-    default_target = get_data_directory() or application_path
-    customtkinter.CTkLabel(
-        main_frame,
-        text=f"Default: {default_target}",
-        font=("Segoe UI", 10),
-        text_color=GRAY_TEXT_COLOR,
-        wraplength=500,
-        justify="center"
-    ).pack(pady=(10, 0), fill="x")
-
-    _schedule_toplevel_window_chrome(dialog)
-    dialog.grab_set()
-    dialog.wait_window()
-
-
 def _show_deno_install_message():
     """Show a pop-up with Deno install instructions (macOS/Linux; Deno is not bundled). Shown when user tries to download from YouTube."""
     system = platform.system()
@@ -8252,13 +8123,11 @@ def load_settings():
                 am_creds = settings["credentials"]["Amazon Music"]
                 am_creds.setdefault("email", "")
                 am_creds.setdefault("password", "")
-            # Legacy Spotify configs without use_spotify_dll: assume Desktop API (cookies + DLL)
+            # Strip obsolete Spotify.dll / Desktop API settings (Librespot is the only backend now)
             if "Spotify" in settings["credentials"]:
                 sp_c = settings["credentials"]["Spotify"]
-                if "use_spotify_dll" not in sp_c:
-                    sp_c["use_spotify_dll"] = "true"
-                    if "download_pause_seconds" not in sp_c:
-                        sp_c["download_pause_seconds"] = 60
+                sp_c.pop("use_spotify_dll", None)
+                sp_c.pop("spotify_dll_path", None)
         if current_settings.get("globals", {}).get("advanced", {}).get("debug_mode", False):
             print(f"Settings loaded and mapped from {CONFIG_FILE_PATH}")
 
@@ -8610,14 +8479,7 @@ def save_settings(show_confirmation: bool = True):
                   except: updated_gui_settings["credentials"][platform_name][field_key] = default_val # Fallback
               else:
                   # Default to string for others
-                  if field_key == "use_spotify_dll":
-                      updated_gui_settings["credentials"][platform_name][field_key] = (
-                          "true"
-                          if raw_val is True or str(raw_val).lower() in ("true", "1", "yes")
-                          else "false"
-                      )
-                  else:
-                      updated_gui_settings["credentials"][platform_name][field_key] = str(raw_val)
+                  updated_gui_settings["credentials"][platform_name][field_key] = str(raw_val)
     # Amazon Music: map quality dropdown label to stored value; keep hidden keys from current config
     _am_gui = updated_gui_settings.get("credentials", {}).get("Amazon Music")
     _am_cur = (current_settings.get("credentials") or {}).get("Amazon Music") or {}
@@ -8694,12 +8556,6 @@ def save_settings(show_confirmation: bool = True):
         if "use_id_token" not in mapped_orpheus_updates["modules"]["qobuz"] and "use_id_token" in _qobuz_creds:
             _val = _qobuz_creds.get("use_id_token")
             mapped_orpheus_updates["modules"]["qobuz"]["use_id_token"] = str(_val).lower() if _val is not None else "false"
-    _spotify_creds = current_settings.get("credentials", {}).get("Spotify", {})
-    if _spotify_creds and "spotify" in mapped_orpheus_updates["modules"]:
-        if "use_spotify_dll" not in mapped_orpheus_updates["modules"]["spotify"] and "use_spotify_dll" in _spotify_creds:
-            _val = _spotify_creds.get("use_spotify_dll")
-            mapped_orpheus_updates["modules"]["spotify"]["use_spotify_dll"] = str(_val).lower() if _val is not None else "false"
-
     # Ensure TIDAL throttle is always persisted even if key casing differs or tab vars were partial.
     _tidal_creds = (
         current_settings.get("credentials", {}).get("TIDAL")
@@ -8956,8 +8812,7 @@ def _clear_platform_session(platform_name):
                 show_centered_messagebox(
                     "No Session",
                     "No stored Spotify session data found.\n\n"
-                    "Desktop API mode: use spotify-cookies.txt and Spotify.dll.\n"
-                    "Librespot mode: OAuth/session is created when you download — credentials live under Spotify Developer settings.",
+                    "Librespot OAuth/session is created when you download — credentials live under Spotify Developer settings.",
                     dialog_type="info",
                 )
             return
@@ -12180,16 +12035,13 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
         for netloc_pattern, mod_name in orpheus.module_netloc_constants.items():
             if re.findall(netloc_pattern, parsed_url.netloc): module_name = mod_name; break
 
-        # Spotify fallback in Librespot mode:
+        # Spotify uses the Librespot backend (OGG only):
         # force unsupported higher tiers to OGG 320-equivalent ("high").
         if module_name == 'spotify':
-            spotify_creds = (fresh_orpheus_settings.get("modules", {}).get("spotify", {}) or {})
-            use_dll = str(spotify_creds.get("use_spotify_dll", "false")).lower() in ("true", "1", "yes")
-            if not use_dll:
-                current_q = str(downloader_settings.get("general", {}).get("download_quality", "")).lower()
-                if current_q in ("atmos", "hifi", "lossless"):
-                    downloader_settings.setdefault("general", {})["download_quality"] = "high"
-                    print("|GRAY|Spotify Librespot mode does not support Atmos/Lossless tiers. Falling back to High.|RESET|")
+            current_q = str(downloader_settings.get("general", {}).get("download_quality", "")).lower()
+            if current_q in ("atmos", "hifi", "lossless"):
+                downloader_settings.setdefault("general", {})["download_quality"] = "high"
+                print("|GRAY|Spotify (Librespot) does not support Atmos/Lossless tiers. Falling back to High.|RESET|")
 
         # Smart Atmos Fallback: If quality is set to 'atmos' but platform/track doesn't support it, fall back to 'hifi'
         if downloader_settings.get("general", {}).get("download_quality") == "atmos":
@@ -12634,26 +12486,14 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
                                 _sp_cred = _creds.get('Spotify') or {}
                                 _raw_sp_pause = _sp_mod.get('download_pause_seconds')
                                 if _raw_sp_pause is None or str(_raw_sp_pause).strip() == "":
-                                    _sp_dll_raw = _sp_mod.get('use_spotify_dll', _sp_cred.get('use_spotify_dll', 'false'))
-                                    _sp_dll = str(_sp_dll_raw).lower() in ('true', '1', 'yes')
-                                    pause_seconds = float(60 if _sp_dll else 30)
+                                    pause_seconds = 30.0
                                 else:
                                     pause_seconds = float(_raw_sp_pause)
                             else:
                                 pause_seconds = 0.0
 
                             if pause_seconds > 0:
-                                if 'spotify.com' in _next_url_l:
-                                    _sp_dll_raw = _sp_mod.get('use_spotify_dll', _sp_cred.get('use_spotify_dll', 'false'))
-                                    _sp_use_dll = str(_sp_dll_raw).lower() in ('true', '1', 'yes')
-                                else:
-                                    _sp_use_dll = False
-                                if _sp_use_dll:
-                                    # votify-style: short interval between items, full pause every 3rd
-                                    pause_actual = _next_spotify_dll_batch_pause(pause_seconds)
-                                else:
-                                    pause_actual = pause_seconds
-                                pause_ms = max(1, int(pause_actual * 1000))
+                                pause_ms = max(1, int(pause_seconds * 1000))
                         except Exception as e:
                             print(f"[Warning] Could not read pause setting: {e}")
 
@@ -12786,41 +12626,27 @@ def _start_single_download(url_to_download, output_path_final, search_result_dat
         show_centered_messagebox("Input Error", f"Could not process input: {url_to_download}\nError: {parse_e}\nPlease enter a valid web URL or .txt file path.", dialog_type="error")
         return False
 
-    # Spotify: Desktop API needs cookies + DLL; Librespot needs Developer credentials.
-    # Account-suspension warning is shown for BOTH methods (DLL and Librespot) since
-    # downloading from Spotify carries the same risk regardless of backend.
+    # Spotify (Librespot): needs Spotify Developer credentials + username.
+    # Account-suspension warning is shown since downloading from Spotify carries risk.
     if "spotify.com" in url_to_download:
         spotify_creds = (current_settings.get("credentials") or {}).get("Spotify") or {}
-        use_dll = str(spotify_creds.get("use_spotify_dll", "false")).lower() in ("true", "1", "yes")
-        if use_dll:
-            cookies_path = (spotify_creds.get("cookies_path") or "").strip() or "./config/spotify-cookies.txt"
-            cookies_path = _resolve_relative_user_or_resource_path(cookies_path)
-            if not os.path.isfile(cookies_path):
-                _show_spotify_cookies_instructions()
-                return False
-            raw_dll_path = (spotify_creds.get("spotify_dll_path") or "./Spotify.dll").strip() or "./Spotify.dll"
-            dll_path = _resolve_relative_user_or_resource_path(raw_dll_path)
-            if not os.path.isfile(dll_path):
-                _show_spotify_dll_instructions()
-                return False
-        else:
-            missing = []
-            if not (spotify_creds.get("username") or "").strip():
-                missing.append("Username")
-            if not (spotify_creds.get("client_id") or "").strip():
-                missing.append("Client ID")
-            if not (spotify_creds.get("client_secret") or "").strip():
-                missing.append("Client Secret")
-            if missing:
-                show_centered_messagebox(
-                    "Spotify credentials required",
-                    "Librespot mode is enabled. Please set in Settings → Spotify:\n\n"
-                    + "\n".join(f"• {m}" for m in missing),
-                    dialog_type="warning",
-                )
-                return False
+        missing = []
+        if not (spotify_creds.get("username") or "").strip():
+            missing.append("Username")
+        if not (spotify_creds.get("client_id") or "").strip():
+            missing.append("Client ID")
+        if not (spotify_creds.get("client_secret") or "").strip():
+            missing.append("Client Secret")
+        if missing:
+            show_centered_messagebox(
+                "Spotify credentials required",
+                "Please set in Settings → Spotify:\n\n"
+                + "\n".join(f"• {m}" for m in missing),
+                dialog_type="warning",
+            )
+            return False
 
-        # Show suspension warning once per session for both DLL and Librespot backends.
+        # Show suspension warning once per session.
         if not spotify_pre_download_warning_acknowledged:
             if not _show_spotify_pre_download_warning():
                 return False
@@ -12967,8 +12793,7 @@ def start_download_thread(search_result_data=None):
         input_text = url_entry.get().strip()
         if not input_text:
              show_centered_messagebox("Info", "Please enter a URL or a file path.", dialog_type="warning"); return
-        # New user-initiated download session: show Spotify suspension warning once
-        # (applies to both Spotify.dll and Librespot backends).
+        # New user-initiated download session: show Spotify suspension warning once.
         spotify_pre_download_warning_acknowledged = False
 
         output_path = path_var_main.get().strip()
@@ -13009,7 +12834,6 @@ def start_download_thread(search_result_data=None):
                 current_batch_output_path = None
                 return
             file_download_queue.extend(urls_in_file)
-            _reset_spotify_dll_batch_counter()
             print(f"Added {len(file_download_queue)} URLs to the download queue.")
             if file_download_queue:
                 first_url = file_download_queue.pop(0)
@@ -14980,8 +14804,6 @@ def show_search_context_menu(event):
                 ("AAC 96", "low")
             ],
             'spotify': [
-                ("24-bit FLAC", "hifi"),
-                ("16-bit FLAC", "lossless"),
                 ("OGG 320", "high"),
                 ("OGG 160", "low"),
             ],
@@ -15172,23 +14994,8 @@ def show_search_context_menu(event):
             elif best_mp3 > 0:
                 platform_button_configs['soundcloud'] = [("FLAC", "lossless"), (f"MP3 {best_mp3}", "high"), ("MP3 64", "low")]
 
-        # Spotify quality options depend on Desktop API (DLL) mode:
-        # - DLL enabled: FLAC + OGG options
-        # - DLL disabled (Librespot): OGG only
-        spotify_use_dll = False
-        try:
-            if 'settings_vars' in globals() and 'credentials' in settings_vars:
-                sp_settings = settings_vars['credentials'].get('Spotify', {})
-                if 'use_spotify_dll' in sp_settings:
-                    _v = sp_settings['use_spotify_dll'].get()
-                    spotify_use_dll = bool(_v) if not isinstance(_v, str) else _v.lower() in ("true", "1", "yes")
-            if not spotify_use_dll and 'current_settings' in globals():
-                _stored = ((current_settings.get('credentials') or {}).get('Spotify') or {}).get('use_spotify_dll', "false")
-                spotify_use_dll = str(_stored).lower() in ("true", "1", "yes")
-        except Exception:
-            spotify_use_dll = False
-
-        spotify_quals = ['hifi', 'lossless', 'high', 'low'] if spotify_use_dll else ['high', 'low']
+        # Spotify uses the Librespot backend (OGG only).
+        spotify_quals = ['high', 'low']
 
         platform_available_qualities = {
             'applemusic': am_quals,
@@ -16204,7 +16011,6 @@ def download_selected():
                 current_batch_output_path = None
             file_download_queue.clear()
             file_download_queue.extend(urls_to_download)
-            _reset_spotify_dll_batch_counter()
             if file_download_queue:
                 first_url = file_download_queue.pop(0)
                 print(f"Starting batch download with first URL: {first_url}")
@@ -16771,11 +16577,11 @@ def _create_credential_tab_content(platform_name, tab_frame):
         label_mapping = {
             'download_pause_seconds': 'Pause Between Downloads (seconds)',
             'download_mode': 'Download mode',
-            'user_id': 'User ID',
+            'user_id': 'ID',
+            'auth_token': 'Token',
             'client_id': 'Client ID',
             'client_secret': 'Client Secret',
             'cookies_path': 'Cookies file (Netscape format)',
-            'spotify_dll_path': 'Spotify.dll path (for FLAC)',
             'embed_spotify_lyrics': 'Embed Spotify lyrics',
             'username': 'Username',
             'email': 'Email',
@@ -16793,33 +16599,26 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
         if platform_name == "Spotify":
             sp_creds = current_settings.get("credentials", {}).get("Spotify", {})
-            stored_dll = sp_creds.get("use_spotify_dll", "false")
-            use_dll_init = str(stored_dll).lower() in ("true", "1", "yes")
 
             grid_parent.grid_columnconfigure(1, weight=1)
 
             _sp_pause_lib = 30
-            _sp_pause_desk = 60
 
-            var_use_dll = tkinter.BooleanVar(value=use_dll_init)
             var_username = tkinter.StringVar(value=str(sp_creds.get("username") or ""))
             var_client_id = tkinter.StringVar(value=str(sp_creds.get("client_id") or ""))
             var_client_secret = tkinter.StringVar(value=str(sp_creds.get("client_secret") or ""))
             _raw_dp = sp_creds.get("download_pause_seconds", None)
-            _fallback_pause = _sp_pause_desk if use_dll_init else _sp_pause_lib
             if _raw_dp is not None and str(_raw_dp).strip() != "":
                 try:
                     dp_val = int(_raw_dp)
                 except (TypeError, ValueError):
-                    dp_val = _fallback_pause
+                    dp_val = _sp_pause_lib
             else:
-                dp_val = _fallback_pause
+                dp_val = _sp_pause_lib
             var_dl_pause = tkinter.StringVar(value=str(dp_val))
 
             ck_def = sp_creds.get("cookies_path") or "./config/spotify-cookies.txt"
             var_cookies = tkinter.StringVar(value=str(ck_def))
-            dll_def = sp_creds.get("spotify_dll_path") or "./Spotify.dll"
-            var_dll = tkinter.StringVar(value=str(dll_def))
 
             if platform_name not in settings_vars["credentials"]:
                 settings_vars["credentials"][platform_name] = {}
@@ -16829,13 +16628,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
             sv["client_secret"] = var_client_secret
             sv["download_pause_seconds"] = var_dl_pause
             sv["cookies_path"] = var_cookies
-            sv["spotify_dll_path"] = var_dll
-            sv["use_spotify_dll"] = var_use_dll
 
             lib_frame = customtkinter.CTkFrame(grid_parent, fg_color="transparent")
-            desk_frame = customtkinter.CTkFrame(grid_parent, fg_color="transparent")
             lib_frame.grid_columnconfigure(1, weight=1)
-            desk_frame.grid_columnconfigure(1, weight=1)
             _sp_field_padx = (10, 5)
 
             lr = 0
@@ -16858,10 +16653,6 @@ def _create_credential_tab_content(platform_name, tab_frame):
             ent_pause.bind("<FocusIn>", lambda e, w=ent_pause: handle_focus_in(w))
             ent_pause.bind("<FocusOut>", lambda e, w=ent_pause: handle_focus_out(w))
             _sp_pause_tooltip_lib = "Delay in seconds between track downloads."
-            _sp_pause_tooltip_desk = (
-                "Delay in seconds between track downloads.\n"
-                "A random timing offset of about 25% is applied to each pause to reduce predictable request patterns."
-            )
             CTkToolTip(lbl_lib_pause, message=_sp_pause_tooltip_lib, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
             CTkToolTip(ent_pause, message=_sp_pause_tooltip_lib, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
             lr += 1
@@ -16880,16 +16671,17 @@ def _create_credential_tab_content(platform_name, tab_frame):
             ent_sec.bind("<Button-3>", show_context_menu)
             ent_sec.bind("<FocusIn>", lambda e, w=ent_sec: _masked_entry_focus_in(w))
             ent_sec.bind("<FocusOut>", lambda e, w=ent_sec: _masked_entry_focus_out(w))
+            lr += 1
 
-            dr = 0
-            lbl_sp_cookies = customtkinter.CTkLabel(desk_frame, text=label_mapping["cookies_path"])
-            lbl_sp_cookies.grid(row=dr, column=0, sticky="nw", padx=10, pady=_lib_top)
-            cookie_container = customtkinter.CTkFrame(desk_frame, fg_color="transparent")
-            cookie_container.grid(row=dr, column=1, sticky="new", padx=_sp_field_padx, pady=_lib_top)
+            # Cookies path (sp_dc) — used for Spotify synced lyrics.
+            lbl_sp_cookies = customtkinter.CTkLabel(lib_frame, text="Cookies file (to get lyrics)")
+            lbl_sp_cookies.grid(row=lr, column=0, sticky="nw", padx=10, pady=_lib_mid)
+            cookie_container = customtkinter.CTkFrame(lib_frame, fg_color="transparent")
+            cookie_container.grid(row=lr, column=1, sticky="new", padx=_sp_field_padx, pady=_lib_mid)
             cookie_container.grid_columnconfigure(0, weight=1)
             ent_ck = customtkinter.CTkEntry(cookie_container, textvariable=var_cookies)
             ent_ck.grid(row=0, column=0, sticky="ew")
-            _sp_cookies_tooltip = "Path to cookies.txt in Netscape format, required for Spotify Desktop mode."
+            _sp_cookies_tooltip = "Path to cookies.txt in Netscape format (sp_dc). Optional — used for Spotify synced lyrics."
             CTkToolTip(lbl_sp_cookies, message=_sp_cookies_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
             CTkToolTip(ent_ck, message=_sp_cookies_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
             warn_ck = customtkinter.CTkLabel(cookie_container, text="", text_color=ERROR_COLOR, font=("Segoe UI", 10), anchor="w", height=12)
@@ -16939,7 +16731,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     show_centered_messagebox("Error", f"Could not open config folder:\n{ex}", dialog_type="error")
 
             btn_open = customtkinter.CTkButton(
-                desk_frame,
+                lib_frame,
                 text="Open",
                 width=100,
                 height=30,
@@ -16948,88 +16740,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 hover_color=LINK_COLOR,
                 border_width=0,
             )
-            btn_open.grid(row=dr, column=2, sticky="ne", padx=(5, 5), pady=(9, 5))
-            dr += 1
+            btn_open.grid(row=lr, column=2, sticky="ne", padx=(5, 5), pady=(4, 5))
 
-            _desk_pause_pady = (3, 5)
-            lbl_desk_pause = customtkinter.CTkLabel(desk_frame, text=label_mapping["download_pause_seconds"])
-            lbl_desk_pause.grid(
-                row=dr, column=0, sticky="nw", padx=10, pady=_desk_pause_pady
-            )
-            desk_ent_pause = customtkinter.CTkEntry(desk_frame, textvariable=var_dl_pause)
-            desk_ent_pause.grid(row=dr, column=1, sticky="ew", padx=_sp_field_padx, pady=_desk_pause_pady)
-            desk_ent_pause.bind("<Button-3>", show_context_menu)
-            desk_ent_pause.bind("<FocusIn>", lambda e, w=desk_ent_pause: handle_focus_in(w))
-            desk_ent_pause.bind("<FocusOut>", lambda e, w=desk_ent_pause: handle_focus_out(w))
-            CTkToolTip(lbl_desk_pause, message=_sp_pause_tooltip_desk, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
-            CTkToolTip(desk_ent_pause, message=_sp_pause_tooltip_desk, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
-            dr += 1
-
-            lbl_sp_dll = customtkinter.CTkLabel(desk_frame, text=label_mapping["spotify_dll_path"])
-            lbl_sp_dll.grid(row=dr, column=0, sticky="nw", padx=10, pady=_lib_mid)
-
-            def _browse_spotify_dll():
-                initial_dir = os.path.dirname(var_dll.get()) if var_dll.get() and os.path.exists(os.path.dirname(var_dll.get())) else get_script_directory()
-                fp = tkinter.filedialog.askopenfilename(
-                    initialdir=initial_dir,
-                    filetypes=[("DLL files", "*.dll"), ("All files", "*.*")],
-                    title="Select Spotify.dll",
-                )
-                if fp:
-                    var_dll.set(fp)
-
-            ent_dll = customtkinter.CTkEntry(desk_frame, textvariable=var_dll)
-            ent_dll.grid(row=dr, column=1, sticky="new", padx=_sp_field_padx, pady=_lib_mid)
-            ent_dll.bind("<Button-3>", show_context_menu)
-            ent_dll.bind("<FocusIn>", lambda e, w=ent_dll: handle_focus_in(w))
-            ent_dll.bind("<FocusOut>", lambda e, w=ent_dll: handle_focus_out(w))
-            _sp_dll_tooltip = "Path to Spotify.dll. Required for FLAC downloads in Spotify Desktop mode."
-            CTkToolTip(lbl_sp_dll, message=_sp_dll_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
-            CTkToolTip(ent_dll, message=_sp_dll_tooltip, bg_color=TOOLTIP_MENU_BG, text_color=WHITE_TEXT_COLOR, padx=12, pady=12)
-            btn_browse = customtkinter.CTkButton(
-                desk_frame,
-                text="Browse",
-                width=100,
-                height=30,
-                command=_browse_spotify_dll,
-                fg_color=ent_dll._fg_color,
-                hover_color=LINK_COLOR,
-                border_width=0,
-            )
-            btn_browse.grid(row=dr, column=2, sticky="ne", padx=(5, 5), pady=(4, 5))
-
-            def _spotify_apply_pause_for_mode(use_dll_mode):
-                val = _sp_pause_desk if use_dll_mode else _sp_pause_lib
-                var_dl_pause.set(str(val))
-                try:
-                    cs = current_settings.setdefault("credentials", {}).setdefault("Spotify", {})
-                    cs["download_pause_seconds"] = val
-                except Exception:
-                    pass
-                try:
-                    save_settings(show_confirmation=False)
-                except Exception:
-                    pass
-
-            def _spotify_mode_toggle():
-                ud = var_use_dll.get()
-                _spotify_apply_pause_for_mode(ud)
-                if ud:
-                    lib_frame.grid_remove()
-                    desk_frame.grid(row=0, column=0, columnspan=3, sticky="ew")
-                else:
-                    desk_frame.grid_remove()
-                    lib_frame.grid(row=0, column=0, columnspan=3, sticky="ew")
-                if hasattr(tab_frame, "spotify_help_update"):
-                    tab_frame.spotify_help_update(ud)
-
-            tab_frame._spotify_mode_toggle = _spotify_mode_toggle
-            if use_dll_init:
-                lib_frame.grid_remove()
-                desk_frame.grid(row=0, column=0, columnspan=3, sticky="ew")
-            else:
-                desk_frame.grid_remove()
-                lib_frame.grid(row=0, column=0, columnspan=3, sticky="ew")
+            lib_frame.grid(row=0, column=0, columnspan=3, sticky="ew")
 
         if platform_name == "Amazon Music":
             am_creds = current_settings.get("credentials", {}).get("Amazon Music", {})
@@ -17748,105 +17461,6 @@ def _create_credential_tab_content(platform_name, tab_frame):
             )
             title_label.pack(side="left", anchor="center")
 
-            left_col_desktop = customtkinter.CTkFrame(left_col, fg_color="transparent")
-
-            step1_frame = customtkinter.CTkFrame(left_col_desktop, fg_color="transparent")
-            step1_frame.pack(anchor="w", pady=0)
-
-            customtkinter.CTkLabel(step1_frame, text="1.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step1_frame, text="Install extension", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-
-            step1_bullets_frame = customtkinter.CTkFrame(left_col_desktop, fg_color="transparent")
-            step1_bullets_frame.pack(anchor="w", pady=(0, 4))
-            customtkinter.CTkLabel(step1_bullets_frame, text="", width=35).pack(side="left")
-
-            customtkinter.CTkLabel(step1_bullets_frame, text="• Chrome / Edge → ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-
-            sp_chrome_link = customtkinter.CTkLabel(
-                step1_bullets_frame,
-                text="Get cookies.txt",
-                font=("Segoe UI", 12, "underline"),
-                text_color=LINK_COLOR,
-                cursor=HAND_CURSOR_LINK,
-            )
-            sp_chrome_link.pack(side="left")
-            sp_chrome_link.bind(
-                "<Button-1>",
-                lambda e: _open_url("https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?pli=1"),
-            )
-            sp_chrome_link.bind("<Enter>", lambda e: sp_chrome_link.configure(text_color=LINK_HOVER_COLOR))
-            sp_chrome_link.bind("<Leave>", lambda e: sp_chrome_link.configure(text_color=LINK_COLOR))
-
-            customtkinter.CTkLabel(step1_bullets_frame, text=" or Firefox → ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-
-            sp_firefox_link = customtkinter.CTkLabel(
-                step1_bullets_frame,
-                text="cookies.txt",
-                font=("Segoe UI", 12, "underline"),
-                text_color=LINK_COLOR,
-                cursor=HAND_CURSOR_LINK,
-            )
-            sp_firefox_link.pack(side="left")
-            sp_firefox_link.bind(
-                "<Button-1>",
-                lambda e: _open_url("https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/"),
-            )
-            sp_firefox_link.bind("<Enter>", lambda e: sp_firefox_link.configure(text_color=LINK_HOVER_COLOR))
-            sp_firefox_link.bind("<Leave>", lambda e: sp_firefox_link.configure(text_color=LINK_COLOR))
-
-            step2_frame = customtkinter.CTkFrame(left_col_desktop, fg_color="transparent")
-            step2_frame.pack(anchor="w", pady=0)
-
-            customtkinter.CTkLabel(step2_frame, text="2.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-
-            step2_text_frame = customtkinter.CTkFrame(step2_frame, fg_color="transparent")
-            step2_text_frame.pack(side="left")
-
-            customtkinter.CTkLabel(step2_text_frame, text="Log in to ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-
-            sp_login_link = customtkinter.CTkLabel(
-                step2_text_frame,
-                text="Spotify",
-                font=("Segoe UI", 12, "underline"),
-                text_color=LINK_COLOR,
-                cursor=HAND_CURSOR_LINK,
-            )
-            sp_login_link.pack(side="left")
-            sp_login_link.bind("<Button-1>", lambda e: _open_url("https://www.spotify.com"))
-            sp_login_link.bind("<Enter>", lambda e: sp_login_link.configure(text_color=LINK_HOVER_COLOR))
-            sp_login_link.bind("<Leave>", lambda e: sp_login_link.configure(text_color=LINK_COLOR))
-
-            customtkinter.CTkLabel(step2_text_frame, text=" ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-            customtkinter.CTkLabel(
-                step2_text_frame,
-                text="(active subscription required)",
-                font=("Segoe UI", 12, "italic"),
-                text_color=GRAY_TEXT_COLOR,
-            ).pack(side="left")
-
-            step3_frame = customtkinter.CTkFrame(left_col_desktop, fg_color="transparent")
-            step3_frame.pack(anchor="w", pady=(5, 0))
-
-            customtkinter.CTkLabel(step3_frame, text="3.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
-            customtkinter.CTkLabel(step3_frame, text="Export & save as ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-            customtkinter.CTkLabel(
-                step3_frame,
-                text="spotify-cookies.txt",
-                font=("Segoe UI", 12, "italic"),
-                text_color=GRAY_TEXT_COLOR,
-            ).pack(side="left")
-
-            step3_path_frame = customtkinter.CTkFrame(left_col_desktop, fg_color="transparent")
-            step3_path_frame.pack(anchor="w", pady=(0, 4))
-            customtkinter.CTkLabel(step3_path_frame, text="", width=35).pack(side="left")
-            customtkinter.CTkLabel(step3_path_frame, text="Path: ", font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR).pack(side="left")
-            customtkinter.CTkLabel(
-                step3_path_frame,
-                text="./config/spotify-cookies.txt",
-                font=("Segoe UI", 12, "italic"),
-                text_color=GRAY_TEXT_COLOR,
-            ).pack(side="left")
-
             left_col_lib = customtkinter.CTkFrame(left_col, fg_color="transparent")
 
             _sp_redirect_uri = "http://127.0.0.1:4381/login"
@@ -17967,45 +17581,9 @@ def _create_credential_tab_content(platform_name, tab_frame):
                 text_color=GRAY_TEXT_COLOR,
             ).pack(side="left")
 
-            sp_help_creds = current_settings.get("credentials", {}).get("Spotify", {})
-            sp_help_use_dll = str(sp_help_creds.get("use_spotify_dll", "false")).lower() in ("true", "1", "yes")
-
-            def _spotify_help_update(use_dll):
-                if use_dll:
-                    left_col_lib.pack_forget()
-                    left_col_desktop.pack(anchor="w", fill="x")
-                else:
-                    left_col_desktop.pack_forget()
-                    left_col_lib.pack(anchor="w", fill="x")
-
-            tab_frame.spotify_help_update = _spotify_help_update
-            if sp_help_use_dll:
-                left_col_lib.pack_forget()
-                left_col_desktop.pack(anchor="w", fill="x")
-            else:
-                left_col_desktop.pack_forget()
-                left_col_lib.pack(anchor="w", fill="x")
+            left_col_lib.pack(anchor="w", fill="x")
 
             _add_clear_session_icon(help_frame, "Spotify")
-
-            spotify_chk_bar = customtkinter.CTkFrame(tab_frame, fg_color="transparent")
-            # Match Deezer padx/pdy on deezer_chk_frame; keep gap under help small so toggle stays visible
-            spotify_chk_bar.pack(fill="x", anchor="w", padx=10, pady=(6, 5))
-            chk_dll = customtkinter.CTkCheckBox(
-                spotify_chk_bar,
-                text="Use Spotify.dll instead (supports Lossless)",
-                variable=var_use_dll,
-                command=tab_frame._spotify_mode_toggle,
-            )
-            chk_dll.pack(side="left")
-            CTkToolTip(
-                chk_dll,
-                message="Checked: Desktop API — spotify-cookies.txt + Spotify.dll (FLAC + OGG).\nUnchecked: Librespot — Spotify Developer Client ID/Secret + username (OGG only).",
-                bg_color=TOOLTIP_MENU_BG,
-                text_color=WHITE_TEXT_COLOR,
-                padx=12,
-                pady=12,
-            )
         
         # Add help text for Apple Music module
         if platform_name == "Apple Music":
@@ -18930,14 +18508,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             demo_url = SEE_DEMO_URLS[platform_name]
             
             def _on_demo_click():
-                if platform_name == "Spotify":
-                    try:
-                        use_dll = settings_vars.get("credentials", {}).get("Spotify", {}).get("use_spotify_dll").get()
-                    except Exception:
-                        use_dll = False
-                    url = "https://youtu.be/S1wVm79U-wk" if use_dll else "https://youtu.be/aJYDACfilRM"
-                else:
-                    url = demo_url
+                url = demo_url
                 _open_url(url)
 
             demo_btn = customtkinter.CTkButton(
@@ -18953,6 +18524,20 @@ def _create_credential_tab_content(platform_name, tab_frame):
             # Use place for absolute positioning within the relative frame
             # x=-15, y=15 gives it some padding from the top-right corner
             demo_btn.place(relx=1.0, y=20, anchor="ne", x=-15)
+
+            # Spotify: a second button under "See demo" linking to the lyrics-setup video
+            if platform_name == "Spotify":
+                lyrics_btn = customtkinter.CTkButton(
+                    help_frame,
+                    text="Get lyrics",
+                    width=80,
+                    height=26,
+                    font=("Segoe UI", 11),
+                    fg_color=BUTTON_COLOR,
+                    hover_color=LINK_COLOR,
+                    command=lambda: _open_url("https://youtu.be/S1wVm79U-wk"),
+                )
+                lyrics_btn.place(relx=1.0, y=52, anchor="ne", x=-15)
 
 
     except Exception as e:
@@ -18978,14 +18563,6 @@ def _handle_settings_tab_change():
             if deezer_use_arl_var is not None and hasattr(deezer_use_arl_var, "get"):
                 use_arl = deezer_use_arl_var.get()
                 tab_frame.after_idle(lambda u=use_arl: tab_frame.deezer_help_update(u))
-
-    if selected_tab_name == "Spotify":
-        tab_frame = credential_tabs_config.get(selected_tab_name, {}).get("frame")
-        if tab_frame and hasattr(tab_frame, "spotify_help_update"):
-            use_dll_var = settings_vars.get("credentials", {}).get("Spotify", {}).get("use_spotify_dll")
-            if use_dll_var is not None and hasattr(use_dll_var, "get"):
-                use_dll = use_dll_var.get()
-                tab_frame.after_idle(lambda u=use_dll: tab_frame.spotify_help_update(u))
 
     # Deezer/Qobuz: minimal space; Global: less space above Save; other platform tabs: balanced
     if 'settings_bottom_frame' in globals() and settings_bottom_frame and settings_bottom_frame.winfo_exists():
@@ -19389,26 +18966,14 @@ def final_download_cleanup(success=False):
                         _sp_cred = _creds.get('Spotify') or {}
                         _raw_sp_pause = _sp_mod.get('download_pause_seconds')
                         if _raw_sp_pause is None or str(_raw_sp_pause).strip() == "":
-                            _sp_dll_raw = _sp_mod.get('use_spotify_dll', _sp_cred.get('use_spotify_dll', 'false'))
-                            _sp_dll = str(_sp_dll_raw).lower() in ('true', '1', 'yes')
-                            pause_seconds = float(60 if _sp_dll else 30)
+                            pause_seconds = 30.0
                         else:
                             pause_seconds = float(_raw_sp_pause)
                     else:
                         pause_seconds = 0
                     
                     if pause_seconds and pause_seconds > 0:
-                        if 'spotify.com' in next_url:
-                            _sp_dll_raw = _sp_mod.get('use_spotify_dll', _sp_cred.get('use_spotify_dll', 'false'))
-                            _sp_use_dll = str(_sp_dll_raw).lower() in ('true', '1', 'yes')
-                        else:
-                            _sp_use_dll = False
-                        if _sp_use_dll:
-                            # votify-style: short interval between items, full pause every 3rd
-                            pause_actual = _next_spotify_dll_batch_pause(pause_seconds)
-                        else:
-                            pause_actual = pause_seconds
-                        pause_ms = max(1, int(pause_actual * 1000))
+                        pause_ms = max(1, int(pause_seconds * 1000))
                 except Exception as e:
                     print(f"[Warning] Could not read pause setting: {e}")
                 
@@ -19755,8 +19320,6 @@ if __name__ == "__main__":
                     "client_id": "",
                     "client_secret": "",
                     "cookies_path": "./config/spotify-cookies.txt",
-                    "spotify_dll_path": "./Spotify.dll",
-                    "use_spotify_dll": "false",
                 },
                 "TIDAL": { "tv_atmos_token": "4N3n6Q1x95LL5K7p", "tv_atmos_secret": "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik=", "mobile_atmos_hires_token": "km8T1xS355y7dd3H", "mobile_hires_token": "6BDSRdpK9hqEBTgU", "enable_mobile": True, "prefer_ac4": False, "fix_mqa": True, "throttle": True },
                 "Amazon Music": {

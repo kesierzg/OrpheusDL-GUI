@@ -39,16 +39,6 @@ pip install --upgrade pip wheel setuptools
 
 echo "[6/18] Installing core requirements..."
 pip install -r requirements.txt
-echo "[6/18] Cleaning stale unplayplay metadata..."
-python3 -c "import shutil,site; from pathlib import Path; roots=[Path(p) for p in site.getsitepackages()]; roots+=[Path(site.getusersitepackages())] if site.ENABLE_USER_SITE else []; [shutil.rmtree(e, ignore_errors=True) or print('[cleanup] Removed', e) for r in roots if r.is_dir() for e in r.iterdir() if e.name.startswith('unplayplay-0.0.8')]"
-echo "[6/18] Forcing unplayplay==0.0.9..."
-pip uninstall -y unplayplay >/dev/null 2>&1 || true
-pip install --no-cache-dir --upgrade --force-reinstall "unplayplay==0.0.9"
-UNPLAYPLAY_VERSION="$(pip show unplayplay 2>/dev/null | awk -F': ' '/^Version:/{print $2}')"
-if [ "$UNPLAYPLAY_VERSION" != "0.0.9" ]; then
-    echo "[FATAL] Expected unplayplay 0.0.9 but found '${UNPLAYPLAY_VERSION:-not installed}'."
-    exit 1
-fi
 pip install --no-deps --upgrade --target vendor/librespot git+https://github.com/kokarare1212/librespot-python
 if [ -n "$LIBRESPOT_CORE_PATCH_URL" ]; then
     echo "[6/18] Applying patched librespot core.py..."
@@ -100,14 +90,6 @@ fi
 cp -a temp_gui/. .
 rm -rf temp_gui
 pip install -r requirements-gui.txt
-
-echo "[10/18] Downloading Spotify.dll (required for lossless/FLAC)..."
-if [ ! -f "Spotify.dll" ]; then
-    wget http://orpheusdl-gui.x10.mx/Spotify.dll -O Spotify.dll
-    echo "Downloaded Spotify.dll ($(du -h Spotify.dll | cut -f1))"
-else
-    echo "Spotify.dll already present, skipping download"
-fi
 
 echo "[10b/18] Downloading Shaka Packager + mp4decrypt fallback (Amazon Music)..."
 python3 installer/bootstrap_extras.py --shaka --mp4decrypt || echo "[WARN] Shaka Packager download failed."
