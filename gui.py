@@ -5197,6 +5197,19 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                                 app.after(0, lambda: show_centered_messagebox("SoundCloud Artist", "No albums or tracks could be loaded for this artist. The API may not return content for this user, or the link may need to be opened from SoundCloud (e.g. soundcloud.com/username/albums).", dialog_type="info"))
                         except Exception:
                             pass
+                    elif platform_name == 'qobuz':
+                        try:
+                            if app and app.winfo_exists() and 'show_centered_messagebox' in globals():
+                                msg = (
+                                    "Could not load this artist's releases from Qobuz.\n\n"
+                                    "Guest search may be restricted for this artist. "
+                                    "Try logging in to Qobuz in Settings, or search again."
+                                )
+                                if expand_error:
+                                    msg += f"\n\n({expand_error})"
+                                app.after(0, lambda m=msg: show_centered_messagebox("Qobuz Artist", m, dialog_type="info"))
+                        except Exception:
+                            pass
             def schedule_done():
                 if app and app.winfo_exists():
                     try:
@@ -5433,6 +5446,10 @@ def _fetch_and_show_artist_albums(parent_iid, item_data):
                         module_instance.print = _artist_progress_print
                     try:
                         artist_kwargs = _amazonmusic_api_kwargs(item_data) if platform_name == 'amazonmusic' else {}
+                        if platform_name == 'qobuz':
+                            artist_kwargs['artist_name'] = item_data.get('artist') or item_data.get('title')
+                            if item_data.get('proxy_platform'):
+                                artist_kwargs['proxy_platform'] = item_data['proxy_platform']
                         info = module_instance.get_artist_info(
                             res_id,
                             get_credited_albums=get_credited_albums,
@@ -13776,6 +13793,10 @@ def _run_single_platform_search(orpheus, platform_name, search_type_str, query, 
             formatted_result['artist'] = _name
         if isinstance(extra_kwargs, dict) and extra_kwargs.get('label_slug'):
             formatted_result['label_slug'] = extra_kwargs['label_slug']
+        if isinstance(extra_kwargs, dict) and extra_kwargs.get('proxy_platform'):
+            formatted_result['proxy_platform'] = extra_kwargs['proxy_platform']
+            if extra_kwargs.get('proxy_id') is not None:
+                formatted_result['proxy_id'] = extra_kwargs['proxy_id']
         formatted_results.append(formatted_result)
         if search_stop_requested: break
     return formatted_results, None
