@@ -13344,12 +13344,50 @@ def _amazonmusic_additional_for_display(additional: str) -> str:
     return " / ".join(ordered)
 
 
+def _tidal_additional_for_display(additional: str) -> str:
+    """TIDAL Additional column: track count + ATMOS/HI-RES only."""
+    text = str(additional or "").strip()
+    if not text:
+        return ""
+
+    track_count = None
+    m = re.search(r"\b(\d+)\s*tracks?\b", text, re.I)
+    if m:
+        try:
+            tc = int(m.group(1))
+            track_count = "1 track" if tc == 1 else f"{tc} tracks"
+        except (TypeError, ValueError):
+            track_count = m.group(0).strip()
+
+    raw_parts = [p.strip() for p in re.split(r"[\/|,]", text) if p and p.strip()]
+    out: list[str] = []
+
+    def _append_once(label: str) -> None:
+        if label not in out:
+            out.append(label)
+
+    for part in raw_parts:
+        upper = part.upper()
+        if "ATMOS" in upper or "DOLBY ATMOS" in upper or "◗◖" in part:
+            _append_once("◗◖ ATMOS")
+            continue
+        if re.search(r"HI[\s\-_]*RES", upper):
+            _append_once("🅷 HI-RES")
+            continue
+
+    if track_count:
+        out.insert(0, track_count)
+    return " / ".join(out)
+
+
 def _format_additional_column(additional, platform=None) -> str:
     """Format Additional column text for the treeview (platform-aware)."""
     text = str(additional or "")
     pk = (platform or "").lower().replace(" ", "")
     if pk == "amazonmusic":
         text = _amazonmusic_additional_for_display(text)
+    elif pk == "tidal":
+        text = _tidal_additional_for_display(text)
     return _to_small_caps(text)
 
 
