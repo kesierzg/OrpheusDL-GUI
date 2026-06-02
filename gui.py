@@ -16631,7 +16631,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
             lib_frame = customtkinter.CTkFrame(grid_parent, fg_color="transparent")
             lib_frame.grid_columnconfigure(1, weight=1)
-            _sp_field_padx = (10, 5)
+            _sp_field_padx = (10, 10)
 
             lr = 0
             # Slightly tighter than default platforms — pulls “How to set up” up (matches compact mockup)
