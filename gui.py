@@ -17440,9 +17440,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
         # Spotify: help swaps between Desktop (cookies + DLL) and Librespot (Developer app / OAuth)
         if platform_name == "Spotify":
             help_frame = customtkinter.CTkFrame(tab_frame, fg_color=SURFACE_COLOR, corner_radius=5)
-            # expand MUST stay False: fill="both"+expand=True steals all vertical space in the tab and the
-            # DLL checkbox (packed after this frame) ends up below the CTkTabView clip — looks “capped”.
-            help_frame.pack(fill="x", expand=False, padx=3, pady=(7, 8), anchor="nw")
+            help_frame.pack(fill="both", expand=True, padx=3, pady=(7, 5), anchor="nw")
             help_frame.grid_columnconfigure(0, weight=1)
 
             left_col = customtkinter.CTkFrame(help_frame, fg_color="transparent")
@@ -17480,7 +17478,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     pass
 
             s1 = customtkinter.CTkFrame(left_col_lib, fg_color="transparent")
-            s1.pack(anchor="w", pady=(0, 3))
+            s1.pack(anchor="w", pady=(0, 1))
             customtkinter.CTkLabel(s1, text="1.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
             s1i = customtkinter.CTkFrame(s1, fg_color="transparent")
             s1i.pack(side="left")
@@ -17504,7 +17502,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             ).pack(side="left")
 
             s2 = customtkinter.CTkFrame(left_col_lib, fg_color="transparent")
-            s2.pack(anchor="w", pady=(0, 3))
+            s2.pack(anchor="w", pady=(0, 1))
             customtkinter.CTkLabel(s2, text="2.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
             customtkinter.CTkLabel(
                 s2,
@@ -17516,7 +17514,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             ).pack(side="left")
 
             s3 = customtkinter.CTkFrame(left_col_lib, fg_color="transparent")
-            s3.pack(anchor="w", pady=(0, 3))
+            s3.pack(anchor="w", pady=(0, 1))
             customtkinter.CTkLabel(s3, text="3.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
             customtkinter.CTkLabel(
                 s3,
@@ -17528,7 +17526,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             ).pack(side="left")
 
             s4 = customtkinter.CTkFrame(left_col_lib, fg_color="transparent")
-            s4.pack(anchor="w", pady=(0, 3))
+            s4.pack(anchor="w", pady=(0, 1))
             customtkinter.CTkLabel(s4, text="4.", font=("Segoe UI", 12, "bold"), text_color=WHITE_TEXT_COLOR, width=35).pack(side="left", anchor="n")
             s4i = customtkinter.CTkFrame(s4, fg_color="transparent")
             s4i.pack(side="left")
@@ -18529,7 +18527,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             if platform_name == "Spotify":
                 lyrics_btn = customtkinter.CTkButton(
                     help_frame,
-                    text="Get lyrics",
+                    text="Cookies",
                     width=80,
                     height=26,
                     font=("Segoe UI", 11),
