@@ -2532,6 +2532,9 @@ def get_visible_tree_items():
                 if iid not in visible_set:
                     visible_items.append(iid)
                     visible_set.add(iid)
+        # After sort/repopulate, bbox can be empty until layout runs — load from top of list
+        if not visible_items and all_items:
+            visible_items = list(all_items[:COVER_LOAD_VIEWPORT_BUFFER])
     except:
         pass
     
@@ -5110,6 +5113,18 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                         if not err_msg.startswith("Amazon Music:"):
                             err_msg = f"Amazon Music: Could not load tracks.\n{err_msg}"
                         show_centered_messagebox("Amazon Music", err_msg, dialog_type="error")
+                    elif platform_name == 'qobuz':
+                        try:
+                            if app and app.winfo_exists() and 'show_centered_messagebox' in globals():
+                                msg = (
+                                    "Could not load tracks for this album or playlist.\n\n"
+                                    "Try logging in to Qobuz in Settings if guest access is restricted."
+                                )
+                                if expand_error:
+                                    msg += f"\n\n({expand_error})"
+                                app.after(0, lambda m=msg: show_centered_messagebox("Qobuz", m, dialog_type="info"))
+                        except Exception:
+                            pass
                     if tree and tree.winfo_exists() and tree.exists(parent_iid):
                         current_values = list(tree.item(parent_iid, 'values'))
                         if current_values:
@@ -16463,6 +16478,19 @@ def sort_results(column):
                     indicator = "" if col != column else (" ▼" if is_reverse else " ▲")
                     tree.heading(col, text=heading_text + indicator)
                 except tkinter.TclError: pass
+        # Repopulating the tree does not fire scroll events; load covers for the new visible order.
+        try:
+            if 'app' in globals() and app and app.winfo_exists():
+                def _lazy_load_covers_after_sort():
+                    try:
+                        if 'tree' in globals() and tree and tree.winfo_exists():
+                            tree.update_idletasks()
+                    except Exception:
+                        pass
+                    lazy_load_visible_covers()
+                app.after(100, _lazy_load_covers_after_sort)
+        except Exception:
+            pass
     except NameError: pass
     except tkinter.TclError as e: print(f"TclError sorting results (widget destroyed?): {e}")
     except Exception as e: print(f"Error sorting results by '{column}': {e}"); show_centered_messagebox("Error", f"Sort failed: {e}", dialog_type="error")
@@ -17776,12 +17804,12 @@ def _create_credential_tab_content(platform_name, tab_frame):
             
             # See demo button for "How to set up wrapper"
             wrapper_demo_urls = {
-                "Windows": "https://youtu.be/VyEThfMFDYs",
-                "Darwin": "https://youtu.be/LuywCOPOKo0",
-                "Linux": "https://youtu.be/CEGKyGgMpks"
+                "Windows": "https://youtu.be/lrlsLD3aHM8",
+                "Darwin": "https://youtu.be/5mOK4zxKJb8",
+                "Linux": "https://youtu.be/wCEiGXEyAEs"
             }
             current_os = platform.system()
-            wrapper_url = wrapper_demo_urls.get(current_os, "https://youtu.be/CEGKyGgMpks")
+            wrapper_url = wrapper_demo_urls.get(current_os, "https://youtu.be/wCEiGXEyAEs")
             
             wrapper_demo_btn = customtkinter.CTkButton(
                 help_frame,
