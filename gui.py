@@ -8128,7 +8128,7 @@ def load_settings():
                         "disable_subscription_check": False
                     },
                     "formatting": {
-                        "discography_format": "{name}{quality}",
+                        "discography_format": "{name} {quality}",
                         "album_format": "{artist}/{name}",
                         "playlist_format": "{name}",
                         "track_filename_format": "{track_number}. {artist} - {name}",
@@ -12338,9 +12338,14 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
             downloader.service_name = module_name
             downloader.download_mode = media_type
 
-            if module_name == 'amazonmusic' and search_result_data:
+            if search_result_data:
                 if not hasattr(downloader, 'extra_kwargs') or downloader.extra_kwargs is None:
                     downloader.extra_kwargs = {}
+                addl = str(search_result_data.get('additional') or '').strip()
+                if addl:
+                    downloader.extra_kwargs['catalog_quality'] = addl
+
+            if module_name == 'amazonmusic' and search_result_data:
                 am_kwargs = _amazonmusic_api_kwargs(search_result_data)
                 if am_kwargs:
                     downloader.extra_kwargs.update(am_kwargs)
@@ -19438,7 +19443,7 @@ if __name__ == "__main__":
                     "play_sound_on_finish": True,
                 },
                 "artist_downloading": { "return_credited_albums": True, "separate_tracks_skip_downloaded": True },
-                "formatting": { "discography_format": "{name}{quality}", "album_format": "{artist}/{name}", "playlist_format": "{name}", "track_filename_format": "{track_number}. {artist} - {name}", "single_full_path_format": "{artist} - {name}", "metadata_separator": ";", "split_metadata": True, "enable_zfill": True, "force_album_format": False, "use_playlist_position": False, "use_album_position": False },
+                "formatting": { "discography_format": "{name} {quality}", "album_format": "{artist}/{name}", "playlist_format": "{name}", "track_filename_format": "{track_number}. {artist} - {name}", "single_full_path_format": "{artist} - {name}", "metadata_separator": ";", "split_metadata": True, "enable_zfill": True, "force_album_format": False, "use_playlist_position": False, "use_album_position": False },
                 "codecs": {
                     "proprietary_codecs": False,
                     "spatial_codecs": True
@@ -20409,7 +20414,7 @@ if __name__ == "__main__":
             "general.play_sound_on_finish": "Play a notification sound when a download completes.",
             "artist_downloading.return_credited_albums": "Include albums where the artist is credited but not the main artist.",
             "artist_downloading.separate_tracks_skip_downloaded": "When downloading artists, skip tracks that are part of albums already downloaded.",
-            "formatting.discography_format": """Album folders inside artist/label discography downloads.\nSame variables as Album Format. Use {name} if album_format already has {artist}.\nAdd {quality} for multiple editions; collisions are auto-disambiguated.""",
+            "formatting.discography_format": """Album folders inside artist/label discography downloads.\nSame variables as Album Format. Use {name} if album_format already has {artist}.\nAdd {quality} for multiple editions (e.g. {name} {quality}); collisions are auto-disambiguated with a quality or ID suffix.""",
             "formatting.album_format": """Folder structure for albums. Variables:
  {artist}, {artist_id}, {artist_initials}, {album_artist}, {name}
  {id}, {label}, {catalog_number}, {release_year}
