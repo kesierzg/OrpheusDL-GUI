@@ -1385,12 +1385,16 @@ def _show_amazonmusic_oauth_dialog(oauth_url: str, application_name: str) -> str
     content = customtkinter.CTkFrame(dialog, fg_color="transparent")
     content.pack(fill="both", expand=True, padx=20, pady=16)
 
+    title_header = customtkinter.CTkFrame(content, fg_color="transparent")
+    title_header.pack(anchor="w", fill="x", pady=(0, 10))
+    if platform.system() in ("Darwin", "Linux"):
+        _pack_setup_header_icon(title_header, "Amazon Music", padx=(0, 8))
     customtkinter.CTkLabel(
-        content,
+        title_header,
         text="Amazon Music — browser login",
         font=("Segoe UI", 16, "bold"),
         text_color=WHITE_TEXT_COLOR,
-    ).pack(anchor="w", pady=(0, 10))
+    ).pack(side="left", anchor="w")
 
     steps_frame = customtkinter.CTkFrame(content, fg_color="transparent")
     steps_frame.pack(fill="x", pady=(0, 12))
@@ -7024,14 +7028,23 @@ def _apply_toplevel_window_chrome(dialog, platform_name=None):
         pass
     try:
         if platform_name:
-            ico_path, raster_path = _platform_window_icon_paths(platform_name)
-            icon_set = False
-            if platform.system() != "Darwin" and ico_path:
-                icon_set = _set_windows_toplevel_icon(dialog, ico_path) or _apply_tk_toplevel_iconbitmap(dialog, ico_path)
-            if not icon_set and raster_path and os.path.exists(raster_path):
-                icon_image = tkinter.PhotoImage(file=str(os.path.abspath(raster_path)))
-                dialog.iconphoto(False, icon_image)
-                dialog._toplevel_icon_ref = icon_image
+            # Platform icon in the title bar only on Windows (macOS/Linux cannot show it there;
+            # iconphoto would also replace the dock/taskbar icon for the whole app).
+            if platform.system() == "Windows":
+                ico_path, raster_path = _platform_window_icon_paths(platform_name)
+                icon_set = False
+                if ico_path:
+                    icon_set = _set_windows_toplevel_icon(dialog, ico_path) or _apply_tk_toplevel_iconbitmap(dialog, ico_path)
+                if not icon_set and raster_path and os.path.exists(raster_path):
+                    icon_image = tkinter.PhotoImage(file=str(os.path.abspath(raster_path)))
+                    dialog.iconphoto(False, icon_image)
+                    dialog._toplevel_icon_ref = icon_image
+            elif platform.system() == "Linux":
+                png_path = resource_path("icon.png")
+                if png_path and os.path.exists(png_path):
+                    icon_image = tkinter.PhotoImage(file=str(os.path.abspath(png_path)))
+                    dialog.iconphoto(True, icon_image)
+                    dialog._toplevel_icon_ref = icon_image
         elif platform.system() == "Linux":
             png_path = resource_path("icon.png")
             if png_path and os.path.exists(png_path):
