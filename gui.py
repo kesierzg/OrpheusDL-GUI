@@ -1397,10 +1397,11 @@ def _show_amazonmusic_oauth_dialog(oauth_url: str, application_name: str) -> str
 
     grid_row = 0
     if _oauth_show_inline_icon:
+        _oauth_title_line_height = 22
         icon_cell = customtkinter.CTkFrame(
-            intro, fg_color="transparent", width=_oauth_num_col_width, height=PLATFORM_ICON_SIZE,
+            intro, fg_color="transparent", width=_oauth_num_col_width, height=_oauth_title_line_height,
         )
-        icon_cell.grid(row=grid_row, column=0, sticky="n", pady=(0, 8))
+        icon_cell.grid(row=grid_row, column=0, sticky="nw", pady=(0, 0))
         icon_cell.grid_propagate(False)
         _oauth_ctk_img = _load_setup_section_icon("Amazon Music")
         if _oauth_ctk_img:
@@ -1414,6 +1415,8 @@ def _show_amazonmusic_oauth_dialog(oauth_url: str, application_name: str) -> str
             text="Amazon Music — browser login",
             font=("Segoe UI", 16, "bold"),
             text_color=WHITE_TEXT_COLOR,
+            height=_oauth_title_line_height,
+            anchor="w",
         ).grid(row=grid_row, column=1, sticky="w", padx=(_oauth_text_gap, 0), pady=(0, 10))
         grid_row += 1
     else:
