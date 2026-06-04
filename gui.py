@@ -19401,7 +19401,7 @@ if __name__ == "__main__":
                 },
                 "module_defaults": { "lyrics": "default", "covers": "default", "credits": "default" },
                 "lyrics": { "embed_lyrics": True, "embed_synced_lyrics": False, "save_synced_lyrics": True },
-                "covers": { "embed_cover": True, "main_compression": "high", "main_resolution": 1400, "save_external": False, "external_format": "png", "external_compression": "low", "external_resolution": 3000, "save_animated_cover": True },
+                "covers": { "embed_cover": True, "main_compression": "high", "main_resolution": 1400, "save_original_cover_size": False, "save_external": False, "external_format": "png", "external_compression": "low", "external_resolution": 3000, "save_animated_cover": True },
                 "playlist": { "save_m3u": True, "paths_m3u": "absolute", "extended_m3u": True },
                 "advanced": {
                     "advanced_login_system": False,
@@ -20395,6 +20395,7 @@ if __name__ == "__main__":
             "covers.embed_cover": "Embed the main cover art into the audio file.",
             "covers.main_compression": "Compression level for embedded/saved main cover art.",
             "covers.main_resolution": "Maximum resolution (pixels) for the main cover art.",
+            "covers.save_original_cover_size": "Save cover art at its downloaded size instead of resizing/upscaling to Main Resolution.",
             "covers.save_external": "Save cover art from a third-party module (if configured).",
             "covers.external_format": "Format for the saved external cover art.",
             "covers.external_compression": "Compression level for the saved external cover art.",
