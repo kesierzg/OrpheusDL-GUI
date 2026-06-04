@@ -1388,7 +1388,6 @@ def _show_amazonmusic_oauth_dialog(oauth_url: str, application_name: str) -> str
     _oauth_show_inline_icon = platform.system() in ("Darwin", "Linux")
     _oauth_num_col_width = 35
     _oauth_text_gap = 6
-    _oauth_icon_size = 32
     _oauth_step_wrap = 500 if _oauth_show_inline_icon else 560
 
     intro = customtkinter.CTkFrame(content, fg_color="transparent")
@@ -1399,29 +1398,17 @@ def _show_amazonmusic_oauth_dialog(oauth_url: str, application_name: str) -> str
     grid_row = 0
     if _oauth_show_inline_icon:
         icon_cell = customtkinter.CTkFrame(
-            intro, fg_color="transparent", width=_oauth_num_col_width, height=_oauth_icon_size,
+            intro, fg_color="transparent", width=_oauth_num_col_width, height=PLATFORM_ICON_SIZE,
         )
         icon_cell.grid(row=grid_row, column=0, sticky="n", pady=(0, 8))
         icon_cell.grid_propagate(False)
-        _oauth_icon_path = _platform_icon_path("Amazon Music")
-        if _oauth_icon_path:
-            try:
-                _oauth_img = Image.open(_oauth_icon_path).convert("RGBA")
-                _oauth_img = _oauth_img.resize(
-                    (_oauth_icon_size, _oauth_icon_size), Image.Resampling.LANCZOS,
-                )
-                _oauth_ctk_img = customtkinter.CTkImage(
-                    light_image=_oauth_img,
-                    dark_image=_oauth_img,
-                    size=(_oauth_icon_size, _oauth_icon_size),
-                )
-                dialog._amazon_oauth_icon_ref = _oauth_ctk_img
-                customtkinter.CTkLabel(
-                    icon_cell, text="", image=_oauth_ctk_img,
-                    width=_oauth_icon_size, height=_oauth_icon_size,
-                ).place(relx=0.5, rely=0.5, anchor="center")
-            except Exception:
-                pass
+        _oauth_ctk_img = _load_setup_section_icon("Amazon Music")
+        if _oauth_ctk_img:
+            dialog._amazon_oauth_icon_ref = _oauth_ctk_img
+            customtkinter.CTkLabel(
+                icon_cell, text="", image=_oauth_ctk_img,
+                width=PLATFORM_ICON_SIZE, height=PLATFORM_ICON_SIZE,
+            ).place(relx=0.5, rely=0.5, anchor="center")
         customtkinter.CTkLabel(
             intro,
             text="Amazon Music — browser login",
