@@ -74,6 +74,8 @@ from utils.utils import (
     locate_ffmpeg,
     is_missing_executable_error,
     get_clean_env,
+    open_url_in_browser,
+    open_with_system_default,
     ensure_shaka_packager_in_data_dir,
     resolve_shaka_packager,
 )
@@ -123,27 +125,33 @@ from urllib.parse import urlparse
 import pickle
 import traceback
 import logging
-import webbrowser
-
 def _open_url(url):
-    """Open a URL using the system default browser.
-    Uses `open` on macOS (avoids AppleScript/Chrome dependency),
-    `os.startfile` on Windows, and `xdg-open` on Linux."""
-    try:
-        if platform.system() == "Darwin":
-            # Use a clean env so the browser launcher doesn't inherit the bundle's
-            # DYLD_LIBRARY_PATH (PyInstaller/.app), which can break it.
-            subprocess.run(['open', url], check=False, env=get_clean_env())
-        elif platform.system() == "Windows":
-            os.startfile(url)
-        else:
-            # On Linux (especially AppImage / PyInstaller), xdg-open inherits the
-            # bundle's LD_LIBRARY_PATH and launches the browser with it, causing the
-            # browser to fail to start so links never open. get_clean_env() restores
-            # the original (pre-bundle) library paths.
-            subprocess.run(['xdg-open', url], check=False, env=get_clean_env())
-    except Exception as e:
-        print(f"[URL] Error opening {url}: {e}")
+    """Open a URL using the system default browser (see utils.open_with_system_default)."""
+    if not open_url_in_browser(url):
+        print(f"[URL] Error opening {url}")
+
+
+def _open_path(path):
+    """Open a file or folder in the system file manager / default app."""
+    return open_with_system_default(path)
+
+
+def _open_config_folder(show_error=True):
+    """Open the Orpheus config directory in the system file manager."""
+    global CONFIG_FILE_PATH
+    config_dir = os.path.dirname(CONFIG_FILE_PATH)
+    if not os.path.exists(config_dir):
+        try:
+            os.makedirs(config_dir, exist_ok=True)
+        except Exception as ex:
+            if show_error:
+                show_centered_messagebox("Error", f"Could not create config directory:\n{ex}", dialog_type="error")
+            return False
+    if _open_path(config_dir):
+        return True
+    if show_error:
+        show_centered_messagebox("Error", f"Could not open config folder:\n{config_dir}", dialog_type="error")
+    return False
 
 import time
 import asyncio
@@ -1187,7 +1195,7 @@ class TidalAutoAuthPatcher:
     """
     Context manager that patches input() to automatically handle Tidal TV authentication.
     When Tidal prompts for login method, this auto-selects TV (option 1).
-    The browser will open automatically via _open_url() in the Tidal module.
+    The browser will open via webbrowser.open (patched in utils to use open_with_system_default).
     """
     def __init__(self, output_queue_ref=None):
         self.output_queue = output_queue_ref
@@ -7351,14 +7359,7 @@ def _show_spotify_cookies_instructions():
     
     # Config folder link line
     def open_config_folder():
-        config_dir = os.path.dirname(CONFIG_FILE_PATH)
-        if not os.path.exists(config_dir):
-            os.makedirs(config_dir, exist_ok=True)
-        try:
-            if platform.system() == "Windows": os.startfile(config_dir)
-            elif platform.system() == "Darwin": subprocess.run(["open", config_dir])
-            else: subprocess.run(["xdg-open", config_dir])
-        except Exception: pass
+        _open_config_folder(show_error=False)
 
     config_line_frame = customtkinter.CTkFrame(steps_frame, fg_color="transparent")
     config_line_frame.pack(fill="x", pady=(0, 0)) # Spacing from previous step
@@ -10978,15 +10979,8 @@ def open_download_path():
             except Exception as e:
                 show_centered_messagebox("Error", f"Output path does not exist and could not be created: {e}", dialog_type="error")
                 return
-        try:
-            if platform.system() == "Windows":
-                os.startfile(path_abs)
-            elif platform.system() == "Darwin":
-                subprocess.Popen(["open", path_abs])
-            else:
-                subprocess.Popen(["xdg-open", path_abs])
-        except Exception as e:
-            show_centered_messagebox("Error", f"Could not open path: {e}", dialog_type="error")
+        if not _open_path(path_abs):
+            show_centered_messagebox("Error", f"Could not open path: {path_abs}", dialog_type="error")
     except NameError: pass
     except Exception as e: print(f"Error opening download path: {e}")
 
@@ -16937,22 +16931,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
             sv["_check_cookies_func"] = _check_sp_cookies
 
             def _open_spotify_cfg_folder():
-                config_dir = os.path.dirname(CONFIG_FILE_PATH)
-                if not os.path.exists(config_dir):
-                    try:
-                        os.makedirs(config_dir, exist_ok=True)
-                    except Exception as ex:
-                        show_centered_messagebox("Error", f"Could not create config directory:\n{ex}", dialog_type="error")
-                        return
-                try:
-                    if platform.system() == "Windows":
-                        os.startfile(config_dir)
-                    elif platform.system() == "Darwin":
-                        subprocess.run(["open", config_dir])
-                    else:
-                        subprocess.run(["xdg-open", config_dir])
-                except Exception as ex:
-                    show_centered_messagebox("Error", f"Could not open config folder:\n{ex}", dialog_type="error")
+                _open_config_folder()
 
             btn_open = customtkinter.CTkButton(
                 lib_frame,
@@ -17529,23 +17508,7 @@ def _create_credential_tab_content(platform_name, tab_frame):
 
                 # For Apple Music and YouTube cookies_path, add Open button like Browse in Global settings
                 def open_cookies_folder():
-                    """Open the config folder in file explorer (uses CONFIG_DIR so macOS opens Application Support, not .app bundle)."""
-                    config_dir = os.path.dirname(CONFIG_FILE_PATH)
-                    if not os.path.exists(config_dir):
-                        try:
-                            os.makedirs(config_dir, exist_ok=True)
-                        except Exception as e:
-                            show_centered_messagebox("Error", f"Could not create config directory:\n{e}", dialog_type="error")
-                            return
-                    try:
-                        if platform.system() == "Windows":
-                            os.startfile(config_dir)
-                        elif platform.system() == "Darwin":  # macOS
-                            subprocess.run(["open", config_dir])
-                        else:  # Linux
-                            subprocess.run(["xdg-open", config_dir])
-                    except Exception as e:
-                        show_centered_messagebox("Error", f"Could not open config folder:\n{e}", dialog_type="error")
+                    _open_config_folder()
 
                 open_button = customtkinter.CTkButton(
                     grid_parent,
@@ -17582,24 +17545,8 @@ def _create_credential_tab_content(platform_name, tab_frame):
                     # Use padx=(10, 5) to align left with other fields (10) and spacing for button
                     widget.grid(row=i, column=1, sticky="ew", padx=(10, 5), pady=pady_config)
                     def open_cookies_folder():
-                        """Open the config folder in file explorer (uses CONFIG_DIR so macOS opens Application Support, not .app bundle)."""
-                        config_dir = os.path.dirname(CONFIG_FILE_PATH)
-                        if not os.path.exists(config_dir):
-                            try:
-                                os.makedirs(config_dir, exist_ok=True)
-                            except Exception as e:
-                                show_centered_messagebox("Error", f"Could not create config directory:\n{e}", dialog_type="error")
-                                return
-                        try:
-                            if platform.system() == "Windows":
-                                os.startfile(config_dir)
-                            elif platform.system() == "Darwin":  # macOS
-                                subprocess.run(["open", config_dir])
-                            else:  # Linux
-                                subprocess.run(["xdg-open", config_dir])
-                        except Exception as e:
-                            show_centered_messagebox("Error", f"Could not open config folder:\n{e}", dialog_type="error")
-                    
+                        _open_config_folder()
+
                     open_button = customtkinter.CTkButton(
                         grid_parent,
                         text="Open",
@@ -21394,17 +21341,9 @@ Unnecessary Lossless-to-Lossless""",
                         download_btn.bind("<Leave>", on_leave)
 
                         def open_app_folder(event=None):
-                            # Use get_data_directory() to get the correct writable path (Application Support on macOS)
-                            app_dir = get_data_directory()
-                            if not app_dir:
-                                app_dir = get_script_directory()
-                                
-                            if platform.system() == "Windows":
-                                os.startfile(app_dir)
-                            elif platform.system() == "Darwin":
-                                subprocess.Popen(["open", app_dir])
-                            else:
-                                subprocess.Popen(["xdg-open", app_dir])
+                            app_dir = get_data_directory() or get_script_directory()
+                            if app_dir:
+                                _open_path(app_dir)
 
                         # Container for the text - Horizontal flow
                         instr_container = customtkinter.CTkFrame(step4_frame, fg_color="transparent")
@@ -21509,10 +21448,9 @@ Unnecessary Lossless-to-Lossless""",
                         download_btn.pack(padx=10, pady=(0, 0), anchor="w")
                         
                         def open_app_folder_win(event=None):
-                            app_dir = get_data_directory()
-                            if not app_dir: app_dir = get_script_directory()
-                            if os.path.exists(app_dir):
-                                os.startfile(app_dir)
+                            app_dir = get_data_directory() or get_script_directory()
+                            if app_dir and os.path.exists(app_dir):
+                                _open_path(app_dir)
 
                         # Single container for instructions on one line
                         instr_container = customtkinter.CTkFrame(step2_frame, fg_color="transparent")

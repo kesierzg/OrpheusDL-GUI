@@ -207,6 +207,7 @@ a = Analysis(
         'tkinter',
         'tqdm',
         'urllib3',
+        'utils.utils',
         'uuid',
         'wave',
         'webbrowser',
