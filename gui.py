@@ -3101,8 +3101,8 @@ def _estimate_expand_time(track_count, platform_name, estimate_type='track', con
         # Per-track fetch time in seconds (measured with 100-track playlists)
         per_track_rates = {
             'spotify': 0.025,
-            'deezer': 0.098,
-            'tidal': 0.42,
+            'deezer': 0.012,
+            'tidal': 0.03,
             'qobuz': 0.25,
             'applemusic': 0.005,    # loads almost instantly
             'apple music': 0.005,
@@ -4758,6 +4758,46 @@ def _explicit_from_entity(entity, title_hint=''):
         title = getattr(entity, 'name', None) or title_hint
     return '[explicit]' in str(title or '').lower()
 
+def _expand_resolve_max_workers(platform_name):
+    """Concurrent workers for per-track metadata during album/playlist expand."""
+    return {
+        'spotify': 6,
+        'tidal': 12,
+        'deezer': 15,
+        'qobuz': 10,
+    }.get((platform_name or '').lower().replace(' ', ''), 15)
+
+def _try_expand_track_from_prefetched(track_id_to_fetch, track, extra_kwargs, platform_name):
+    """Use prefetched album/playlist track dict when enough for list display (skip get_track_info)."""
+    if not track_id_to_fetch:
+        return track, None
+    track_data = extra_kwargs.get('data') if isinstance(extra_kwargs, dict) else None
+    if not isinstance(track_data, dict):
+        return track, track_id_to_fetch
+    cached = track_data.get(track_id_to_fetch) or track_data.get(str(track_id_to_fetch))
+    if not isinstance(cached, dict):
+        return track, track_id_to_fetch
+    if cached.get('title') or cached.get('name'):
+        return cached, None
+    if platform_name == 'deezer' and cached.get('SNG_TITLE'):
+        dur = cached.get('DURATION')
+        try:
+            dur = int(dur) if dur is not None else None
+        except (TypeError, ValueError):
+            dur = None
+        title = cached.get('SNG_TITLE', '')
+        if cached.get('VERSION'):
+            title = f"{title} {cached['VERSION']}"
+        art = cached.get('ART_NAME') or ''
+        return {
+            'id': track_id_to_fetch,
+            'title': title,
+            'duration': dur,
+            'artists': [{'name': art}] if art else [],
+            'explicit': cached.get('EXPLICIT_LYRICS') == '1',
+        }, None
+    return track, track_id_to_fetch
+
 def _track_to_result_entry(track, index, parent_data, parent_iid, platform_str):
     """Convert a track (TrackInfo, dict, or plain ID) to a search result entry dict for display."""
     # Some modules (e.g. Deezer) return tracks as list of IDs; others return TrackInfo/dict with name, artists, etc.
@@ -5009,34 +5049,73 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                     pass
                 resolved = []
                 am_data = (extra_kwargs.get('data') if isinstance(extra_kwargs, dict) else None) or {}
-                for idx, track in enumerate(tracks, start=1):
-                    # Check if we need to fetch full track info.
-                    # 1. If track is just an ID (str/int)
-                    # 2. If track is a placeholder object (name="Loading...") from legacy fallback
-                    track_id_to_fetch = None
-                    if isinstance(track, (str, int)):
-                        track_id_to_fetch = str(track)
-                        # Amazon Music: album/playlist APIs already return per-track duration (same as the website)
-                        if platform_name == 'amazonmusic' and isinstance(am_data, dict):
-                            td = am_data.get(track_id_to_fetch) or am_data.get(f"{track_id_to_fetch}_playlist")
-                            if isinstance(td, dict) and (td.get('title') or td.get('duration') is not None):
-                                track = td
-                                track_id_to_fetch = None
-                    elif hasattr(track, 'name') and track.name == 'Loading...' and hasattr(track, 'id'):
-                        track_id_to_fetch = track.id
-                    elif isinstance(track, dict) and track.get('name') == 'Loading...' and track.get('id'):
-                        track_id_to_fetch = track.get('id')
+                total_tracks = len(tracks)
+                need_resolve = []
 
-                    if quality_tier is not None and codec_options is not None and hasattr(module_instance, 'get_track_info') and track_id_to_fetch:
+                def _expand_track_id_to_fetch(track):
+                    if isinstance(track, (str, int)):
+                        tid = str(track)
+                        if platform_name == 'amazonmusic' and isinstance(am_data, dict):
+                            td = am_data.get(tid) or am_data.get(f"{tid}_playlist")
+                            if isinstance(td, dict) and (td.get('title') or td.get('duration') is not None):
+                                return None, td
+                        return tid, track
+                    if hasattr(track, 'name') and track.name == 'Loading...' and hasattr(track, 'id'):
+                        return str(track.id), track
+                    if isinstance(track, dict) and track.get('name') == 'Loading...' and track.get('id'):
+                        return str(track.get('id')), track
+                    return None, track
+
+                for idx, track in enumerate(tracks):
+                    track_id_to_fetch, track = _expand_track_id_to_fetch(track)
+                    if track_id_to_fetch:
+                        track, track_id_to_fetch = _try_expand_track_from_prefetched(
+                            track_id_to_fetch, track, extra_kwargs, platform_name
+                        )
+                    if track_id_to_fetch and quality_tier is not None and codec_options is not None and hasattr(module_instance, 'get_track_info'):
+                        need_resolve.append((idx, track_id_to_fetch, track))
+                    else:
+                        resolved.append((idx, track))
+
+                if need_resolve:
+                    from concurrent.futures import ThreadPoolExecutor
+                    import threading
+                    resolved_map = {}
+                    lock = threading.Lock()
+                    resolved_count = 0
+
+                    def _resolve_one_expand_track(idx, track_id_to_fetch, track_fallback):
+                        nonlocal resolved_count
+                        result = track_fallback
                         try:
-                            # print(f"[Expand] Fetching metadata for track {idx}: {track_id_to_fetch}")
-                            t = module_instance.get_track_info(str(track_id_to_fetch), quality_tier, codec_options, **extra_kwargs)
+                            t = module_instance.get_track_info(
+                                str(track_id_to_fetch), quality_tier, codec_options, **extra_kwargs
+                            )
                             if t is not None:
-                                track = t
+                                result = t
                         except Exception as e:
                             print(f"[Expand] Error fetching metadata for {track_id_to_fetch}: {e}")
-                            pass
-                    resolved.append(track)
+                        with lock:
+                            resolved_map[idx] = result
+                            resolved_count += 1
+                            if resolved_count % 10 == 0 or resolved_count == len(need_resolve):
+                                _update_loading_estimate_from_worker(
+                                    total_tracks - resolved_count, platform_name,
+                                    f"Resolving tracks ({resolved_count}/{total_tracks})",
+                                    estimate_type='track',
+                                )
+                            if total_tracks > 20 and resolved_count % 50 == 0:
+                                print(f"[Expand] Resolving tracks {resolved_count}/{total_tracks}...", flush=True)
+
+                    max_workers = _expand_resolve_max_workers(platform_name)
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        for idx, track_id_to_fetch, track_fallback in need_resolve:
+                            executor.submit(_resolve_one_expand_track, idx, track_id_to_fetch, track_fallback)
+                    for idx, track in resolved:
+                        resolved_map[idx] = track
+                    resolved = [resolved_map[i] for i in range(total_tracks)]
+                else:
+                    resolved = [t for _, t in sorted(resolved, key=lambda x: x[0])]
                 # Deezer: album/playlist tracks are resolved from IDs; attach preview URLs in bulk for tracklist playback
                 if platform_name == 'deezer' and resolved and tracks:
                     try:
@@ -5061,15 +5140,26 @@ def _fetch_and_expand_album_playlist(parent_iid, item_data):
                     try:
                         get_sample = getattr(module_instance.session, 'get_sample_url', None) if hasattr(module_instance, 'session') else None
                         if get_sample:
-                            for t in resolved:
+                            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+                            def _qobuz_preview_for_track(t):
                                 tid = getattr(t, 'id', None) or (t.get('id') if isinstance(t, dict) else None)
-                                if tid:
-                                    url = get_sample(str(tid))
-                                    if url:
-                                        if isinstance(t, dict):
-                                            t['preview_url'] = url
-                                        else:
-                                            setattr(t, 'preview_url', url)
+                                if not tid:
+                                    return
+                                url = get_sample(str(tid))
+                                if url:
+                                    if isinstance(t, dict):
+                                        t['preview_url'] = url
+                                    else:
+                                        setattr(t, 'preview_url', url)
+
+                            with ThreadPoolExecutor(max_workers=10) as executor:
+                                futures = [executor.submit(_qobuz_preview_for_track, t) for t in resolved]
+                                for fut in as_completed(futures):
+                                    try:
+                                        fut.result()
+                                    except Exception:
+                                        pass
                     except Exception:
                         pass
                 for idx, track in enumerate(resolved, start=1):
