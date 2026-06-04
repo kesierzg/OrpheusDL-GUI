@@ -11482,14 +11482,14 @@ def patch_download_file_for_cancellation():
         if not hasattr(utils_module, '_original_download_file'):
             utils_module._original_download_file = utils_module.download_file
 
-        def cancellable_download_file(url, file_location, headers={}, enable_progress_bar=False, indent_level=0, artwork_settings=None):
+        def cancellable_download_file(url, file_location, headers={}, enable_progress_bar=False, indent_level=0, artwork_settings=None, skip_if_exists=True):
             global _download_cancelled
             if _download_cancelled:
                 raise DownloadCancelledError("Download cancelled before file download")
             import os
             from tqdm import tqdm
 
-            if os.path.isfile(file_location):
+            if skip_if_exists and os.path.isfile(file_location):
                 return None
             directory = os.path.dirname(file_location)
             if directory and not os.path.exists(directory):
