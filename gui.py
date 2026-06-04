@@ -1798,6 +1798,34 @@ PREVIEW_LOADING_ICON = " ... "  # Placeholder for loading animation
 PREVIEW_LOADING_ICON = " … "  # Loading indicator for lazy-loaded previews (ellipsis) - base, will be animated
 LOADING_ANIMATION_FRAMES = [" . ", " .. ", " ... "]  # Animation frames for loading state
 
+_PLATFORMS_WITH_LAZY_PREVIEW = frozenset(
+    ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic', 'amazonmusic')
+)
+
+def _preview_icon_for_item(item_data, tree_iid=None):
+    """Preview column icon for a search-results row (aligned with display_results / hover restore)."""
+    global _currently_playing_preview_iid
+    if not item_data:
+        return PREVIEW_UNAVAILABLE
+    tree_iid = tree_iid or item_data.get('tree_iid', item_data.get('id', ''))
+    preview_url = item_data.get('preview_url')
+    platform_key = (item_data.get('platform') or '').lower().replace(' ', '')
+    search_type_str = (item_data.get('type') or 'track').lower()
+    is_album_playlist = item_data.get('is_album_playlist')
+    is_artist = item_data.get('is_artist')
+    if is_album_playlist or is_artist:
+        return PREVIEW_EXPAND_COLLAPSED
+    is_track_row = (
+        search_type_str == 'track'
+        or (isinstance(tree_iid, str) and tree_iid.startswith('album_track_'))
+        or (item_data.get('duration') is not None and not is_album_playlist and not is_artist)
+    )
+    can_lazy = platform_key in _PLATFORMS_WITH_LAZY_PREVIEW and is_track_row
+    is_yt_track = platform_key == 'youtube' and is_track_row
+    if preview_url or can_lazy or is_yt_track:
+        return PREVIEW_STOP_ICON if _currently_playing_preview_iid == tree_iid else PREVIEW_PLAY_ICON
+    return PREVIEW_UNAVAILABLE
+
 # Volume control widgets (initialized later in GUI setup)
 _volume_frame = None
 _volume_slider = None
@@ -6088,20 +6116,9 @@ def _back_to_search_results():
                     break
                 tree_iid = item_data.get('tree_iid', item_data.get('id', ''))
                 parent_iid = item_data.get('parent_iid') or ""
-                preview_url = item_data.get('preview_url')
                 platform_str = item_data.get('platform', 'Unknown')
-                search_type_str = item_data.get('type', 'track')
-                is_track_search = search_type_str.lower() == "track"
-                can_lazy_load_preview = (platform_str.lower().replace(' ', '') in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic', 'amazonmusic')) and is_track_search
-                is_youtube_track = (platform_str.lower().replace(' ', '') == 'youtube') and is_track_search
-                is_album_playlist = item_data.get('is_album_playlist')
-                is_artist = item_data.get('is_artist')
-                if is_album_playlist or is_artist:
-                    preview_icon = PREVIEW_EXPAND_COLLAPSED
-                elif preview_url or can_lazy_load_preview or is_youtube_track:
-                    preview_icon = PREVIEW_STOP_ICON if (_currently_playing_preview_iid == tree_iid) else PREVIEW_PLAY_ICON
-                else:
-                    preview_icon = PREVIEW_UNAVAILABLE
+                preview_icon = _preview_icon_for_item(item_data, tree_iid)
+                preview_url = item_data.get('preview_url')
                 values = (preview_icon, item_data.get('number', ''), item_data.get('title', ''), item_data.get('artist', ''), item_data.get('duration', ''), item_data.get('year', ''), _format_additional_column(item_data.get('additional', ''), platform_str), item_data.get('explicit', ''), item_data.get('id', ''))
                 row_tag = "oddrow" if (idx % 2 == 0) else "evenrow"
                 is_playing = _currently_playing_preview_iid == tree_iid
@@ -8020,6 +8037,7 @@ def load_settings():
                         "disable_subscription_check": False
                     },
                     "formatting": {
+                        "discography_format": "{name}",
                         "album_format": "{artist}/{name}",
                         "playlist_format": "{name}",
                         "track_filename_format": "{artist} - {name}",
@@ -16477,18 +16495,7 @@ def sort_results(column):
                     parent_iid = item_data.get('parent_iid')
                     is_playing = _currently_playing_preview_iid == tree_iid
                     platform_str = item_data.get('platform', 'Unknown')
-                    search_type_str = item_data.get('type', 'track')
-                    is_track_search = search_type_str.lower() == "track"
-                    can_lazy_load_preview = (platform_str.lower() in ('qobuz', 'soundcloud', 'spotify', 'tidal', 'deezer', 'applemusic', 'amazonmusic')) and is_track_search
-                    is_youtube_track = (platform_str.lower() == 'youtube') and is_track_search
-                    is_album_playlist = item_data.get('is_album_playlist')
-                    is_artist = item_data.get('is_artist')
-                    if is_album_playlist or is_artist:
-                        preview_icon = PREVIEW_EXPAND_COLLAPSED
-                    elif preview_url or can_lazy_load_preview or is_youtube_track:
-                        preview_icon = PREVIEW_STOP_ICON if is_playing else PREVIEW_PLAY_ICON
-                    else:
-                        preview_icon = PREVIEW_UNAVAILABLE
+                    preview_icon = _preview_icon_for_item(item_data, tree_iid)
                     additional_val = item_data.get('additional', '')
                     display_additional = _format_additional_column(additional_val, platform_str)
                     
@@ -19394,7 +19401,7 @@ if __name__ == "__main__":
                     "play_sound_on_finish": True,
                 },
                 "artist_downloading": { "return_credited_albums": True, "separate_tracks_skip_downloaded": True },
-                "formatting": { "album_format": "{artist}/{name}", "playlist_format": "{name}", "track_filename_format": "{artist} - {name}", "single_full_path_format": "{artist} - {name}", "metadata_separator": ";", "split_metadata": True, "enable_zfill": True, "force_album_format": False, "use_playlist_position": False, "use_album_position": False },
+                "formatting": { "discography_format": "{name}", "album_format": "{artist}/{name}", "playlist_format": "{name}", "track_filename_format": "{artist} - {name}", "single_full_path_format": "{artist} - {name}", "metadata_separator": ";", "split_metadata": True, "enable_zfill": True, "force_album_format": False, "use_playlist_position": False, "use_album_position": False },
                 "codecs": {
                     "proprietary_codecs": False,
                     "spatial_codecs": True
@@ -20365,6 +20372,7 @@ if __name__ == "__main__":
             "general.play_sound_on_finish": "Play a notification sound when a download completes.",
             "artist_downloading.return_credited_albums": "Include albums where the artist is credited but not the main artist.",
             "artist_downloading.separate_tracks_skip_downloaded": "When downloading artists, skip tracks that are part of albums already downloaded.",
+            "formatting.discography_format": """Folder structure for albums inside artist or label discography downloads (under the artist/label folder).\nUse {name} when album_format includes the artist to avoid duplicated folders.\nUses the same variables as Album Format.""",
             "formatting.album_format": """Folder structure for albums. Variables:
  {artist}, {artist_id}, {artist_initials}, {album_artist}, {name}
  {id}, {label}, {catalog_number}, {release_year}
