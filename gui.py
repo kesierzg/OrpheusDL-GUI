@@ -8040,7 +8040,7 @@ def load_settings():
                         "discography_format": "{name}{quality}",
                         "album_format": "{artist}/{name}",
                         "playlist_format": "{name}",
-                        "track_filename_format": "{artist} - {name}",
+                        "track_filename_format": "{track_number}. {artist} - {name}",
                         "single_full_path_format": "{artist} - {name}",
                         "metadata_separator": ";",
                         "split_metadata": True,
@@ -19401,7 +19401,7 @@ if __name__ == "__main__":
                     "play_sound_on_finish": True,
                 },
                 "artist_downloading": { "return_credited_albums": True, "separate_tracks_skip_downloaded": True },
-                "formatting": { "discography_format": "{name}{quality}", "album_format": "{artist}/{name}", "playlist_format": "{name}", "track_filename_format": "{artist} - {name}", "single_full_path_format": "{artist} - {name}", "metadata_separator": ";", "split_metadata": True, "enable_zfill": True, "force_album_format": False, "use_playlist_position": False, "use_album_position": False },
+                "formatting": { "discography_format": "{name}{quality}", "album_format": "{artist}/{name}", "playlist_format": "{name}", "track_filename_format": "{track_number}. {artist} - {name}", "single_full_path_format": "{artist} - {name}", "metadata_separator": ";", "split_metadata": True, "enable_zfill": True, "force_album_format": False, "use_playlist_position": False, "use_album_position": False },
                 "codecs": {
                     "proprietary_codecs": False,
                     "spatial_codecs": True
@@ -20388,7 +20388,7 @@ if __name__ == "__main__":
             "formatting.single_full_path_format": """Full path format (folder + filename) for single tracks not part of an album download.\nUses same variables as Track Filename Format.""",
             "formatting.metadata_separator": "Character or string used to separate multiple values in metadata (e.g. artists, genres). Default is ;",
             "formatting.split_metadata": "Save multiple values (e.g., multiple artists) as separate tags instead of joining them with the separator.",
-            "formatting.enable_zfill": "Pads track/disc numbers with leading zeros (e.g., 01, 02).",
+            "formatting.enable_zfill": "Pads track/disc numbers with leading zeros (e.g., 01, 02) in filenames and embedded tags.\nRequires {track_number} or {disc_number} in Track Filename Format. Minimum two digits; wider padding for albums with 100+ tracks.",
             "formatting.force_album_format": "Use the album_format structure even for single track downloads.",
             "formatting.use_playlist_position": "Use track's position in the playlist for {track_number} in filenames and tags (instead of the original album track number).\nUse {playlist_position} in filename template if you want playlist order without changing album track numbers.",
             "formatting.use_album_position": "Use sequential album-wide track numbers for {track_number} in filenames and tags (1 through total album tracks), ignoring per-disc resets.\nLeave disabled to keep each disc numbered from 1 (recommended for multi-disc albums).",
