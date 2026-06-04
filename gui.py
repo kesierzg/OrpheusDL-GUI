@@ -8037,7 +8037,7 @@ def load_settings():
                         "disable_subscription_check": False
                     },
                     "formatting": {
-                        "discography_format": "{name}",
+                        "discography_format": "{name}{quality}",
                         "album_format": "{artist}/{name}",
                         "playlist_format": "{name}",
                         "track_filename_format": "{artist} - {name}",
@@ -19401,7 +19401,7 @@ if __name__ == "__main__":
                     "play_sound_on_finish": True,
                 },
                 "artist_downloading": { "return_credited_albums": True, "separate_tracks_skip_downloaded": True },
-                "formatting": { "discography_format": "{name}", "album_format": "{artist}/{name}", "playlist_format": "{name}", "track_filename_format": "{artist} - {name}", "single_full_path_format": "{artist} - {name}", "metadata_separator": ";", "split_metadata": True, "enable_zfill": True, "force_album_format": False, "use_playlist_position": False, "use_album_position": False },
+                "formatting": { "discography_format": "{name}{quality}", "album_format": "{artist}/{name}", "playlist_format": "{name}", "track_filename_format": "{artist} - {name}", "single_full_path_format": "{artist} - {name}", "metadata_separator": ";", "split_metadata": True, "enable_zfill": True, "force_album_format": False, "use_playlist_position": False, "use_album_position": False },
                 "codecs": {
                     "proprietary_codecs": False,
                     "spatial_codecs": True
@@ -20372,7 +20372,7 @@ if __name__ == "__main__":
             "general.play_sound_on_finish": "Play a notification sound when a download completes.",
             "artist_downloading.return_credited_albums": "Include albums where the artist is credited but not the main artist.",
             "artist_downloading.separate_tracks_skip_downloaded": "When downloading artists, skip tracks that are part of albums already downloaded.",
-            "formatting.discography_format": """Folder structure for albums inside artist or label discography downloads (under the artist/label folder).\nUse {name} when album_format includes the artist to avoid duplicated folders.\nUses the same variables as Album Format.""",
+            "formatting.discography_format": """Folder structure for albums inside artist or label discography downloads (under the artist/label folder).\nUse {name} when album_format includes the artist to avoid duplicated folders.\nUses the same variables as Album Format.\nIf a service lists multiple editions of the same album (e.g. standard lossless and Hi-Res on Apple Music), use {quality} in the format or rely on automatic folder disambiguation when names would collide.""",
             "formatting.album_format": """Folder structure for albums. Variables:
  {artist}, {artist_id}, {artist_initials}, {album_artist}, {name}
  {id}, {label}, {catalog_number}, {release_year}
