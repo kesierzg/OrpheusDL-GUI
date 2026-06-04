@@ -1385,19 +1385,58 @@ def _show_amazonmusic_oauth_dialog(oauth_url: str, application_name: str) -> str
     content = customtkinter.CTkFrame(dialog, fg_color="transparent")
     content.pack(fill="both", expand=True, padx=20, pady=16)
 
-    title_header = customtkinter.CTkFrame(content, fg_color="transparent")
-    title_header.pack(anchor="w", fill="x", pady=(0, 10))
-    if platform.system() in ("Darwin", "Linux"):
-        _pack_setup_header_icon(title_header, "Amazon Music", padx=(0, 8))
-    customtkinter.CTkLabel(
-        title_header,
-        text="Amazon Music — browser login",
-        font=("Segoe UI", 16, "bold"),
-        text_color=WHITE_TEXT_COLOR,
-    ).pack(side="left", anchor="w")
+    _oauth_show_inline_icon = platform.system() in ("Darwin", "Linux")
+    _oauth_num_col_width = 35
+    _oauth_text_gap = 6
+    _oauth_icon_size = 32
+    _oauth_step_wrap = 500 if _oauth_show_inline_icon else 560
 
-    steps_frame = customtkinter.CTkFrame(content, fg_color="transparent")
-    steps_frame.pack(fill="x", pady=(0, 12))
+    intro = customtkinter.CTkFrame(content, fg_color="transparent")
+    intro.pack(fill="x", pady=(0, 12))
+    intro.grid_columnconfigure(0, minsize=_oauth_num_col_width)
+    intro.grid_columnconfigure(1, weight=1)
+
+    grid_row = 0
+    if _oauth_show_inline_icon:
+        icon_cell = customtkinter.CTkFrame(
+            intro, fg_color="transparent", width=_oauth_num_col_width, height=_oauth_icon_size,
+        )
+        icon_cell.grid(row=grid_row, column=0, sticky="n", pady=(0, 8))
+        icon_cell.grid_propagate(False)
+        _oauth_icon_path = _platform_icon_path("Amazon Music")
+        if _oauth_icon_path:
+            try:
+                _oauth_img = Image.open(_oauth_icon_path).convert("RGBA")
+                _oauth_img = _oauth_img.resize(
+                    (_oauth_icon_size, _oauth_icon_size), Image.Resampling.LANCZOS,
+                )
+                _oauth_ctk_img = customtkinter.CTkImage(
+                    light_image=_oauth_img,
+                    dark_image=_oauth_img,
+                    size=(_oauth_icon_size, _oauth_icon_size),
+                )
+                dialog._amazon_oauth_icon_ref = _oauth_ctk_img
+                customtkinter.CTkLabel(
+                    icon_cell, text="", image=_oauth_ctk_img,
+                    width=_oauth_icon_size, height=_oauth_icon_size,
+                ).place(relx=0.5, rely=0.5, anchor="center")
+            except Exception:
+                pass
+        customtkinter.CTkLabel(
+            intro,
+            text="Amazon Music — browser login",
+            font=("Segoe UI", 16, "bold"),
+            text_color=WHITE_TEXT_COLOR,
+        ).grid(row=grid_row, column=1, sticky="w", padx=(_oauth_text_gap, 0), pady=(0, 10))
+        grid_row += 1
+    else:
+        customtkinter.CTkLabel(
+            intro,
+            text="Amazon Music — browser login",
+            font=("Segoe UI", 16, "bold"),
+            text_color=WHITE_TEXT_COLOR,
+        ).grid(row=grid_row, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        grid_row += 1
 
     for step_num, step_text in enumerate(
         (
@@ -1408,17 +1447,15 @@ def _show_amazonmusic_oauth_dialog(oauth_url: str, application_name: str) -> str
         ),
         start=1,
     ):
-        row = customtkinter.CTkFrame(steps_frame, fg_color="transparent")
-        row.pack(fill="x", pady=3)
-        row.grid_columnconfigure(1, weight=1)
         customtkinter.CTkLabel(
-            row, text=f"{step_num}.", font=("Segoe UI", 12, "bold"),
-            text_color=PURE_WHITE_TEXT_COLOR, width=22,
-        ).grid(row=0, column=0, sticky="nw", padx=(0, 6))
+            intro, text=f"{step_num}.", font=("Segoe UI", 12, "bold"),
+            text_color=PURE_WHITE_TEXT_COLOR, width=_oauth_num_col_width, anchor="center",
+        ).grid(row=grid_row, column=0, sticky="n", pady=3)
         customtkinter.CTkLabel(
-            row, text=step_text, font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR,
-            justify="left", wraplength=560,
-        ).grid(row=0, column=1, sticky="nw")
+            intro, text=step_text, font=("Segoe UI", 12), text_color=GRAY_TEXT_COLOR,
+            justify="left", wraplength=_oauth_step_wrap,
+        ).grid(row=grid_row, column=1, sticky="nw", padx=(_oauth_text_gap, 0), pady=3)
+        grid_row += 1
 
     status_row = customtkinter.CTkFrame(content, fg_color="transparent")
     status_row.pack(fill="x", pady=(0, 8))
