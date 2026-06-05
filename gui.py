@@ -8190,6 +8190,7 @@ def load_settings():
                         "enable_undesirable_conversions": False,
                         "ignore_existing_files": False,
                         "ignore_different_artists": True,
+                        "force_album_metadata": False,
                         "hide_ffmpeg_warning": False
                     }
                 },
@@ -12220,9 +12221,21 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
 
         # Smart Atmos Fallback: If quality is set to 'atmos' but platform/track doesn't support it, fall back to 'hifi'
         if downloader_settings.get("general", {}).get("download_quality") == "atmos":
+            # Collection downloads (artist/label/playlist) bundle many albums of differing
+            # quality. Their search result/URL never advertises "atmos", so a global downgrade
+            # here would strip Atmos from the genuine Atmos editions too. Let each track resolve
+            # Atmos-or-fallback inside the module instead.
+            result_type = str((search_result_data or {}).get('type', '')).lower()
+            is_collection_download = (
+                result_type in ('artist', 'label', 'playlist')
+                or any(str(c).lower() in ('artist', 'label', 'playlist') for c in components)
+            )
+
             is_atmos_possible = False
             # These platforms potentially support Atmos
-            if module_name in ('applemusic', 'apple music', 'tidal'):
+            if is_collection_download:
+                is_atmos_possible = True
+            elif module_name in ('applemusic', 'apple music', 'tidal'):
                 if search_result_data:
                     # Check if 'atmos' is in the search result's additional info
                     addl = str(search_result_data.get('additional', '')).lower()
@@ -12235,6 +12248,12 @@ def run_download_in_thread(orpheus, url, output_path, gui_settings, search_resul
             if not is_atmos_possible:
                 downloader_settings["general"]["download_quality"] = "hifi"
                 print(f"|GRAY|Warning: This specific track does not support Dolby Atmos. Falling back to highest available quality.|RESET|")
+
+        # Atmos quality needs spatial codecs enabled to actually fetch the Dolby Atmos stream.
+        # If spatial codecs are off, Tidal/Apple silently serve the stereo Hi-Res/Lossless mix,
+        # so an Atmos-labelled folder ends up holding non-Atmos files.
+        if downloader_settings.get("general", {}).get("download_quality") == "atmos":
+            downloader_settings.setdefault("codecs", {})["spatial_codecs"] = True
 
         yield_to_gui()
 
@@ -19470,6 +19489,7 @@ if __name__ == "__main__":
                     "enable_undesirable_conversions": False,
                     "ignore_existing_files": False,
                     "ignore_different_artists": True,
+                    "force_album_metadata": False,
                     "hide_ffmpeg_warning": False
                 }
             },
@@ -20470,6 +20490,7 @@ Lossless-to-Lossy (if not preferred)
 Unnecessary Lossless-to-Lossless""",
             "advanced.ignore_existing_files": "Skips downloading files, if a file with the target name already exists in the output directory.",
             "advanced.ignore_different_artists": "When downloading albums, ignore tracks where the artist differs from the main album artist.",
+            "advanced.force_album_metadata": "Force album-level tags (COPYRIGHT, LABEL/PUBLISHER, catalog number, UPC) to be identical for every track in an album.\nUseful for compilations where the source returns different per-track copyright/label.\nDoes not affect track-specific tags like title, artists, track number, or ISRC.",
             "advanced.hide_ffmpeg_warning": "Hide the warning message that appears when FFmpeg is not found on the system.",
             "advanced.conversion_flags.aac.audio_bitrate": "Set AAC audio bitrate. Higher is better quality but larger file. Options: 128k, 192k, 256k, 320k.",
             "advanced.conversion_flags.flac.compression_level": "Set FLAC compression level (0-8). Higher level means smaller file but slower encoding, 0 is fastest, 8 is smallest.",
