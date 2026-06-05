@@ -8190,7 +8190,6 @@ def load_settings():
                         "enable_undesirable_conversions": False,
                         "ignore_existing_files": False,
                         "ignore_different_artists": True,
-                        "force_album_metadata": False,
                         "hide_ffmpeg_warning": False
                     }
                 },
@@ -19489,7 +19488,6 @@ if __name__ == "__main__":
                     "enable_undesirable_conversions": False,
                     "ignore_existing_files": False,
                     "ignore_different_artists": True,
-                    "force_album_metadata": False,
                     "hide_ffmpeg_warning": False
                 }
             },
@@ -20490,7 +20488,6 @@ Lossless-to-Lossy (if not preferred)
 Unnecessary Lossless-to-Lossless""",
             "advanced.ignore_existing_files": "Skips downloading files, if a file with the target name already exists in the output directory.",
             "advanced.ignore_different_artists": "When downloading albums, ignore tracks where the artist differs from the main album artist.",
-            "advanced.force_album_metadata": "Force album-level tags (COPYRIGHT, LABEL/PUBLISHER, catalog number, UPC) to be identical for every track in an album.\nUseful for compilations where the source returns different per-track copyright/label.\nDoes not affect track-specific tags like title, artists, track number, or ISRC.",
             "advanced.hide_ffmpeg_warning": "Hide the warning message that appears when FFmpeg is not found on the system.",
             "advanced.conversion_flags.aac.audio_bitrate": "Set AAC audio bitrate. Higher is better quality but larger file. Options: 128k, 192k, 256k, 320k.",
             "advanced.conversion_flags.flac.compression_level": "Set FLAC compression level (0-8). Higher level means smaller file but slower encoding, 0 is fastest, 8 is smallest.",
