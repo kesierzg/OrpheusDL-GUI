@@ -19470,7 +19470,7 @@ if __name__ == "__main__":
                 "module_defaults": { "lyrics": "default", "covers": "default", "credits": "default" },
                 "lyrics": { "embed_lyrics": True, "embed_synced_lyrics": False, "save_synced_lyrics": True },
                 "covers": { "embed_cover": True, "main_compression": "high", "main_resolution": 1400, "save_original_cover_size": False, "save_external": False, "external_format": "png", "external_compression": "low", "external_resolution": 3000, "save_animated_cover": True },
-                "playlist": { "save_m3u": True, "paths_m3u": "absolute", "extended_m3u": True, "m3u_only": False },
+                "playlist": { "save_m3u": True, "paths_m3u": "absolute", "extended_m3u": True, "m3u_only": False, "sync": False, "sync_remove_orphaned": False },
                 "advanced": {
                     "advanced_login_system": False,
                     "codec_conversions": { "alac": "flac", "wav": "flac", "vorbis": "vorbis" }, 
@@ -20475,6 +20475,8 @@ if __name__ == "__main__":
             "playlist.paths_m3u": "Select 'relative' or 'absolute' paths in M3U file.",
             "playlist.extended_m3u": "Include extended info like track length in M3U file.",
             "playlist.m3u_only": "Skip audio downloads and only generate the M3U playlist file.\nUseful for re-creating playlist files for tracks you already have on disk.",
+            "playlist.sync": "Enable playlist sync mode.\nWhen re-downloading a playlist, tracks already on disk are skipped and only new additions are downloaded.\nRemoved tracks are reported (and optionally deleted if sync_remove_orphaned is enabled).\nA hidden .orpheus_sync.json manifest is saved in the playlist folder to track changes.",
+            "playlist.sync_remove_orphaned": "When sync mode is enabled, automatically delete files for tracks that have been removed from the playlist.\nHas no effect unless playlist.sync is also enabled.",
             "advanced.advanced_login_system": "Enable advanced login system (Use only if instructed by module documentation).",
             "advanced.ffmpeg_path": "Full path to the ffmpeg executable \nIf set to just 'ffmpeg', it's assumed to be in the system PATH.\nThis is used for codec conversions.",
             "advanced.codec_conversions": "Defines automatic codec remapping before save (for example: alac -> flac).\nLeft dropdown = source codec from module, right dropdown = target codec to convert to.",
