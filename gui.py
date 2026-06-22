@@ -10655,10 +10655,18 @@ def _detect_failed_track_from_log(raw_line):
         plain = re.sub(r'\|(?:RED|YELLOW|GRAY|GREEN|WHITE|RESET|PLATFORM_\w+)\|', '', raw_line).strip()
 
         # Track current track name from sequential download header
-        m = re.search(r'=== Downloading track (.+?) \([\w]+\) ===', plain)
+        m = re.search(r'=== Downloading track (.+?) \([\w\-]+\) ===', plain)
         if m:
             _current_download_track_name = m.group(1).strip()
             return
+
+        # Seed track ID from retry messages when "=== Downloading track" hasn't appeared yet
+        # e.g. "[Retry 1/3] Error for 12345 ..." or "[Retry 1] Decryption ... for track 12345."
+        if not _current_download_track_name:
+            m = re.search(r'\[Retry \d+(?:/\d+)?\].+?(?:for (?:track )?)([\w\-]+)', plain)
+            if m:
+                _current_download_track_name = m.group(1).strip()
+                return
 
         # Sequential failure banner: "=== ✗ Track failed ===" (symbols['error'] = '✗')
         if re.search(r'=== .{0,5} Track failed ===', plain):
@@ -10847,6 +10855,14 @@ def update_log_area():
                         continue
                 if 'Processing' in msg_strip and 'standalone tracks...' in msg_strip and 'Artist Progress:' in msg_strip:
                     log_to_textbox(f"{msg}\n")
+                    continue
+                if msg_strip.startswith('[Retry succeeded]'):
+                    log_to_textbox(f"|GREEN|       {msg_strip}|RESET|\n")
+                    continue
+                if msg_strip.startswith('[Retry ') or (
+                    msg_strip.startswith('[Retry') and ']' in msg_strip
+                ):
+                    log_to_textbox(f"|YELLOW|       {msg_strip}|RESET|\n")
                     continue
                 if 'Spotify authentication error during track download' in msg_strip or \
                    ('Download attempt' in msg_strip and 'failed. Retrying in' in msg_strip):
